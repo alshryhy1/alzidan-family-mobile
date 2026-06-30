@@ -29,6 +29,12 @@
     "plugins": [
       "expo-video",
       "expo-notifications"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8a6659eb-ef85-49b5-a8db-7b7be96b8c1f"
+      }
+    },
+    "owner": "alshryhy"
   }
 }
