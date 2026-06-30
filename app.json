@@ -9,7 +9,8 @@
     "ios": {
       "bundleIdentifier": "com.alzidan.family",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية."
+        "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "supportsTablet": true
     },
