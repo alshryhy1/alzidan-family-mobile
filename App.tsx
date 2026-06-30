@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -17,10 +18,35 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
 import { registerPushToken } from './src/services/pushNotifications';
+import { selectPublicRows } from './src/services/supabase';
 import { colors, spacing, typography } from './src/theme';
 import type { PublicScreen } from './src/types';
 
 I18nManager.allowRTL(true);
+
+const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
+
+function cleanStoredPhone(value: string) {
+  return String(value || '').replace(/[^\d]/g, '');
+}
+
+function tripleNameFromPath(value: string) {
+  const parts = String(value || '')
+    .split('/')
+    .map((part) => part.trim().replace(/\s*رحمه الله\s*/g, '').replace(/\s*\(رحمه الله\)\s*/g, ''))
+    .filter(Boolean)
+    .slice(-3)
+    .reverse();
+  return parts.length ? parts.join(' بن ') : '';
+}
+
+type MemberProfileRow = {
+  phone: string | null;
+  branch_key: string;
+  tree_child_id: number;
+  display_name: string | null;
+  status: string | null;
+};
 
 type BannerMessage = {
   id: string | number;
@@ -123,12 +149,47 @@ export default function App() {
   const [bannerMessages, setBannerMessages] = useState<BannerMessage[]>([]);
   const [tickerSpeedSeconds, setTickerSpeedSeconds] = useState(30);
   const [selectedBranchKey, setSelectedBranchKey] = useState<string | null>(null);
+  const [focusedTreeChildId, setFocusedTreeChildId] = useState<number | null>(null);
+  const [memberGreeting, setMemberGreeting] = useState<string | null>(null);
 
   useEffect(() => {
     registerPushToken().catch((error) => {
       console.warn('تعذر تسجيل إشعارات التطبيق:', error);
     });
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    AsyncStorage.getItem(MEMBER_PHONE_KEY)
+      .then(async (stored) => {
+        const phone = cleanStoredPhone(stored || '');
+        if (!phone) {
+          if (alive) setMemberGreeting(null);
+          return;
+        }
+
+        const rows = await selectPublicRows<MemberProfileRow>(
+          `member_profiles?select=phone,branch_key,tree_child_id,display_name,status&phone=eq.${encodeURIComponent(phone)}&status=eq.active&limit=1`,
+        );
+        const profile = rows[0];
+        if (!profile) {
+          if (alive) setMemberGreeting(null);
+          return;
+        }
+
+        const child = publicData.children.find((row) => row.id === profile.tree_child_id);
+        const name = child?.name ? tripleNameFromPath(child.name) : profile.display_name || null;
+        if (alive) setMemberGreeting(name);
+      })
+      .catch(() => {
+        if (alive) setMemberGreeting(null);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [publicData.children]);
 
   useEffect(() => {
     let mounted = true;
@@ -160,8 +221,9 @@ export default function App() {
     [publicData.branches, selectedBranchKey],
   );
 
-  const openTree = (branchKey?: string) => {
+  const openTree = (branchKey?: string, treeChildId?: number | null) => {
     if (branchKey) setSelectedBranchKey(branchKey);
+    setFocusedTreeChildId(treeChildId ?? null);
     setScreen('tree');
   };
 
@@ -187,6 +249,7 @@ export default function App() {
             loading={publicData.loading}
             onRetry={publicData.reload}
             parents={publicData.parents}
+            focusedTreeChildId={focusedTreeChildId}
             onSelectBranch={setSelectedBranchKey}
           />
         );
@@ -201,7 +264,13 @@ export default function App() {
           />
         );
       case 'profile':
-        return <ProfileScreen branches={publicData.branches} />;
+        return (
+          <ProfileScreen
+            branches={publicData.branches}
+            childrenRows={publicData.children}
+            onOpenMemberCard={(branchKey, treeChildId) => openTree(branchKey, treeChildId)}
+          />
+        );
       case 'about':
         return <AboutScreen />;
       default:
@@ -214,6 +283,7 @@ export default function App() {
             upcomingEvents={publicData.events}
             bannerMessages={bannerMessages.map((item) => item.message)}
             tickerSpeedSeconds={tickerSpeedSeconds}
+            memberGreeting={memberGreeting}
             loading={publicData.loading}
             membersCount={publicData.children.length}
             onOpenBranches={() => setScreen('branches')}

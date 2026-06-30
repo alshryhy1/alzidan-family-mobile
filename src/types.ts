@@ -24,6 +24,8 @@ export type TreeChild = {
   birthDateGregorian: string | null;
   birthDateHijri: string | null;
   birthYear: number | null;
+  deathDateGregorian?: string | null;
+  deathDateHijri?: string | null;
   city: string | null;
   area: string | null;
   isDeceased: boolean | null;
@@ -37,6 +39,8 @@ export type TreePerson = {
   birthDateGregorian?: string | null;
   birthDateHijri?: string | null;
   birthYear?: number | null;
+  deathDateGregorian?: string | null;
+  deathDateHijri?: string | null;
   city?: string | null;
   area?: string | null;
   isDeceased?: boolean | null;

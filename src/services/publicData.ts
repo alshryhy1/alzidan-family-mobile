@@ -22,6 +22,8 @@ type ChildRow = {
   birth_date_g: string | null;
   birth_date_h: string | null;
   birth_year?: number | null;
+  death_date_g?: string | null;
+  death_date_h?: string | null;
   city: string | null;
   area: string | null;
   is_deceased: boolean | null;
@@ -151,7 +153,7 @@ function mapEvent(row: EventRow): FamilyEvent {
 async function loadTreeChildren() {
   try {
     return await selectPublicRows<ChildRow>(
-      'tree_children?select=id,branch_key,parent_name,name,child_name,birth_order,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased&order=id.asc',
+      'tree_children?select=id,branch_key,parent_name,name,child_name,birth_order,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased&order=id.asc',
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -161,7 +163,7 @@ async function loadTreeChildren() {
     if (!birthOrderMissing) throw error;
 
     return selectPublicRows<ChildRow>(
-      'tree_children?select=id,branch_key,parent_name,name,child_name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased&order=id.asc',
+      'tree_children?select=id,branch_key,parent_name,name,child_name,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased&order=id.asc',
     );
   }
 }
@@ -204,6 +206,8 @@ export async function loadPublicData() {
     birthDateGregorian: row.birth_date_g,
     birthDateHijri: row.birth_date_h,
     birthYear: row.birth_year ?? null,
+    deathDateGregorian: row.death_date_g ?? null,
+    deathDateHijri: row.death_date_h ?? null,
     city: row.city,
     area: row.area,
     isDeceased: row.is_deceased ?? row.deceased ?? null,

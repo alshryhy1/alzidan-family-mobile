@@ -110,7 +110,12 @@ function sortUpcomingEvents(events: FamilyEvent[]) {
     .sort((a, b) => (parseEventDay(a) ?? 0) - (parseEventDay(b) ?? 0));
 }
 
+function normalizeTickerText(value: string) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
 type HomeScreenProps = {
+  memberGreeting?: string | null;
   branchesCount: number;
   error: string | null;
   latestEvent: FamilyEvent | null;
@@ -127,6 +132,7 @@ type HomeScreenProps = {
 };
 
 export function HomeScreen({
+  memberGreeting,
   branchesCount,
   error,
   latestEvent,
@@ -145,19 +151,20 @@ export function HomeScreen({
   const [tickerWidth, setTickerWidth] = useState(0);
   const fallbackTickerText =
     'الحمد لله الذي بنعمته تتم الصالحات — تم بحمد الله اكتمال تطبيق عائلة الزيدان وسيكون في هذا الشريط أخبار العائلة';
-  const latestEventText = latestEvent
-    ? `${latestEvent.title}: ${latestEvent.person}${latestEvent.date ? ` — ${latestEvent.date}` : ''}`
-    : '';
-  const bannerText = bannerMessages.length ? bannerMessages.join('     •     ') : '';
-  const tickerText = bannerText || latestEventText || fallbackTickerText;
+  const eventTickerItems = latestEvents
+    .slice(0, 6)
+    .map((event) => `${event.title}: ${event.person}${event.date ? ` — ${event.date}` : ''}`);
+  const tickerItems = [...bannerMessages, ...eventTickerItems].map(normalizeTickerText).filter(Boolean);
+  const tickerText = tickerItems.length ? tickerItems.join('     •     ') : fallbackTickerText;
+  const tickerStep = tickerWidth + spacing.lg;
   const sortedUpcomingEvents = sortUpcomingEvents(upcomingEvents);
   const nearestUpcomingEvent = sortedUpcomingEvents[0] ?? null;
   const upcomingIds = new Set(sortedUpcomingEvents.map((event) => event.id));
   const visibleNewsEvents = latestEvents.filter((event) => !upcomingIds.has(event.id));
 
   useEffect(() => {
-    if (!tickerWidth) return;
-    tickerX.setValue(-(tickerWidth + spacing.lg));
+    if (!tickerStep) return;
+    tickerX.setValue(-tickerStep);
     const animation = Animated.loop(
       Animated.timing(tickerX, {
         duration: Math.max(1000, Math.min(120000, Number(tickerSpeedSeconds || 30) * 1000)),
@@ -168,31 +175,43 @@ export function HomeScreen({
     );
     animation.start();
     return () => animation.stop();
-  }, [tickerText, tickerWidth, tickerX, tickerSpeedSeconds]);
+  }, [tickerText, tickerStep, tickerX, tickerSpeedSeconds]);
 
   return (
     <Screen
-      title="أهلًا بكم"
-      description="استعرض بيانات عائلة الزيدان العامة من المصدر المعتمد."
+      title={memberGreeting ? '' : 'أهلًا بكم'}
+      description={memberGreeting ? undefined : 'استعرض بيانات عائلة الزيدان العامة من المصدر المعتمد.'}
       onRefresh={onRetry}
       refreshing={loading}
     >
+      {memberGreeting ? (
+        <Text numberOfLines={1} ellipsizeMode="tail" style={styles.memberTitleLine}>
+          <Text style={styles.memberTitleHello}>مرحباً: </Text>
+          <Text style={styles.memberTitleName}>{memberGreeting}</Text>
+        </Text>
+      ) : null}
+
       <View style={styles.ticker}>
         <Text style={styles.tickerLabel}>آخر خبر:</Text>
         <View style={styles.tickerViewport}>
           <Animated.View style={[styles.tickerTrack, { transform: [{ translateX: tickerX }] }]}>
             <Text
+              ellipsizeMode="clip"
               numberOfLines={1}
               onLayout={(event) => {
-                const w = event.nativeEvent.layout.width;
-                console.log('TICKER_WIDTH=', w);
-                setTickerWidth(w);
+                const measuredWidth = Math.ceil(event.nativeEvent.layout.width);
+                setTickerWidth((currentWidth) =>
+                  Math.abs(currentWidth - measuredWidth) > 1 ? measuredWidth : currentWidth,
+                );
               }}
               style={styles.tickerText}
             >
               {tickerText}
             </Text>
-            <Text numberOfLines={1} style={styles.tickerText}>
+            <Text ellipsizeMode="clip" numberOfLines={1} style={styles.tickerText}>
+              {tickerText}
+            </Text>
+            <Text ellipsizeMode="clip" numberOfLines={1} style={styles.tickerText}>
               {tickerText}
             </Text>
           </Animated.View>
@@ -279,6 +298,33 @@ export function HomeScreen({
 }
 
 const styles = StyleSheet.create({
+  memberTitleLine: {
+    fontSize: 22,
+    fontWeight: '900',
+    marginBottom: spacing.sm,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  memberTitleHello: {
+    color: '#DC2626',
+  },
+  memberTitleName: {
+    color: colors.primary,
+  },
+  memberGreeting: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  memberGreetingText: {
+    color: colors.primary,
+    fontWeight: '900',
+    textAlign: 'right',
+  },
   ticker: {
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
@@ -304,10 +350,11 @@ const styles = StyleSheet.create({
   },
   tickerTrack: {
     alignItems: 'center',
+    direction: 'ltr',
     flexDirection: 'row',
     gap: spacing.lg,
+    left: 0,
     position: 'absolute',
-    right: 0,
   },
   tickerText: {
     color: colors.text,

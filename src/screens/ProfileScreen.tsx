@@ -1,28 +1,31 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
-import { insertPublicRow } from '../services/supabase';
+import { selectPublicRows } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
-import type { Branch } from '../types';
+import type { Branch, TreeChild } from '../types';
 
 type ProfileScreenProps = {
   branches: Branch[];
+  childrenRows: TreeChild[];
+  onOpenMemberCard: (branchKey: string, treeChildId: number) => void;
 };
 
-type SubmitStatus = {
-  kind: 'idle' | 'success' | 'error';
-  text: string;
-};
+const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
 
-function requestId() {
-  return `MEMAPP-${Date.now().toString(36).toUpperCase()}-${Math.random()
-    .toString(36)
-    .slice(2, 6)
-    .toUpperCase()}`;
-}
+type MemberProfileRow = {
+  id: number;
+  phone: string | null;
+  branch_key: string;
+  tree_child_id: number;
+  person_id: string | null;
+  display_name: string | null;
+  status: string | null;
+};
 
 function normalizeArabicDigits(value: string) {
   const arabicZero = '٠'.charCodeAt(0);
@@ -35,215 +38,163 @@ function normalizeArabicDigits(value: string) {
 }
 
 function cleanPhone(value: string) {
-  return normalizeArabicDigits(value).replace(/[^\d+]/g, '');
+  return normalizeArabicDigits(value).replace(/[^\d]/g, '');
 }
 
-function buildMemberMessage(payload: {
-  branch: string;
-  delegateCode: string;
-  fullName: string;
-  phone: string;
-  relation: string;
-  relationPerson: string;
-  requestId: string;
-}) {
-  return [
-    'طلب تسجيل عضو في تطبيق عائلة الزيدان',
-    `رقم الطلب: ${payload.requestId}`,
-    `الفرع: ${payload.branch}`,
-    `الاسم الكامل: ${payload.fullName}`,
-    `الجوال: ${payload.phone}`,
-    payload.relation ? `صلة القرابة: ${payload.relation}` : '',
-    payload.relationPerson ? `مرتبط في الشجرة بـ: ${payload.relationPerson}` : '',
-    `رمز المندوب: ${payload.delegateCode}`,
-    `التاريخ: ${new Date().toLocaleString('ar-SA')}`,
-  ]
+function displayPersonName(value: string) {
+  const parts = value
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.at(-1) || value;
+}
+
+function tripleNameFromPath(value: string) {
+  const parts = value
+    .split('/')
+    .map((part) => part.trim())
     .filter(Boolean)
-    .join('\n');
+    .slice(-3)
+    .reverse();
+
+  return parts.length ? parts.join(' بن ') : displayPersonName(value);
 }
 
-export function ProfileScreen({ branches }: ProfileScreenProps) {
-  const defaultBranch = branches[0]?.id ?? 'زيدان';
-  const [branch, setBranch] = useState(defaultBranch);
-  const [fullName, setFullName] = useState('');
+export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: ProfileScreenProps) {
   const [phone, setPhone] = useState('');
-  const [relation, setRelation] = useState('');
-  const [relationPerson, setRelationPerson] = useState('');
-  const [delegateCode, setDelegateCode] = useState('');
-  const [profileRequest, setProfileRequest] = useState<{
-    branch: string;
-    fullName: string;
-    phone: string;
-    requestId: string;
-    status: 'pending';
-  } | null>(null);
-  const [status, setStatus] = useState<SubmitStatus>({ kind: 'idle', text: '' });
-  const [submitting, setSubmitting] = useState(false);
+  const [savedPhone, setSavedPhone] = useState('');
+  const [member, setMember] = useState<MemberProfileRow | null>(null);
+  const [status, setStatus] = useState<{ kind: 'idle' | 'success' | 'error'; text: string }>({
+    kind: 'idle',
+    text: '',
+  });
+  const [loading, setLoading] = useState(false);
 
-  const selectedBranchName = useMemo(
-    () => branches.find((item) => item.id === branch)?.name ?? branch,
-    [branch, branches],
+  const memberTreeRow = useMemo(
+    () => childrenRows.find((row) => row.id === member?.tree_child_id) ?? null,
+    [childrenRows, member?.tree_child_id],
   );
 
-  const submitRegistration = async () => {
-    const cleanedPhone = cleanPhone(phone);
-    const cleanDelegateCode = delegateCode.trim();
-    const cleanFullName = fullName.trim();
+  const branchName = useMemo(
+    () => branches.find((branch) => branch.id === member?.branch_key)?.name ?? member?.branch_key ?? '',
+    [branches, member?.branch_key],
+  );
 
-    if (!cleanFullName || cleanedPhone.length < 9 || !branch || !cleanDelegateCode) {
-      setStatus({
-        kind: 'error',
-        text: 'اكتب الاسم الكامل، رقم الجوال، الفرع، ورمز المندوب.',
-      });
+  const memberName = useMemo(() => {
+    if (memberTreeRow?.name) return tripleNameFromPath(memberTreeRow.name);
+    return member?.display_name || 'عضو العائلة';
+  }, [member?.display_name, memberTreeRow?.name]);
+
+  const loadMember = async (targetPhone: string) => {
+    const cleaned = cleanPhone(targetPhone);
+    if (cleaned.length < 9) {
+      setStatus({ kind: 'error', text: 'اكتب رقم جوال صحيح.' });
       return;
     }
 
-    setSubmitting(true);
+    setLoading(true);
+    setStatus({ kind: 'idle', text: '' });
+
     try {
-      const newRequestId = requestId();
-      const message = buildMemberMessage({
-        branch,
-        delegateCode: cleanDelegateCode,
-        fullName: cleanFullName,
-        phone: cleanedPhone,
-        relation: relation.trim(),
-        relationPerson: relationPerson.trim(),
-        requestId: newRequestId,
-      });
+      const rows = await selectPublicRows<MemberProfileRow>(
+        `member_profiles?select=id,phone,branch_key,tree_child_id,person_id,display_name,status&phone=eq.${encodeURIComponent(cleaned)}&status=eq.active&limit=1`,
+      );
 
-      await insertPublicRow('approval_requests', {
-        request_id: newRequestId,
-        kind: 'member_registration',
-        branch_key: branch,
-        name: cleanFullName,
-        phone: cleanedPhone,
-        email: null,
-        message,
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      });
+      const found = rows[0] ?? null;
+      if (!found) {
+        setMember(null);
+        setSavedPhone('');
+        setStatus({
+          kind: 'error',
+          text: 'هذا الرقم غير مسجل لدى إدارة العائلة أو مندوب الفرع.',
+        });
+        return;
+      }
 
-      setProfileRequest({
-        branch,
-        fullName: cleanFullName,
-        phone: cleanedPhone,
-        requestId: newRequestId,
-        status: 'pending',
-      });
-      setStatus({
-        kind: 'success',
-        text: 'تم إرسال طلب التسجيل. سيظهر ملفك بعد اعتماد المندوب أو الإدارة.',
-      });
-      setDelegateCode('');
+      setMember(found);
+      setSavedPhone(cleaned);
+      setPhone(cleaned);
+      await AsyncStorage.setItem(MEMBER_PHONE_KEY, cleaned);
+      setStatus({ kind: 'success', text: 'تم تسجيل الدخول.' });
     } catch (error) {
       setStatus({
         kind: 'error',
-        text: error instanceof Error ? error.message : 'تعذر إرسال طلب التسجيل.',
+        text: error instanceof Error ? error.message : 'تعذر تسجيل الدخول.',
       });
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    AsyncStorage.getItem(MEMBER_PHONE_KEY)
+      .then((value) => {
+        const cleaned = cleanPhone(value || '');
+        if (cleaned) loadMember(cleaned).catch(() => {});
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const logout = () => {
+    AsyncStorage.removeItem(MEMBER_PHONE_KEY).catch(() => {});
+    setMember(null);
+    setSavedPhone('');
+    setPhone('');
+    setStatus({ kind: 'idle', text: '' });
   };
 
   return (
     <Screen
-      title="ملفي العائلي"
-      description="سجل برمز المندوب حتى ترتبط عضويتك بفرعك وتصبح طلباتك أوضح للإدارة."
+      title="ملفي"
+      description="دخول العضو برقم الجوال لعرض اسمه وفتح بطاقته في الشجرة فقط."
     >
-      {profileRequest ? (
-        <SectionCard eyebrow="الحالة" title="طلب التسجيل">
+      {member ? (
+        <SectionCard eyebrow="عضو مسجل" title={`مرحباً: ${memberName}`}>
           <View style={styles.profileHeader}>
-            <View style={styles.statusPill}>
-              <Text style={styles.statusPillText}>قيد المراجعة</Text>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{memberName.slice(0, 1)}</Text>
             </View>
-            <Text style={styles.profileName}>{profileRequest.fullName}</Text>
-          </View>
-          <View style={styles.infoGrid}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoValue}>{profileRequest.requestId}</Text>
-              <Text style={styles.infoLabel}>رقم الطلب</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoValue}>{selectedBranchName}</Text>
-              <Text style={styles.infoLabel}>الفرع</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoValue}>{profileRequest.phone}</Text>
-              <Text style={styles.infoLabel}>الجوال</Text>
+            <View style={styles.profileText}>
+              <Text style={styles.profileName}>{memberName}</Text>
+              <Text style={styles.profileMeta}>فرع {branchName}</Text>
+              <Text style={styles.profileMeta}>الجوال: {member.phone}</Text>
             </View>
           </View>
+
+          <ActionButton
+            label="فتح بطاقتي في الشجرة"
+            onPress={() => onOpenMemberCard(member.branch_key, member.tree_child_id)}
+          />
+
+          <Pressable onPress={logout} style={styles.logoutButton}>
+            <Text style={styles.logoutText}>تسجيل خروج</Text>
+          </Pressable>
+
           <Text style={styles.note}>
-            بعد القبول يمكن ربط خدمات “طلباتي” و“تعديل ملفي” على نفس رقم الجوال.
+            هذا الدخول للتعريف وفتح البطاقة فقط، ولا يمنح صلاحيات تعديل أو حذف.
           </Text>
         </SectionCard>
-      ) : null}
-
-      <SectionCard eyebrow="تسجيل" title="طلب عضوية عائلية">
-        <View style={styles.branchPicker}>
-          {branches.map((item) => {
-            const active = item.id === branch;
-            return (
-              <Pressable
-                key={item.id}
-                onPress={() => setBranch(item.id)}
-                style={[styles.chip, active && styles.activeChip]}
-              >
-                <Text style={[styles.chipText, active && styles.activeChipText]}>{item.name}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <TextInput
-          onChangeText={setFullName}
-          placeholder="الاسم الكامل"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          textAlign="right"
-          value={fullName}
-        />
-        <TextInput
-          keyboardType="phone-pad"
-          onChangeText={setPhone}
-          placeholder="رقم الجوال"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          textAlign="right"
-          value={phone}
-        />
-        <TextInput
-          onChangeText={setRelation}
-          placeholder="صلة القرابة، مثال: ابن / حفيد / قريب"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          textAlign="right"
-          value={relation}
-        />
-        <TextInput
-          onChangeText={setRelationPerson}
-          placeholder="اسم الشخص المرتبط بك في الشجرة، اختياري"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          textAlign="right"
-          value={relationPerson}
-        />
-        <TextInput
-          autoCapitalize="characters"
-          onChangeText={setDelegateCode}
-          placeholder="رمز المندوب"
-          placeholderTextColor={colors.textMuted}
-          secureTextEntry
-          style={styles.input}
-          textAlign="right"
-          value={delegateCode}
-        />
-        <ActionButton
-          label={submitting ? 'جاري الإرسال...' : 'إرسال طلب التسجيل'}
-          onPress={submitRegistration}
-        />
-        <Text style={styles.note}>
-          رمز المندوب لا يفتح التطبيق مباشرة، لكنه يثبت أن الطلب مر عبر مندوب الفرع قبل الاعتماد.
-        </Text>
-      </SectionCard>
+      ) : (
+        <SectionCard eyebrow="دخول العضو" title="ادخل برقم الجوال المسجل">
+          <TextInput
+            keyboardType="phone-pad"
+            onChangeText={setPhone}
+            placeholder="05XXXXXXXX"
+            placeholderTextColor={colors.textMuted}
+            style={styles.input}
+            textAlign="right"
+            value={phone}
+          />
+          <ActionButton
+            label={loading ? 'جاري الدخول...' : 'دخول'}
+            onPress={() => loadMember(phone)}
+          />
+          <Text style={styles.note}>
+            إذا لم يقبل الرقم، اطلب من الإدارة أو مندوب الفرع إضافة رقمك في بطاقة الشجرة.
+          </Text>
+        </SectionCard>
+      )}
 
       {status.text ? (
         <View style={[styles.status, status.kind === 'error' ? styles.errorStatus : styles.successStatus]}>
@@ -255,117 +206,82 @@ export function ProfileScreen({ branches }: ProfileScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  branchPicker: {
-    flexDirection: 'row-reverse',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  chip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  activeChip: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  chipText: {
-    color: colors.textMuted,
-    fontSize: typography.caption,
-    fontWeight: '800',
-    writingDirection: 'rtl',
-  },
-  activeChipText: {
-    color: colors.white,
-  },
   input: {
     backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: 15,
-    borderWidth: 1,
+    borderRadius: 16,
     color: colors.text,
-    fontSize: typography.body,
-    minHeight: 48,
+    fontSize: 15,
+    marginBottom: spacing.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    writingDirection: 'rtl',
+    paddingVertical: 12,
   },
   profileHeader: {
     alignItems: 'center',
     flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  avatar: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 28,
+    height: 56,
+    justifyContent: 'center',
+    width: 56,
+  },
+  avatarText: {
+    color: colors.surface,
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  profileText: {
+    flex: 1,
   },
   profileName: {
-    color: colors.primaryDark,
-    flex: 1,
-    fontSize: typography.title,
+    color: colors.text,
+    fontSize: 20,
     fontWeight: '900',
     textAlign: 'right',
-    writingDirection: 'rtl',
   },
-  statusPill: {
-    backgroundColor: colors.accentSoft,
-    borderRadius: 999,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  statusPillText: {
-    color: colors.primaryDark,
-    fontSize: typography.caption,
-    fontWeight: '900',
-    writingDirection: 'rtl',
-  },
-  infoGrid: {
-    gap: spacing.xs,
-  },
-  infoRow: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 14,
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  infoLabel: {
+  profileMeta: {
     color: colors.textMuted,
-    fontSize: typography.caption,
-    fontWeight: '800',
-    writingDirection: 'rtl',
+    fontSize: 13,
+    marginTop: 4,
+    textAlign: 'right',
   },
-  infoValue: {
+  logoutButton: {
+    alignItems: 'center',
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: spacing.sm,
+    paddingVertical: 12,
+  },
+  logoutText: {
     color: colors.text,
-    flex: 1,
-    fontSize: typography.caption,
     fontWeight: '900',
-    textAlign: 'left',
-    writingDirection: 'ltr',
   },
   note: {
     color: colors.textMuted,
-    fontSize: typography.caption,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 21,
+    marginTop: spacing.md,
     textAlign: 'right',
-    writingDirection: 'rtl',
   },
   status: {
     borderRadius: 16,
+    marginTop: spacing.md,
     padding: spacing.md,
   },
-  successStatus: {
-    backgroundColor: colors.primarySoft,
-  },
   errorStatus: {
-    backgroundColor: '#F7D7D7',
+    backgroundColor: '#FEE2E2',
+  },
+  successStatus: {
+    backgroundColor: '#DCFCE7',
   },
   statusText: {
     color: colors.text,
-    fontSize: typography.body,
     fontWeight: '800',
     textAlign: 'right',
-    writingDirection: 'rtl',
   },
 });

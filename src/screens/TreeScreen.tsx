@@ -15,7 +15,69 @@ type TreeScreenProps = {
   onRetry: () => void;
   onSelectBranch: (branchKey: string) => void;
   parents: TreeParent[];
+  focusedTreeChildId?: number | null;
 };
+
+
+function parseYear(value?: string | null) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{3,4})/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  return Number.isFinite(year) ? year : null;
+}
+
+function isApproximateDate(value?: string | null) {
+  const raw = String(value || '').trim();
+  if (!raw) return true;
+  return /تقريب|تقريبا|تقريبًا|حوالي/.test(raw);
+}
+
+function currentHijriYear() {
+  return Number(new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { year: 'numeric' }).format(new Date()).replace(/\D/g, ''));
+}
+
+function ageFromYears(startYear: number | null, endYear: number | null) {
+  if (!startYear || !endYear) return null;
+  const age = endYear - startYear;
+  if (!Number.isFinite(age) || age < 0 || age > 130) return null;
+  return age;
+}
+
+function calculatePersonAge(person: {
+  birthDateGregorian?: string | null;
+  birthDateHijri?: string | null;
+  birthYear?: number | null;
+  deathDateGregorian?: string | null;
+  deathDateHijri?: string | null;
+  isDeceased?: boolean | null;
+}) {
+  const isDeceased = person.isDeceased === true;
+
+  const birthG = parseYear(person.birthDateGregorian);
+  const deathG = parseYear(person.deathDateGregorian);
+  if (birthG) {
+    const end = isDeceased && deathG ? deathG : new Date().getFullYear();
+    const age = ageFromYears(birthG, end);
+    if (age != null) return { label: isDeceased ? 'العمر عند الوفاة' : 'العمر', value: `${age} سنة` };
+  }
+
+  const birthH = parseYear(person.birthDateHijri) || person.birthYear || null;
+  const deathH = parseYear(person.deathDateHijri);
+  if (birthH) {
+    const end = isDeceased && deathH ? deathH : currentHijriYear();
+    const age = ageFromYears(birthH, end);
+    if (age != null) {
+      const approximate = isApproximateDate(person.birthDateHijri) || !person.birthDateHijri;
+      if (isDeceased) {
+        return { label: approximate ? 'العمر التقريبي عند الوفاة' : 'العمر عند الوفاة', value: `${age} سنة` };
+      }
+      return { label: approximate ? 'العمر التقريبي' : 'العمر', value: `${age} سنة` };
+    }
+  }
+
+  return null;
+}
 
 function personMeta(row: TreeChild) {
   const parts = [row.city, row.area].filter(Boolean);
@@ -31,8 +93,23 @@ function displayPersonName(value: string) {
   return parts.at(-1) || value;
 }
 
-function personDisplayName(person: Pick<TreePerson, 'name' | 'isDeceased'>) {
-  return person.isDeceased === true ? `${person.name} رحمه الله` : person.name;
+function cleanNameSuffix(value: string) {
+  return value.replace(/\s*رحمه الله\s*/g, '').replace(/\s*\(رحمه الله\)\s*/g, '').trim();
+}
+
+function compactLineageName(value: string) {
+  const parts = value
+    .split('/')
+    .map((part) => cleanNameSuffix(part.trim()))
+    .filter(Boolean)
+    .slice(-3)
+    .reverse();
+  return parts.length ? parts.join(' بن ') : cleanNameSuffix(value);
+}
+
+function personDisplayName(person: Pick<TreePerson, 'name' | 'fullName' | 'isDeceased'>) {
+  const base = compactLineageName(person.fullName || person.name);
+  return person.isDeceased === true ? `${base} رحمه الله` : base;
 }
 
 const curatedChildOrders: Record<string, string[]> = {
@@ -116,6 +193,8 @@ function buildBranchTree(
       birthDateGregorian: child.birthDateGregorian,
       birthDateHijri: child.birthDateHijri,
       birthYear: child.birthYear,
+      deathDateGregorian: child.deathDateGregorian,
+      deathDateHijri: child.deathDateHijri,
       city: child.city,
       area: child.area,
       isDeceased: child.isDeceased,
@@ -164,6 +243,7 @@ export function TreeScreen({
   onRetry,
   onSelectBranch,
   parents,
+  focusedTreeChildId,
 }: TreeScreenProps) {
   const branch = branches.find((item) => item.id === branchKey);
   const tree = useMemo(
@@ -192,9 +272,20 @@ export function TreeScreen({
       return;
     }
 
+    if (focusedTreeChildId && tree) {
+      const match = collectSearchResults(tree, branch?.id ?? '', branch?.name ?? '').find(
+        (result) => Number(result.person.id) === Number(focusedTreeChildId),
+      );
+      if (match) {
+        setTrail(match.path);
+        setSearchQuery('');
+        return;
+      }
+    }
+
     setTrail(tree ? [tree] : []);
     setSearchQuery('');
-  }, [pendingTrail, tree]);
+  }, [branch?.id, branch?.name, focusedTreeChildId, pendingTrail, tree]);
 
   const currentPerson = trail.at(-1) ?? null;
   const directChildren = currentPerson?.children ?? [];
@@ -253,10 +344,14 @@ export function TreeScreen({
         currentPerson.birthDateGregorian
           ? { label: 'الميلاد الميلادي', value: currentPerson.birthDateGregorian }
           : null,
-        !currentPerson.birthDateGregorian && currentPerson.birthYear
-          ? { label: 'العمر التقريبي', value: `${new Date().getFullYear() - currentPerson.birthYear} سنة` }
+        calculatePersonAge(currentPerson),
+        currentPerson.deathDateHijri
+          ? { label: 'الوفاة الهجرية', value: currentPerson.deathDateHijri }
           : null,
-        !currentPerson.birthDateGregorian && currentPerson.birthYear
+        currentPerson.deathDateGregorian
+          ? { label: 'الوفاة الميلادية', value: currentPerson.deathDateGregorian }
+          : null,
+        !currentPerson.birthDateGregorian && !currentPerson.birthDateHijri && currentPerson.birthYear
           ? { label: 'سنة الميلاد التقريبية', value: String(currentPerson.birthYear) }
           : null,
         currentPerson.city ? { label: 'المدينة', value: currentPerson.city } : null,
