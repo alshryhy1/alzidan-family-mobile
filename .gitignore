@@ -40,3 +40,11 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# iOS generated files
+ios/Pods/
+ios/build/
+
+# iOS generated files
+ios/Pods/
+ios/build/
