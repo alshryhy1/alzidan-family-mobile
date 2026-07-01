@@ -1,0 +1,125 @@
+import WidgetKit
+import SwiftUI
+
+struct Provider: TimelineProvider {
+    func placeholder(in context: Context) -> AlzidanEntry {
+        AlzidanEntry(date: Date(), title: "عائلة الزيدان", subtitle: "أقرب مناسبة", days: "٣", footer: "آخر أخبار العائلة")
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (AlzidanEntry) -> Void) {
+        completion(loadEntry())
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<AlzidanEntry>) -> Void) {
+        let entry = loadEntry()
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date()
+        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+    }
+
+    private func loadEntry() -> AlzidanEntry {
+        AlzidanEntry(
+            date: Date(),
+            title: "عائلة الزيدان",
+            subtitle: "لا توجد مناسبة قريبة",
+            days: "—",
+            footer: "تابع أخبار ومناسبات العائلة"
+        )
+    }
+}
+
+struct AlzidanEntry: TimelineEntry {
+    let date: Date
+    let title: String
+    let subtitle: String
+    let days: String
+    let footer: String
+}
+
+struct AlzidanFamilyWidgetEntryView: View {
+    var entry: Provider.Entry
+    @Environment(\.widgetFamily) var family
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.98, green: 0.94, blue: 0.84),
+                    Color(red: 0.78, green: 0.62, blue: 0.36)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack {
+                    Text("🌳")
+                        .font(.title2)
+                    Spacer()
+                    Text(entry.title)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                }
+
+                Spacer(minLength: 2)
+
+                HStack(alignment: .center) {
+                    VStack(alignment: .center, spacing: 2) {
+                        Text(entry.days)
+                            .font(.system(size: family == .systemSmall ? 34 : 44, weight: .bold))
+                        Text("يوم")
+                            .font(.caption2)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("أقرب مناسبة")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        Text(entry.subtitle)
+                            .font(.caption)
+                            .lineLimit(family == .systemSmall ? 2 : 3)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+
+                if family != .systemSmall {
+                    Divider().opacity(0.35)
+                    Text(entry.footer)
+                        .font(.caption2)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            .padding()
+            .foregroundStyle(Color(red: 0.12, green: 0.08, blue: 0.03))
+        }
+        .widgetURL(URL(string: "alzidanfamily://widget"))
+    }
+}
+
+struct AlzidanFamilyWidget: Widget {
+    let kind: String = "AlzidanFamilyWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: Provider()) { entry in
+            if #available(iOS 17.0, *) {
+                AlzidanFamilyWidgetEntryView(entry: entry)
+                    .containerBackground(.clear, for: .widget)
+            } else {
+                AlzidanFamilyWidgetEntryView(entry: entry)
+                    .padding()
+                    .background()
+            }
+        }
+        .configurationDisplayName("عائلة الزيدان")
+        .description("يعرض أقرب مناسبة وآخر أخبار العائلة.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+#Preview(as: .systemSmall) {
+    AlzidanFamilyWidget()
+} timeline: {
+    AlzidanEntry(date: .now, title: "عائلة الزيدان", subtitle: "زواج أحد أبناء العائلة", days: "٣", footer: "آخر أخبار العائلة")
+}

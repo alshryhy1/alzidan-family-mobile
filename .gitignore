@@ -48,3 +48,7 @@ ios/build/
 # iOS generated files
 ios/Pods/
 ios/build/
+
+# Local temporary files
+supabase/.temp/
+tmp-special-card/
