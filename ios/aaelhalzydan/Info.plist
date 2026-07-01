@@ -50,6 +50,8 @@
 	<string>Allow $(PRODUCT_NAME) to access your camera</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Allow $(PRODUCT_NAME) to save photos</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية.</string>
 	<key>RCTNewArchEnabled</key>

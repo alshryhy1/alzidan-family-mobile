@@ -14,10 +14,12 @@ import { AboutScreen } from './src/screens/AboutScreen';
 import { BranchesScreen } from './src/screens/BranchesScreen';
 import { EventsScreen } from './src/screens/EventsScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
 import { registerPushToken } from './src/services/pushNotifications';
+import { fetchActiveSpecialCard, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
 import { colors, spacing, typography } from './src/theme';
 import type { PublicScreen } from './src/types';
@@ -151,6 +153,8 @@ export default function App() {
   const [selectedBranchKey, setSelectedBranchKey] = useState<string | null>(null);
   const [focusedTreeChildId, setFocusedTreeChildId] = useState<number | null>(null);
   const [memberGreeting, setMemberGreeting] = useState<string | null>(null);
+  const [specialCard, setSpecialCard] = useState<SpecialCard | null>(null);
+  const [specialCardVisible, setSpecialCardVisible] = useState(false);
 
   useEffect(() => {
     registerPushToken().catch((error) => {
@@ -215,6 +219,35 @@ export default function App() {
     };
   }, []);
 
+
+
+  useEffect(() => {
+    let alive = true;
+
+    fetchActiveSpecialCard()
+      .then((card) => {
+        if (!alive || !card) return;
+        setSpecialCard(card);
+        setSpecialCardVisible(true);
+      })
+      .catch((error) => {
+        console.warn('تعذر تحميل البطاقة الخاصة:', error);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const closeSpecialCard = () => {
+    const cardId = specialCard?.id;
+    setSpecialCardVisible(false);
+    if (cardId) {
+      markSpecialCardSeen(cardId).catch((error) => {
+        console.warn('تعذر حفظ حالة البطاقة الخاصة:', error);
+      });
+    }
+  };
 
   const activeBranchKey = useMemo(
     () => selectedBranchKey ?? publicData.branches[0]?.id ?? null,
@@ -311,6 +344,12 @@ export default function App() {
           </View>
 
           <View style={styles.content}>{renderScreen()}</View>
+
+          <SpecialCardModal
+            card={specialCard}
+            visible={specialCardVisible}
+            onClose={closeSpecialCard}
+          />
 
           <View style={styles.tabBar}>
             {tabs.map((tab) => {

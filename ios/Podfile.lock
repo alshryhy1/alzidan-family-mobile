@@ -45,7 +45,12 @@ PODS:
     - ExpoModulesCore
   - ExpoKeepAwake (56.0.3):
     - ExpoModulesCore
+  - ExpoLinearGradient (56.0.4):
+    - ExpoModulesCore
   - ExpoLogBox (56.0.13):
+    - React-Core
+  - ExpoMediaLibrary (56.0.7):
+    - ExpoModulesCore
     - React-Core
   - ExpoModulesCore (56.0.16):
     - ExpoModulesJSI
@@ -78,6 +83,8 @@ PODS:
     - ExpoModulesCore
     - ExpoModulesJSI
   - ExpoNotifications (56.0.18):
+    - ExpoModulesCore
+  - ExpoSharing (56.0.18):
     - ExpoModulesCore
   - ExpoVideo (56.1.4):
     - ExpoModulesCore
@@ -1553,6 +1560,28 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-view-shot (5.1.0):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - React-NativeModulesApple (0.85.3):
     - hermes-engine
     - React-callinvoker
@@ -1974,11 +2003,14 @@ DEPENDENCIES:
   - ExpoImageManipulator (from `../node_modules/expo-image-manipulator/ios/ExpoImageManipulator.podspec`)
   - ExpoImagePicker (from `../node_modules/expo-image-picker/ios`)
   - ExpoKeepAwake (from `../node_modules/expo/node_modules/expo-keep-awake/ios`)
+  - ExpoLinearGradient (from `../node_modules/expo-linear-gradient/ios`)
   - "ExpoLogBox (from `../node_modules/expo/node_modules/@expo/log-box`)"
+  - ExpoMediaLibrary (from `../node_modules/expo-media-library/ios/ExpoMediaLibrary.podspec`)
   - ExpoModulesCore (from `../node_modules/expo-modules-core/ExpoModulesCore.podspec`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
+  - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoVideo (from `../node_modules/expo-video/ios/ExpoVideo.podspec`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
@@ -2021,6 +2053,7 @@ DEPENDENCIES:
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - React-mutationobservernativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
+  - react-native-view-shot (from `../node_modules/react-native-view-shot`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../node_modules/react-native/ReactCommon/react/networking`)
   - React-oscompat (from `../node_modules/react-native/ReactCommon/oscompat`)
@@ -2081,8 +2114,12 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-image-picker/ios"
   ExpoKeepAwake:
     :path: "../node_modules/expo/node_modules/expo-keep-awake/ios"
+  ExpoLinearGradient:
+    :path: "../node_modules/expo-linear-gradient/ios"
   ExpoLogBox:
     :path: "../node_modules/expo/node_modules/@expo/log-box"
+  ExpoMediaLibrary:
+    :podspec: "../node_modules/expo-media-library/ios/ExpoMediaLibrary.podspec"
   ExpoModulesCore:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesCore.podspec"
   ExpoModulesJSI:
@@ -2091,6 +2128,8 @@ EXTERNAL SOURCES:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
   ExpoNotifications:
     :path: "../node_modules/expo-notifications/ios"
+  ExpoSharing:
+    :path: "../node_modules/expo-sharing/ios"
   ExpoVideo:
     :podspec: "../node_modules/expo-video/ios/ExpoVideo.podspec"
   FBLazyVector:
@@ -2174,6 +2213,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
+  react-native-view-shot:
+    :path: "../node_modules/react-native-view-shot"
   React-NativeModulesApple:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios"
   React-networking:
@@ -2259,11 +2300,14 @@ SPEC CHECKSUMS:
   ExpoImageManipulator: b3d9d626f99cc827d26a8f7eb7adcf7239223e9c
   ExpoImagePicker: 080421aeaf3836250e5fb764123f1d7f7905ea04
   ExpoKeepAwake: 359c47a1d9ccc3a3c519bca6e39562cce230c5bb
+  ExpoLinearGradient: 16c2b9c6105444883d34958d573725de1293b8d0
   ExpoLogBox: 63977cf56b04547c713535d2d4e9bbf2f012e3c6
+  ExpoMediaLibrary: 8e280ce4497ce80036c9031b6404693d370cf234
   ExpoModulesCore: 9ebfa38e90ebbd107fa0aba87349a33c8787d60f
   ExpoModulesJSI: 49e5d86ad1a81cd696f07ca9d583b7848baa75cb
   ExpoModulesWorklets: 111c11b9ab7fe23ce3e52bba7bbfcf5ef730139f
   ExpoNotifications: 87875dae0faded5284004bc1204990947d3f64e0
+  ExpoSharing: 89ff19115095e3eb8355d3a2dd6a21875e4b25df
   ExpoVideo: 292b8c6be12bacf0b2e5a697276788280cdccdfb
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: 997ae2dacf21cdcada30e773c684b63d3f610436
@@ -2305,6 +2349,7 @@ SPEC CHECKSUMS:
   React-microtasksnativemodule: ab33a818d339f5a1da308893c11b487be66121a8
   React-mutationobservernativemodule: a42d1626651ccd7d0dc02a56e69d4ec77c248893
   react-native-safe-area-context: 6b4966397ada0f7dd481e4486a2ef936834861a1
+  react-native-view-shot: 5bf17256c542d46c02a6f2d2752fe88eb3a8d058
   React-NativeModulesApple: deba264b03bd79c6bd61014fa30e40321b5e443a
   React-networking: 35e6070b084f435429f85c5db40b4d5b38652fe9
   React-oscompat: 64a0c7ef5441855dc6e2a6afe8ba8f92aa05075e
