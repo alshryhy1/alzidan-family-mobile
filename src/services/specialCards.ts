@@ -8,7 +8,11 @@ export type SpecialCardType =
   | 'promotion'
   | 'new_house'
   | 'honor'
-  | 'announcement';
+  | 'announcement'
+  | 'engagement'
+  | 'excellence'
+  | 'retirement'
+  | 'appreciation';
 
 export type SpecialCard = {
   id: number;
@@ -34,34 +38,52 @@ export type SpecialCard = {
   allow_save: boolean | null;
   audio_url: string | null;
   template_key: string | null;
+  group_key: string | null;
+  group_title: string | null;
+  sequence_order: number | null;
+  max_per_session: number | null;
+  display_mode: 'manual' | 'auto' | null;
+  is_group_card: boolean | null;
+  updated_at?: string | null;
 };
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function storageKey(cardId: number) {
-  return `special_card_seen_${cardId}_${todayKey()}`;
+function storageKey(card: Pick<SpecialCard, 'id' | 'template_key' | 'updated_at' | 'audio_url'>) {
+  const fingerprint = String(card.updated_at || card.template_key || card.audio_url || 'base')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .slice(0, 40);
+  return `special_card_seen_${card.id}_${todayKey()}_${fingerprint}`;
 }
 
-export async function markSpecialCardSeen(cardId: number) {
-  await AsyncStorage.setItem(storageKey(cardId), '1');
+export async function markSpecialCardSeen(card: Pick<SpecialCard, 'id' | 'template_key' | 'updated_at' | 'audio_url'>) {
+  await AsyncStorage.setItem(storageKey(card), '1');
 }
 
 export async function shouldShowSpecialCard(card: SpecialCard) {
   if (card.show_once_per_day === false) return true;
-  const seen = await AsyncStorage.getItem(storageKey(card.id));
+  const seen = await AsyncStorage.getItem(storageKey(card));
   return seen !== '1';
 }
 
-export async function fetchActiveSpecialCard() {
+export async function fetchActiveSpecialCards() {
   const rows = await selectPublicRows<SpecialCard>(
-    'special_cards?select=*&is_active=eq.true&order=priority.desc,created_at.desc&limit=1',
+    'special_cards?select=*&is_active=eq.true&order=priority.desc,sequence_order.asc,created_at.desc&limit=20',
   );
 
-  const card = rows[0] ?? null;
-  if (!card) return null;
+  const visibleCards: SpecialCard[] = [];
 
-  const canShow = await shouldShowSpecialCard(card);
-  return canShow ? card : null;
+  for (const card of rows) {
+    const canShow = await shouldShowSpecialCard(card);
+    if (canShow) visibleCards.push(card);
+  }
+
+  return visibleCards;
+}
+
+export async function fetchActiveSpecialCard() {
+  const cards = await fetchActiveSpecialCards();
+  return cards[0] ?? null;
 }

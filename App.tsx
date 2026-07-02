@@ -19,7 +19,7 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
 import { registerPushToken } from './src/services/pushNotifications';
-import { fetchActiveSpecialCard, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
+import { fetchActiveSpecialCards, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
 import { colors, spacing, typography } from './src/theme';
 import type { PublicScreen } from './src/types';
@@ -153,7 +153,8 @@ export default function App() {
   const [selectedBranchKey, setSelectedBranchKey] = useState<string | null>(null);
   const [focusedTreeChildId, setFocusedTreeChildId] = useState<number | null>(null);
   const [memberGreeting, setMemberGreeting] = useState<string | null>(null);
-  const [specialCard, setSpecialCard] = useState<SpecialCard | null>(null);
+  const [specialCards, setSpecialCards] = useState<SpecialCard[]>([]);
+  const [specialCardIndex, setSpecialCardIndex] = useState(0);
   const [specialCardVisible, setSpecialCardVisible] = useState(false);
 
   useEffect(() => {
@@ -224,10 +225,11 @@ export default function App() {
   useEffect(() => {
     let alive = true;
 
-    fetchActiveSpecialCard()
-      .then((card) => {
-        if (!alive || !card) return;
-        setSpecialCard(card);
+    fetchActiveSpecialCards()
+      .then((cards) => {
+        if (!alive || !cards.length) return;
+        setSpecialCards(cards);
+        setSpecialCardIndex(0);
         setSpecialCardVisible(true);
       })
       .catch((error) => {
@@ -239,14 +241,23 @@ export default function App() {
     };
   }, []);
 
+  const currentSpecialCard = specialCards[specialCardIndex] ?? null;
+  const remainingSpecialCards = Math.max(specialCards.length - specialCardIndex - 1, 0);
+
   const closeSpecialCard = () => {
-    const cardId = specialCard?.id;
+    const card = currentSpecialCard;
     setSpecialCardVisible(false);
-    if (cardId) {
-      markSpecialCardSeen(cardId).catch((error) => {
+    if (card && card.id) {
+      markSpecialCardSeen(card).catch((error) => {
         console.warn('تعذر حفظ حالة البطاقة الخاصة:', error);
       });
     }
+  };
+
+  const showNextSpecialCard = () => {
+    if (!remainingSpecialCards) return;
+    setSpecialCardIndex((index) => index + 1);
+    setSpecialCardVisible(true);
   };
 
   const activeBranchKey = useMemo(
@@ -346,10 +357,18 @@ export default function App() {
           <View style={styles.content}>{renderScreen()}</View>
 
           <SpecialCardModal
-            card={specialCard}
+            card={currentSpecialCard}
             visible={specialCardVisible}
             onClose={closeSpecialCard}
           />
+
+          {!specialCardVisible && remainingSpecialCards > 0 && (
+            <Pressable style={styles.nextSpecialCardButton} onPress={showNextSpecialCard}>
+              <Text style={styles.nextSpecialCardText}>
+                🎉 تبقى {remainingSpecialCards} بطاقات تهنئة - عرض التالية
+              </Text>
+            </Pressable>
+          )}
 
           <View style={styles.tabBar}>
             {tabs.map((tab) => {
@@ -464,6 +483,26 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 10,
     fontWeight: '600',
+    writingDirection: 'rtl',
+  },
+  nextSpecialCardButton: {
+    alignSelf: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    bottom: 74,
+    elevation: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    position: 'absolute',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+  },
+  nextSpecialCardText: {
+    color: colors.surface,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
     writingDirection: 'rtl',
   },
   activeTabText: {
