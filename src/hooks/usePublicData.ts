@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { loadPublicData } from '../services/publicData';
-import type { Branch, FamilyEvent, TreeChild, TreeParent } from '../types';
+import type { Branch, FamilyEvent, PublicAffinityStats, TreeChild, TreeParent } from '../types';
 
 type PublicDataState = {
   branches: Branch[];
   children: TreeChild[];
   error: string | null;
   events: FamilyEvent[];
+  affinityStats: PublicAffinityStats;
   loading: boolean;
   parents: TreeParent[];
 };
@@ -17,6 +18,16 @@ const initialState: PublicDataState = {
   children: [],
   error: null,
   events: [],
+  affinityStats: {
+    total: 0,
+    insideCount: 0,
+    outsideCount: 0,
+    unknownCount: 0,
+    insidePct: 0,
+    outsidePct: 0,
+    unknownPct: 0,
+    topInsideBranches: [],
+  },
   loading: true,
   parents: [],
 };

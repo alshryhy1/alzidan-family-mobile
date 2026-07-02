@@ -325,6 +325,7 @@ export default function App() {
             latestEvent={activeEvents[0] ?? null}
             latestEvents={activeEvents}
             upcomingEvents={publicData.events}
+            affinityStats={publicData.affinityStats}
             bannerMessages={bannerMessages.map((item) => item.message)}
             tickerSpeedSeconds={tickerSpeedSeconds}
             memberGreeting={memberGreeting}

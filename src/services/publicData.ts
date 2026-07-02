@@ -1,4 +1,4 @@
-import type { Branch, FamilyEvent, TreeChild, TreeParent } from '../types';
+import type { Branch, FamilyEvent, PublicAffinityStats, TreeChild, TreeParent } from '../types';
 import { selectPublicRows } from './supabase';
 
 type BranchRow = {
@@ -47,6 +47,12 @@ type EventRow = {
   visit_time_from: string | null;
   visit_time_to: string | null;
   created_at: string;
+};
+
+type SpouseSummaryRow = {
+  wife_is_family_member: boolean | null;
+  wife_branch_key: string | null;
+  status: string | null;
 };
 
 const eventTitles: Record<string, string> = {
@@ -123,6 +129,42 @@ function rootParentCount(rows: ChildRow[]) {
   return new Set(rows.map((row) => row.parent_name).filter((name) => !childNames.has(name))).size;
 }
 
+function pct(part: number, total: number) {
+  if (!total) return 0;
+  return Math.round((part * 1000) / total) / 10;
+}
+
+function buildAffinityStats(rows: SpouseSummaryRow[]): PublicAffinityStats {
+  const active = rows.filter((row) => String(row.status || 'active') === 'active');
+  const total = active.length;
+  const insideCount = active.filter((row) => row.wife_is_family_member === true).length;
+  const outsideCount = active.filter((row) => row.wife_is_family_member === false).length;
+  const unknownCount = Math.max(0, total - insideCount - outsideCount);
+
+  const branchMap = new Map<string, number>();
+  active.forEach((row) => {
+    if (row.wife_is_family_member !== true) return;
+    const name = String(row.wife_branch_key || '').trim() || 'غير محدد';
+    branchMap.set(name, (branchMap.get(name) || 0) + 1);
+  });
+
+  const topInsideBranches = Array.from(branchMap.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ar'))
+    .slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+
+  return {
+    total,
+    insideCount,
+    outsideCount,
+    unknownCount,
+    insidePct: pct(insideCount, total),
+    outsidePct: pct(outsideCount, total),
+    unknownPct: pct(unknownCount, total),
+    topInsideBranches,
+  };
+}
+
 function mapEvent(row: EventRow): FamilyEvent {
   const category = eventCategory(row.type);
   return {
@@ -169,12 +211,15 @@ async function loadTreeChildren() {
 }
 
 export async function loadPublicData() {
-  const [branchRows, parentRows, childRows, eventRows] = await Promise.all([
+  const [branchRows, parentRows, childRows, eventRows, spouseSummaryRows] = await Promise.all([
     selectPublicRows<BranchRow>('tree_branches?select=key,title&order=key.asc'),
     selectPublicRows<ParentRow>('tree_parents?select=id,branch_key,name&order=id.asc'),
     loadTreeChildren(),
     selectPublicRows<EventRow>(
       'family_events?select=id,branch_key,type,person,date_label,event_date,details,hospital_name,hospital_dept,contact_method,contact_phone,visit_date_from,visit_date_to,visit_time_from,visit_time_to,created_at&order=created_at.desc&limit=100',
+    ),
+    selectPublicRows<SpouseSummaryRow>(
+      'tree_spouse_summary?select=wife_is_family_member,wife_branch_key,status&limit=5000',
     ),
   ]);
 
@@ -218,5 +263,6 @@ export async function loadPublicData() {
     parents,
     children,
     events: eventRows.map(mapEvent),
+    affinityStats: buildAffinityStats(spouseSummaryRows),
   };
 }

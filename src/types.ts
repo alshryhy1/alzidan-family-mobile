@@ -72,3 +72,14 @@ export type FamilyEvent = {
   createdAt?: string;
   showDays?: number | null;
 };
+
+export type PublicAffinityStats = {
+  total: number;
+  insideCount: number;
+  outsideCount: number;
+  unknownCount: number;
+  insidePct: number;
+  outsidePct: number;
+  unknownPct: number;
+  topInsideBranches: Array<{ name: string; count: number }>;
+};

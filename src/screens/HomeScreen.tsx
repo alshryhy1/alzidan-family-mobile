@@ -7,7 +7,7 @@ import { DataState } from '../components/DataState';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { colors, spacing, typography } from '../theme';
-import type { FamilyEvent } from '../types';
+import type { FamilyEvent, PublicAffinityStats } from '../types';
 
 
 const countdownTypes = new Set([
@@ -117,6 +117,7 @@ function normalizeTickerText(value: string) {
 type HomeScreenProps = {
   memberGreeting?: string | null;
   branchesCount: number;
+  affinityStats: PublicAffinityStats;
   error: string | null;
   latestEvent: FamilyEvent | null;
   latestEvents?: FamilyEvent[];
@@ -134,6 +135,7 @@ type HomeScreenProps = {
 export function HomeScreen({
   memberGreeting,
   branchesCount,
+  affinityStats,
   error,
   latestEvent,
   latestEvents = latestEvent ? [latestEvent] : [],
@@ -161,6 +163,7 @@ export function HomeScreen({
   const nearestUpcomingEvent = sortedUpcomingEvents[0] ?? null;
   const upcomingIds = new Set(sortedUpcomingEvents.map((event) => event.id));
   const visibleNewsEvents = latestEvents.filter((event) => !upcomingIds.has(event.id));
+  const topInsideBranches = affinityStats.topInsideBranches.slice(0, 5);
 
   useEffect(() => {
     if (!tickerStep) return;
@@ -275,6 +278,47 @@ export function HomeScreen({
           ))}
           <View style={styles.actions}>
             <ActionButton label="عرض كل المناسبات" onPress={onOpenEvents} variant="secondary" />
+          </View>
+        </SectionCard>
+      ) : null}
+
+      {!loading && !error ? (
+        <SectionCard eyebrow="تحديث مباشر" title="نسب المصاهرة العامة">
+          <View style={styles.affinityGrid}>
+            <View style={styles.affinityCard}>
+              <Text style={styles.affinityLabel}>إجمالي المصاهرات</Text>
+              <Text style={styles.affinityValue}>{affinityStats.total}</Text>
+              <Text style={styles.affinitySub}>سجلات فعالة</Text>
+            </View>
+            <View style={styles.affinityCard}>
+              <Text style={styles.affinityLabel}>داخل العائلة</Text>
+              <Text style={styles.affinityValue}>{affinityStats.insidePct}%</Text>
+              <Text style={styles.affinitySub}>{affinityStats.insideCount} سجل</Text>
+            </View>
+            <View style={styles.affinityCard}>
+              <Text style={styles.affinityLabel}>خارج العائلة</Text>
+              <Text style={styles.affinityValue}>{affinityStats.outsidePct}%</Text>
+              <Text style={styles.affinitySub}>{affinityStats.outsideCount} سجل</Text>
+            </View>
+            <View style={styles.affinityCard}>
+              <Text style={styles.affinityLabel}>غير محدد</Text>
+              <Text style={styles.affinityValue}>{affinityStats.unknownPct}%</Text>
+              <Text style={styles.affinitySub}>{affinityStats.unknownCount} سجل</Text>
+            </View>
+          </View>
+
+          <View style={styles.affinityList}>
+            <Text style={styles.affinityListTitle}>أعلى فروع المصاهرة الداخلية</Text>
+            {topInsideBranches.length ? (
+              topInsideBranches.map((item) => (
+                <View key={item.name} style={styles.affinityRow}>
+                  <Text style={styles.affinityRowValue}>{item.count}</Text>
+                  <Text style={styles.affinityRowName}>{item.name}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.affinityEmpty}>لا توجد بيانات كافية حالياً.</Text>
+            )}
           </View>
         </SectionCard>
       ) : null}
@@ -512,6 +556,78 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   upcomingPerson: {
+    color: colors.textMuted,
+    fontSize: typography.caption,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  affinityGrid: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  affinityCard: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexBasis: '48%',
+    gap: 4,
+    minWidth: 130,
+    padding: spacing.sm,
+  },
+  affinityLabel: {
+    color: colors.textMuted,
+    fontSize: typography.caption,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  affinityValue: {
+    color: colors.primaryDark,
+    fontSize: typography.title,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  affinitySub: {
+    color: colors.textMuted,
+    fontSize: 11,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  affinityList: {
+    marginTop: spacing.sm,
+  },
+  affinityListTitle: {
+    color: colors.primaryDark,
+    fontSize: typography.body,
+    fontWeight: '900',
+    marginBottom: spacing.xs,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  affinityRow: {
+    alignItems: 'center',
+    borderBottomColor: 'rgba(15,23,42,0.08)',
+    borderBottomWidth: 1,
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  affinityRowName: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  affinityRowValue: {
+    color: colors.primary,
+    fontSize: typography.title,
+    fontWeight: '900',
+    textAlign: 'left',
+  },
+  affinityEmpty: {
     color: colors.textMuted,
     fontSize: typography.caption,
     textAlign: 'right',
