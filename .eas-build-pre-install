@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -e
-
-echo "Ensuring CocoaPods is available in PATH..."
-gem install cocoapods -n /Users/expo/workingdir/bin --no-document
-which pod
-pod --version

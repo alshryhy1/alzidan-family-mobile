@@ -30,7 +30,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "eas-build-pre-install": "echo 'Ensuring CocoaPods is available' && gem install cocoapods -n /Users/expo/workingdir/bin --no-document && which pod && pod --version"
   },
   "private": true
 }
