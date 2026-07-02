@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+
+echo "Checking CocoaPods..."
+if ! command -v pod >/dev/null 2>&1; then
+  echo "CocoaPods not found. Installing..."
+  gem install cocoapods --no-document
+else
+  pod --version
+fi
