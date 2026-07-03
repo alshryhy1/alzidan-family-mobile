@@ -30,8 +30,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web",
-    "postinstall": "node -e \"if (process.env.EAS_BUILD === 'true' && process.platform === 'darwin') { const cp = require('child_process'); cp.execSync('echo EAS postinstall: checking pod && command -v pod || gem install cocoapods -n /Users/expo/workingdir/bin --no-document && command -v pod && pod --version', {stdio:'inherit', shell:'/bin/bash'}); }\""
+    "web": "expo start --web"
   },
   "private": true
 }
