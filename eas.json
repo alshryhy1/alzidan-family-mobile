@@ -15,6 +15,9 @@
       "autoIncrement": true,
       "env": {
         "EXPO_USE_PRECOMPILED_MODULES": "0"
+      },
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-16.4"
       }
     }
   },
