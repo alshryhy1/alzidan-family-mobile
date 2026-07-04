@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -18,7 +19,10 @@ import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
-import { registerPushToken } from './src/services/pushNotifications';
+import {
+  formatFormalNotificationFromPayload,
+  registerPushToken,
+} from './src/services/pushNotifications';
 import { fetchActiveSpecialCards, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
 import { colors, spacing, typography } from './src/theme';
@@ -161,6 +165,43 @@ export default function App() {
     registerPushToken().catch((error) => {
       console.warn('تعذر تسجيل إشعارات التطبيق:', error);
     });
+  }, []);
+
+  useEffect(() => {
+    const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+      const formatted = formatFormalNotificationFromPayload({
+        title: notification.request.content.title,
+        body: notification.request.content.body,
+        data: notification.request.content.data as Record<string, unknown>,
+      });
+
+      console.log('PUSH_RECEIVED_FORMAL', {
+        title: formatted.title,
+        body: formatted.body,
+        typeLabel: formatted.typeLabel,
+      });
+    });
+
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const formatted = formatFormalNotificationFromPayload({
+        title: response.notification.request.content.title,
+        body: response.notification.request.content.body,
+        data: response.notification.request.content.data as Record<string, unknown>,
+      });
+
+      console.log('PUSH_RESPONSE_FORMAL', {
+        title: formatted.title,
+        body: formatted.body,
+        typeLabel: formatted.typeLabel,
+      });
+
+      setScreen('events');
+    });
+
+    return () => {
+      receivedSub.remove();
+      responseSub.remove();
+    };
   }, []);
 
   useEffect(() => {
