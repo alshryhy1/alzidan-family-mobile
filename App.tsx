@@ -26,7 +26,7 @@ import {
 import { fetchActiveSpecialCard, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
 import { colors, spacing, typography } from './src/theme';
-import type { PublicScreen } from './src/types';
+import type { MemberRequest, PublicScreen } from './src/types';
 
 I18nManager.allowRTL(true);
 
@@ -161,6 +161,8 @@ export default function App() {
   const [selectedBranchKey, setSelectedBranchKey] = useState<string | null>(null);
   const [focusedTreeChildId, setFocusedTreeChildId] = useState<number | null>(null);
   const [memberGreeting, setMemberGreeting] = useState<string | null>(null);
+  const [memberPhoneForRequests, setMemberPhoneForRequests] = useState('');
+  const [memberRequests, setMemberRequests] = useState<MemberRequest[]>([]);
   const [specialCards, setSpecialCards] = useState<SpecialCard[]>([]);
   const [specialCardIndex, setSpecialCardIndex] = useState(0);
   const [specialCardVisible, setSpecialCardVisible] = useState(false);
@@ -216,6 +218,10 @@ export default function App() {
         const phone = cleanStoredPhone(stored || '');
         if (!phone) {
           if (alive) setMemberGreeting(null);
+          if (alive) {
+            setMemberPhoneForRequests('');
+            setMemberRequests([]);
+          }
           return;
         }
 
@@ -225,21 +231,125 @@ export default function App() {
         const profile = rows[0];
         if (!profile) {
           if (alive) setMemberGreeting(null);
+          if (alive) {
+            setMemberPhoneForRequests('');
+            setMemberRequests([]);
+          }
           return;
         }
 
         const child = publicData.children.find((row) => row.id === profile.tree_child_id);
         const name = child?.name ? tripleNameFromPath(child.name) : profile.display_name || null;
-        if (alive) setMemberGreeting(name);
+        if (alive) {
+          setMemberGreeting(name);
+          setMemberPhoneForRequests(phone);
+        }
       })
       .catch(() => {
-        if (alive) setMemberGreeting(null);
+        if (alive) {
+          setMemberGreeting(null);
+          setMemberPhoneForRequests('');
+          setMemberRequests([]);
+        }
       });
 
     return () => {
       alive = false;
     };
   }, [publicData.children]);
+
+  useEffect(() => {
+    let alive = true;
+
+    if (!memberPhoneForRequests) {
+      setMemberRequests([]);
+      return () => {
+        alive = false;
+      };
+    }
+
+    type ApprovalRequestRow = {
+      id?: string | number | null;
+      request_id?: string | null;
+      kind?: string | null;
+      status?: string | null;
+      branch_key?: string | null;
+      created_at?: string | null;
+      reviewed_at?: string | null;
+      approved_at?: string | null;
+      rejected_at?: string | null;
+      decided_at?: string | null;
+      processed_at?: string | null;
+      updated_at?: string | null;
+      reject_reason?: string | null;
+      rejection_reason?: string | null;
+      decision_reason?: string | null;
+      admin_note?: string | null;
+      review_note?: string | null;
+      notes?: string | null;
+    };
+
+    const pickString = (...values: Array<unknown>) => {
+      for (const value of values) {
+        const text = String(value || '').trim();
+        if (text) return text;
+      }
+      return '';
+    };
+
+    selectPublicRows<ApprovalRequestRow>(
+      `approval_requests?select=*&phone=eq.${encodeURIComponent(memberPhoneForRequests)}&order=created_at.desc&limit=20`,
+    )
+      .then((rows) => {
+        if (!alive) return;
+
+        const normalized = rows
+          .filter((row) => {
+            const kind = String(row.kind || '');
+            return kind === 'event_card' || kind === 'tree_card';
+          })
+          .map<MemberRequest>((row) => {
+            const id = pickString(row.id, row.request_id) || Math.random().toString(36).slice(2);
+            const status = String(row.status || 'pending').trim() || 'pending';
+            const decisionDate = pickString(
+              row.reviewed_at,
+              row.approved_at,
+              row.rejected_at,
+              row.decided_at,
+              row.processed_at,
+              row.updated_at,
+            );
+            const rejectionReason = pickString(
+              row.reject_reason,
+              row.rejection_reason,
+              row.decision_reason,
+              row.admin_note,
+              row.review_note,
+              row.notes,
+            );
+
+            return {
+              id,
+              requestId: pickString(row.request_id, row.id),
+              kind: String(row.kind || ''),
+              status,
+              branchKey: pickString(row.branch_key) || undefined,
+              createdAt: pickString(row.created_at) || undefined,
+              decisionDate: decisionDate || undefined,
+              rejectionReason: rejectionReason || undefined,
+            };
+          });
+
+        setMemberRequests(normalized);
+      })
+      .catch(() => {
+        if (alive) setMemberRequests([]);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [memberPhoneForRequests]);
 
   useEffect(() => {
     let mounted = true;
@@ -374,10 +484,12 @@ export default function App() {
             bannerMessages={bannerMessages.map((item) => item.message)}
             tickerSpeedSeconds={tickerSpeedSeconds}
             memberGreeting={memberGreeting}
+            memberRequests={memberRequests}
             loading={publicData.loading}
             membersCount={publicData.children.length}
             onOpenBranches={() => setScreen('branches')}
             onOpenEvents={() => setScreen('events')}
+            onOpenProfile={() => setScreen('profile')}
             onOpenTree={() => openTree()}
             onRetry={publicData.reload}
           />

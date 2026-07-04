@@ -83,3 +83,14 @@ export type PublicAffinityStats = {
   unknownPct: number;
   topInsideBranches: Array<{ name: string; count: number }>;
 };
+
+export type MemberRequest = {
+  id: string;
+  requestId: string;
+  kind: string;
+  status: 'pending' | 'approved' | 'rejected' | string;
+  branchKey?: string;
+  createdAt?: string;
+  decisionDate?: string;
+  rejectionReason?: string;
+};

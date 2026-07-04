@@ -113,6 +113,18 @@ function compactLineageName(value: string) {
   return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : cleanNameSuffix(value);
 }
 
+function unifiedLineageFromPerson(person: Pick<TreePerson, 'name' | 'fullName'> | null) {
+  if (!person) return '';
+  const source = person.fullName || person.name;
+  const parts = source
+    .split('/')
+    .map((part) => cleanNameSuffix(part.trim()))
+    .filter(Boolean);
+
+  const deduped = parts.filter((part, index, arr) => (index === 0 ? true : part !== arr[index - 1]));
+  return deduped.join(' بن ');
+}
+
 function personDisplayName(person: Pick<TreePerson, 'name' | 'fullName' | 'isDeceased'>) {
   const base = compactLineageName(person.fullName || person.name);
   return person.isDeceased === true ? `${base} رحمه الله` : base;
@@ -337,11 +349,7 @@ export function TreeScreen({
     setSearchQuery('');
   };
 
-  const lineage = trail.map((person) => person.name);
-  const lineageDisplay = trail
-    .map(personDisplayName)
-    .filter((item, index, arr) => (index === 0 ? true : item !== arr[index - 1]))
-    .join(' ‹ ');
+  const lineageDisplay = unifiedLineageFromPerson(currentPerson);
   const parentPerson = trail.length > 1 ? trail[trail.length - 2] : null;
   const detailRows = currentPerson
     ? [

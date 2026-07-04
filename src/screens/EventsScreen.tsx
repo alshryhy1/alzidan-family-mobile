@@ -1,14 +1,16 @@
 import { useState } from 'react';
+import { useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
 import { DataState } from '../components/DataState';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
-import { insertPublicRow, uploadPublicFileUri } from '../services/supabase';
+import { insertPublicRow, selectPublicRows, uploadPublicFileUri } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, FamilyEvent } from '../types';
 
@@ -20,6 +22,16 @@ type EventsScreenProps = {
   events: FamilyEvent[];
   loading: boolean;
   onRetry: () => void;
+};
+
+const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
+
+type MemberProfileRow = {
+  phone: string | null;
+  branch_key: string;
+  tree_child_id: number;
+  display_name: string | null;
+  status: string | null;
 };
 
 const filters: Array<{ key: Filter; label: string }> = [
@@ -92,6 +104,17 @@ function normalizeArabicDigits(value: string) {
 
 function cleanPhone(value: string) {
   return normalizeArabicDigits(value).replace(/[^\d+]/g, '');
+}
+
+function compactNameFromPath(value: string) {
+  const parts = String(value || '')
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(-3)
+    .reverse();
+  const uniqueOrdered = parts.filter((part, index) => (index === 0 ? true : part !== parts[index - 1]));
+  return uniqueOrdered.join(' بن ');
 }
 
 function buildEventRequestMessage(payload: {
@@ -219,6 +242,44 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const condolenceCount = events.filter((event) => event.category === 'condolence').length;
   const selectedType = eventTypes.find((item) => item.key === addType) ?? eventTypes[0];
 
+  useEffect(() => {
+    let alive = true;
+
+    AsyncStorage.getItem(MEMBER_PHONE_KEY)
+      .then(async (stored) => {
+        const cleaned = cleanPhone(stored || '');
+        if (!cleaned) return;
+
+        if (alive) {
+          setSubmitterPhone((current) => (current.trim() ? current : cleaned));
+        }
+
+        const rows = await selectPublicRows<MemberProfileRow>(
+          `member_profiles?select=phone,branch_key,tree_child_id,display_name,status&phone=eq.${encodeURIComponent(cleaned)}&status=eq.active&limit=1`,
+        );
+        const found = rows[0];
+        if (!found) return;
+
+        let resolvedName = String(found.display_name || '').trim();
+        if (!resolvedName && found.tree_child_id) {
+          const childRows = await selectPublicRows<{ name: string | null }>(
+            `tree_children?select=name&id=eq.${found.tree_child_id}&limit=1`,
+          );
+          const pathName = String(childRows[0]?.name || '').trim();
+          if (pathName) resolvedName = compactNameFromPath(pathName);
+        }
+
+        if (alive && resolvedName) {
+          setSubmitterName((current) => (current.trim() ? current : resolvedName));
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const pickMedia = async (kind: 'image' | 'video') => {
     if (pickingMedia) return;
     setPickingMedia(kind);
@@ -329,7 +390,8 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
       setPickedImage(null);
       setPickedVideo(null);
       setAddText('');
-      setSubmitStatus({ kind: 'success', text: 'تم إرسال المناسبة للمراجعة.' });
+      setSubmitStatus({ kind: 'success', text: 'تم إرسال المناسبة وبانتظار موافقة الإدارة أو المندوب.' });
+      Alert.alert('تم الإرسال', 'تم إرسال المناسبة بنجاح وهي الآن بانتظار موافقة الإدارة أو المندوب.');
     } catch (error) {
       setSubmitStatus({
         kind: 'error',

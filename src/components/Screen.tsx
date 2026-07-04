@@ -1,4 +1,5 @@
 import type { PropsWithChildren } from 'react';
+import type { RefObject } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { colors, spacing, typography } from '../theme';
@@ -8,6 +9,7 @@ type ScreenProps = PropsWithChildren<{
   description?: string;
   onRefresh?: () => void;
   refreshing?: boolean;
+  scrollRef?: RefObject<ScrollView | null>;
 }>;
 
 export function Screen({
@@ -16,10 +18,15 @@ export function Screen({
   description,
   onRefresh,
   refreshing = false,
+  scrollRef,
 }: ScreenProps) {
   return (
     <ScrollView
+      ref={scrollRef}
+      automaticallyAdjustKeyboardInsets
       contentContainerStyle={styles.content}
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
       refreshControl={
         onRefresh ? (
           <RefreshControl
