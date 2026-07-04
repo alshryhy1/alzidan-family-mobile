@@ -104,7 +104,13 @@ function compactLineageName(value: string) {
     .filter(Boolean)
     .slice(-3)
     .reverse();
-  return parts.length ? parts.join(' بن ') : cleanNameSuffix(value);
+
+  const uniqueOrdered = parts.filter((part, index) => {
+    if (index === 0) return true;
+    return part !== parts[index - 1];
+  });
+
+  return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : cleanNameSuffix(value);
 }
 
 function personDisplayName(person: Pick<TreePerson, 'name' | 'fullName' | 'isDeceased'>) {
@@ -332,6 +338,10 @@ export function TreeScreen({
   };
 
   const lineage = trail.map((person) => person.name);
+  const lineageDisplay = trail
+    .map(personDisplayName)
+    .filter((item, index, arr) => (index === 0 ? true : item !== arr[index - 1]))
+    .join(' ‹ ');
   const parentPerson = trail.length > 1 ? trail[trail.length - 2] : null;
   const detailRows = currentPerson
     ? [
@@ -455,7 +465,7 @@ export function TreeScreen({
             <View style={styles.detailsCard}>
               <Text style={styles.detailsEyebrow}>تفاصيل الشخص</Text>
               <Text style={styles.lineageLabel}>مسار النسب</Text>
-              <Text style={styles.lineageText}>{trail.map(personDisplayName).join(' ‹ ')}</Text>
+              <Text style={styles.lineageText}>{lineageDisplay}</Text>
 
               <View style={styles.detailRows}>
                 {detailRows.map((row) => (

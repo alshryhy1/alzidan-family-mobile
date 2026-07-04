@@ -23,7 +23,7 @@ import {
   formatFormalNotificationFromPayload,
   registerPushToken,
 } from './src/services/pushNotifications';
-import { fetchActiveSpecialCards, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
+import { fetchActiveSpecialCard, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
 import { colors, spacing, typography } from './src/theme';
 import type { PublicScreen } from './src/types';
@@ -43,7 +43,11 @@ function tripleNameFromPath(value: string) {
     .filter(Boolean)
     .slice(-3)
     .reverse();
-  return parts.length ? parts.join(' بن ') : '';
+  const uniqueOrdered = parts.filter((part, index) => {
+    if (index === 0) return true;
+    return part !== parts[index - 1];
+  });
+  return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : '';
 }
 
 type MemberProfileRow = {
@@ -266,14 +270,14 @@ export default function App() {
   useEffect(() => {
     let alive = true;
 
-    fetchActiveSpecialCards()
-      .then((cards) => {
-        if (!alive || !cards.length) return;
-        setSpecialCards(cards);
+    fetchActiveSpecialCard()
+      .then((card: SpecialCard | null) => {
+        if (!alive || !card) return;
+        setSpecialCards([card]);
         setSpecialCardIndex(0);
         setSpecialCardVisible(true);
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         console.warn('تعذر تحميل البطاقة الخاصة:', error);
       });
 
@@ -289,7 +293,7 @@ export default function App() {
     const card = currentSpecialCard;
     setSpecialCardVisible(false);
     if (card && card.id) {
-      markSpecialCardSeen(card).catch((error) => {
+      markSpecialCardSeen(card.id).catch((error) => {
         console.warn('تعذر حفظ حالة البطاقة الخاصة:', error);
       });
     }

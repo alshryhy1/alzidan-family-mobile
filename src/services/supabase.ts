@@ -84,6 +84,29 @@ function publicStorageUrl(bucket: string, path: string) {
     .join('/')}`;
 }
 
+function storageObjectUrl(bucket: string, path: string) {
+  if (!supabaseUrl) return '';
+  const encodedBucket = encodeURIComponent(bucket);
+  const encodedPath = path
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/');
+  return `${supabaseUrl}/storage/v1/object/${encodedBucket}/${encodedPath}`;
+}
+
+async function ensureReadableUploadUri(fileUri: string) {
+  const uri = String(fileUri || '').trim();
+  if (!uri) throw new Error('ملف الرفع غير متوفر.');
+  if (uri.startsWith('file://')) return { uri, tempUri: '' };
+
+  const base = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+  if (!base) throw new Error('تعذر تجهيز ملف الرفع مؤقتًا.');
+
+  const tempUri = `${base}upload_${Date.now()}_${Math.random().toString(36).slice(2)}.bin`;
+  await FileSystem.copyAsync({ from: uri, to: tempUri });
+  return { uri: tempUri, tempUri };
+}
+
 export async function uploadPublicFile(
   bucket: string,
   path: string,
@@ -94,7 +117,9 @@ export async function uploadPublicFile(
     throw new Error('إعداد اتصال Supabase غير مكتمل.');
   }
 
-  const response = await fetch(`${supabaseUrl}/storage/v1/object/${bucket}/${path}`, {
+  const objectUrl = storageObjectUrl(bucket, path);
+
+  const response = await fetch(objectUrl, {
     method: 'POST',
     headers: {
       apikey: supabaseAnonKey,
@@ -123,10 +148,13 @@ export async function uploadPublicFileUri(
     throw new Error('إعداد اتصال Supabase غير مكتمل.');
   }
 
-  const result = await FileSystem.uploadAsync(
-    `${supabaseUrl}/storage/v1/object/${bucket}/${path}`,
-    fileUri,
-    {
+  const objectUrl = storageObjectUrl(bucket, path);
+  const { uri, tempUri } = await ensureReadableUploadUri(fileUri);
+
+  let firstError = '';
+
+  try {
+    const result = await FileSystem.uploadAsync(objectUrl, uri, {
       headers: {
         apikey: supabaseAnonKey,
         Authorization: `Bearer ${supabaseAnonKey}`,
@@ -135,12 +163,52 @@ export async function uploadPublicFileUri(
       },
       httpMethod: 'POST',
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    },
-  );
+    });
 
-  if (result.status < 200 || result.status >= 300) {
-    throw new Error(result.body || `تعذر رفع الملف (${result.status}).`);
+    if (result.status >= 200 && result.status < 300) {
+      if (tempUri) {
+        FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => undefined);
+      }
+      return publicStorageUrl(bucket, path);
+    }
+
+    firstError = result.body || `تعذر رفع الملف (${result.status}).`;
+  } catch (error) {
+    firstError = error instanceof Error ? error.message : String(error);
   }
 
-  return publicStorageUrl(bucket, path);
+  try {
+    const fileResponse = await fetch(uri);
+    if (!fileResponse.ok) {
+      throw new Error(`تعذر قراءة الملف المحلي (${fileResponse.status}).`);
+    }
+
+    const fileBlob = await fileResponse.blob();
+    const fallbackResponse = await fetch(objectUrl, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        'Content-Type': contentType,
+        'x-upsert': 'false',
+      },
+      body: fileBlob,
+    });
+
+    if (!fallbackResponse.ok) {
+      const fallbackMessage = await fallbackResponse.text();
+      throw new Error(fallbackMessage || `تعذر رفع الملف (${fallbackResponse.status}).`);
+    }
+
+    if (tempUri) {
+      FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => undefined);
+    }
+    return publicStorageUrl(bucket, path);
+  } catch (fallbackError) {
+    if (tempUri) {
+      FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => undefined);
+    }
+    const second = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+    throw new Error(`فشل رفع الملف. المحاولة الأولى: ${firstError || 'غير معروف'}. المحاولة الثانية: ${second}`);
+  }
 }

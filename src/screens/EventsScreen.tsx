@@ -55,7 +55,10 @@ function requestId() {
 function extensionFromAsset(asset: ImagePicker.ImagePickerAsset, fallback: string) {
   const name = asset.fileName || asset.uri.split('/').pop() || '';
   const ext = name.includes('.') ? name.split('.').pop() : '';
-  return ext ? ext.toLowerCase() : fallback;
+  const normalized = String(ext || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return normalized || fallback;
 }
 
 async function uploadPickedAsset(asset: ImagePicker.ImagePickerAsset, requestIdValue: string, kind: 'image' | 'video') {
@@ -71,9 +74,6 @@ async function uploadPickedAsset(asset: ImagePicker.ImagePickerAsset, requestIdV
     uploadUri = converted.uri;
     contentType = 'image/jpeg';
     ext = 'jpg';
-  } else {
-    contentType = 'video/mp4';
-    ext = 'mp4';
   }
 
   const path = `${requestIdValue}/${kind}-${Date.now()}.${ext}`;

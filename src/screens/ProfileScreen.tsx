@@ -57,7 +57,12 @@ function tripleNameFromPath(value: string) {
     .slice(-3)
     .reverse();
 
-  return parts.length ? parts.join(' بن ') : displayPersonName(value);
+  const uniqueOrdered = parts.filter((part, index) => {
+    if (index === 0) return true;
+    return part !== parts[index - 1];
+  });
+
+  return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : displayPersonName(value);
 }
 
 export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: ProfileScreenProps) {
@@ -150,7 +155,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
       description="دخول العضو برقم الجوال لعرض اسمه وفتح بطاقته في الشجرة فقط."
     >
       {member ? (
-        <SectionCard eyebrow="عضو مسجل" title={`مرحباً: ${memberName}`}>
+        <SectionCard eyebrow="عضو مسجل" title="مرحباً بك">
           <View style={styles.profileHeader}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{memberName.slice(0, 1)}</Text>
