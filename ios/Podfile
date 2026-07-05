@@ -63,5 +63,14 @@ target 'aaelhalzydan' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # Xcode 14+ signs resource bundles by default; disable to avoid CI signing errors.
+    installer.target_installation_results.pod_target_installation_results.each_value do |target_installation_result|
+      target_installation_result.resource_bundle_targets.each do |resource_bundle_target|
+        resource_bundle_target.build_configurations.each do |build_configuration|
+          build_configuration.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+        end
+      end
+    end
   end
 end
