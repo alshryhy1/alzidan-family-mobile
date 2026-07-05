@@ -38,27 +38,12 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-/ios/*
 /android
-
-# Keep required iOS project/widget sources under version control
-!/ios/aaelhalzydan.xcodeproj/
-ios/aaelhalzydan.xcodeproj/*
-!/ios/aaelhalzydan.xcodeproj/project.pbxproj
-!/ios/aaelhalzydan.xcodeproj/xcshareddata/
-ios/aaelhalzydan.xcodeproj/xcshareddata/*
-!/ios/aaelhalzydan.xcodeproj/xcshareddata/xcschemes/
-ios/aaelhalzydan.xcodeproj/xcshareddata/xcschemes/*
-!/ios/aaelhalzydan.xcodeproj/xcshareddata/xcschemes/aaelhalzydan.xcscheme
-!/ios/aaelhalzydan/
-ios/aaelhalzydan/*
-!/ios/aaelhalzydan/aaelhalzydan.entitlements
-!/ios/AlzidanFamilyWidget/
-!/ios/AlzidanFamilyWidget/**
 
 # iOS generated files
 ios/Pods/
 ios/build/
+ios/.xcode.env.local
 
 # iOS generated files
 ios/Pods/
