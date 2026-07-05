@@ -1,9 +1,9 @@
 PODS:
   - EXApplication (56.0.3):
     - ExpoModulesCore
-  - EXConstants (56.0.20):
+  - EXConstants (56.0.18):
     - ExpoModulesCore
-  - Expo (56.0.14):
+  - Expo (56.0.11):
     - ExpoModulesCore
     - ExpoModulesJSI
     - hermes-engine
@@ -29,30 +29,30 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoAsset (56.0.18):
+  - ExpoAsset (56.0.17):
     - ExpoModulesCore
   - ExpoDevice (56.0.4):
     - ExpoModulesCore
-  - ExpoDomWebView (56.0.6):
+  - ExpoDomWebView (56.0.5):
     - ExpoModulesCore
   - ExpoFileSystem (56.0.8):
     - ExpoModulesCore
-  - ExpoFont (56.0.7):
+  - ExpoFont (56.0.6):
     - ExpoModulesCore
-  - ExpoImageManipulator (56.0.20):
+  - ExpoImageManipulator (56.0.19):
     - ExpoModulesCore
-  - ExpoImagePicker (56.0.19):
+  - ExpoImagePicker (56.0.18):
     - ExpoModulesCore
   - ExpoKeepAwake (56.0.3):
     - ExpoModulesCore
   - ExpoLinearGradient (56.0.4):
     - ExpoModulesCore
-  - ExpoLogBox (56.0.14):
+  - ExpoLogBox (56.0.13):
     - React-Core
   - ExpoMediaLibrary (56.0.9):
     - ExpoModulesCore
     - React-Core
-  - ExpoModulesCore (56.0.19):
+  - ExpoModulesCore (56.0.16):
     - ExpoModulesJSI
     - hermes-engine
     - RCTRequired
@@ -76,15 +76,15 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoModulesJSI (56.0.11):
+  - ExpoModulesJSI (56.0.9):
     - React-Core
     - ReactCommon
-  - ExpoModulesWorklets (56.0.19):
+  - ExpoModulesWorklets (56.0.16):
     - ExpoModulesCore
     - ExpoModulesJSI
-  - ExpoNotifications (56.0.19):
+  - ExpoNotifications (56.0.18):
     - ExpoModulesCore
-  - ExpoSharing (56.0.20):
+  - ExpoSharing (56.0.18):
     - ExpoModulesCore
   - ExpoVideo (56.1.4):
     - ExpoModulesCore
@@ -2290,24 +2290,24 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   EXApplication: e6040c92edc5522accd62852342e6b14742d42c0
-  EXConstants: 5120c651b684c629efa1bafcf0d0ddb96b0de62f
-  Expo: cab51b9b40f02292cca8a4d564ba82a061b9b619
-  ExpoAsset: b4d20fb5e56abe866465a1bb0cc22870a6a4e4d3
+  EXConstants: e836b478e4f5c835f3c77921d8162e1918e2c06e
+  Expo: 50a23d901aeb3a7681809bad2f9ada021442aaa4
+  ExpoAsset: 1e436e9aee7015d5c6d203c1ddfe1adbb521a623
   ExpoDevice: f527f8bbefa6efa12f8ef63e9038dd1d5d903697
-  ExpoDomWebView: 4e53b05879dc73ba374f76bff93dd64c8a0d91b3
+  ExpoDomWebView: 27205be8754f9992913b8a9a08e65019f2207075
   ExpoFileSystem: 9dc04ec1e11bc3c7b965d7feb2de12c789755c7b
-  ExpoFont: 274487aa78f8c65d6551e2558eca3ec6ce3432ce
-  ExpoImageManipulator: adcc5d5b08c08d66273e5f96ad1f0449d27d5c72
-  ExpoImagePicker: f4ce1db4d779c6ab47b377de47abae1b4e82802d
+  ExpoFont: 3a9fd9690216be709f109d2bd67d80e1beefdbee
+  ExpoImageManipulator: b3d9d626f99cc827d26a8f7eb7adcf7239223e9c
+  ExpoImagePicker: 080421aeaf3836250e5fb764123f1d7f7905ea04
   ExpoKeepAwake: 359c47a1d9ccc3a3c519bca6e39562cce230c5bb
   ExpoLinearGradient: 16c2b9c6105444883d34958d573725de1293b8d0
-  ExpoLogBox: cdad5c9402a186574fb5924ea91df1f08ba9a98a
+  ExpoLogBox: 63977cf56b04547c713535d2d4e9bbf2f012e3c6
   ExpoMediaLibrary: f8911433a87a315632d28908359460e7790084a9
-  ExpoModulesCore: 8c979882f7219253e853664a7438034981d18aef
-  ExpoModulesJSI: 20d6c8dbe75f9efbe05d7c4a2a10ed03760ea5c1
-  ExpoModulesWorklets: 3f1c52dff52fe268d3a896efec06a6fa942a4f2e
-  ExpoNotifications: d95d9a54ac370743260a4ccbf6038a12cfabbb06
-  ExpoSharing: d5e79c74e4fd502761b0ed558f350826dae68296
+  ExpoModulesCore: 9ebfa38e90ebbd107fa0aba87349a33c8787d60f
+  ExpoModulesJSI: 49e5d86ad1a81cd696f07ca9d583b7848baa75cb
+  ExpoModulesWorklets: 111c11b9ab7fe23ce3e52bba7bbfcf5ef730139f
+  ExpoNotifications: 87875dae0faded5284004bc1204990947d3f64e0
+  ExpoSharing: 89ff19115095e3eb8355d3a2dd6a21875e4b25df
   ExpoVideo: 292b8c6be12bacf0b2e5a697276788280cdccdfb
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: 997ae2dacf21cdcada30e773c684b63d3f610436
