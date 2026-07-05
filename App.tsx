@@ -15,6 +15,7 @@ import { AboutScreen } from './src/screens/AboutScreen';
 import { BranchesScreen } from './src/screens/BranchesScreen';
 import { EventsScreen } from './src/screens/EventsScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { MemoryScreen } from './src/screens/MemoryScreen';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
@@ -133,6 +134,7 @@ const tabs: Array<{ key: PublicScreen; label: string; icon: string }> = [
   { key: 'branches', label: 'الفروع', icon: '⌘' },
   { key: 'tree', label: 'الشجرة', icon: '♧' },
   { key: 'events', label: 'المناسبات', icon: '◇' },
+  { key: 'memory', label: 'من الذاكرة', icon: '◈' },
   { key: 'profile', label: 'ملفي', icon: 'i' },
 ];
 
@@ -470,6 +472,8 @@ export default function App() {
             onOpenMemberCard={(branchKey, treeChildId) => openTree(branchKey, treeChildId)}
           />
         );
+      case 'memory':
+        return <MemoryScreen />;
       case 'about':
         return <AboutScreen />;
       default:
