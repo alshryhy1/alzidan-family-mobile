@@ -1,0 +1,11 @@
+# Keep EAS uploads clean from local/generated artifacts
+.git
+node_modules
+.expo
+
+# Native build artifacts (never upload)
+ios/Pods
+ios/build
+ios/.xcode.env.local
+android/.gradle
+android/build
