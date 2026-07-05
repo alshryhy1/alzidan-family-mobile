@@ -121,7 +121,8 @@ function unifiedLineageFromPerson(person: Pick<TreePerson, 'name' | 'fullName'> 
     .map((part) => cleanNameSuffix(part.trim()))
     .filter(Boolean);
 
-  const deduped = parts.filter((part, index, arr) => (index === 0 ? true : part !== arr[index - 1]));
+  const ordered = parts.length > 1 ? [...parts].reverse() : parts;
+  const deduped = ordered.filter((part, index, arr) => (index === 0 ? true : part !== arr[index - 1]));
   return deduped.join(' بن ');
 }
 
