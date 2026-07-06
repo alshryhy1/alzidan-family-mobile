@@ -34,7 +34,19 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "8a6659eb-ef85-49b5-a8db-7b7be96b8c1f"
+        "projectId": "8a6659eb-ef85-49b5-a8db-7b7be96b8c1f",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "AlzidanFamilyWidgetExtension",
+                  "bundleIdentifier": "com.alzidan.family.AlzidanFamilyWidgetExtension"
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "owner": "alshryhy"
