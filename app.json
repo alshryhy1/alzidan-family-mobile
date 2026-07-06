@@ -12,7 +12,18 @@
         "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "supportsTablet": true
+      "supportsTablet": true,
+      "appExtensions": [
+        {
+          "targetName": "AlzidanFamilyWidgetExtension",
+          "bundleIdentifier": "com.alzidan.family.AlzidanFamilyWidgetExtension",
+          "entitlements": {
+            "com.apple.security.application-groups": [
+              "group.com.alzidan.family"
+            ]
+          }
+        }
+      ]
     },
     "android": {
       "package": "com.alzidan.family",
@@ -34,19 +45,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "8a6659eb-ef85-49b5-a8db-7b7be96b8c1f",
-        "build": {
-          "experimental": {
-            "ios": {
-              "appExtensions": [
-                {
-                  "targetName": "AlzidanFamilyWidgetExtension",
-                  "bundleIdentifier": "com.alzidan.family.AlzidanFamilyWidgetExtension"
-                }
-              ]
-            }
-          }
-        }
+        "projectId": "8a6659eb-ef85-49b5-a8db-7b7be96b8c1f"
       }
     },
     "owner": "alshryhy"
