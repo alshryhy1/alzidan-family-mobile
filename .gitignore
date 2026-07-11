@@ -52,3 +52,7 @@ ios/build/
 # Local temporary files
 supabase/.temp/
 tmp-special-card/
+
+# Local backup copies (never commit)
+*.bak
+credentials.json
