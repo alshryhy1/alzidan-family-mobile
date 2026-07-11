@@ -5,6 +5,7 @@ import { ActionButton } from '../components/ActionButton';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { insertPublicRow } from '../services/supabase';
+import { buildTreeCardMessage, treeCardRequestId } from '../utils/treeCardMessage';
 import { colors, spacing, typography } from '../theme';
 import type { Branch } from '../types';
 
@@ -83,6 +84,15 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
   const [eventText, setEventText] = useState('');
   const [correctionPerson, setCorrectionPerson] = useState('');
   const [correctionText, setCorrectionText] = useState('');
+  const [grandfather, setGrandfather] = useState('');
+  const [grandfather2, setGrandfather2] = useState('');
+  const [grandfather3, setGrandfather3] = useState('');
+  const [grandfather4, setGrandfather4] = useState('');
+  const [father, setFather] = useState('');
+  const [personName, setPersonName] = useState('');
+  const [personDob, setPersonDob] = useState('');
+  const [personCity, setPersonCity] = useState('');
+  const [personArea, setPersonArea] = useState('');
   const [submitterName, setSubmitterName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -153,6 +163,86 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
     }
   };
 
+  const submitAddPerson = async () => {
+    const submitterError = validateSubmitter();
+    if (submitterError) {
+      setStatus({ kind: 'error', text: submitterError });
+      return;
+    }
+    const gf = grandfather.trim();
+    const f = father.trim();
+    const name = personName.trim();
+    if (!gf || !f || !name) {
+      setStatus({ kind: 'error', text: 'اكتب الجد 1 والأب واسم الشخص.' });
+      return;
+    }
+    if (grandfather4.trim() && !grandfather3.trim()) {
+      setStatus({ kind: 'error', text: 'عبّئ الجد 3 قبل الجد 4.' });
+      return;
+    }
+    if (grandfather3.trim() && !grandfather2.trim()) {
+      setStatus({ kind: 'error', text: 'عبّئ الجد 2 قبل الجد 3.' });
+      return;
+    }
+    if (grandfather2.trim() && !gf) {
+      setStatus({ kind: 'error', text: 'عبّئ الجد 1 قبل الجد 2.' });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const createdAt = new Date().toISOString();
+      const reqId = treeCardRequestId();
+      const ancestors = [gf, grandfather2, grandfather3, grandfather4].map((v) => v.trim()).filter(Boolean);
+      const message = buildTreeCardMessage({
+        ancestors,
+        branch,
+        city: personCity.trim(),
+        area: personArea.trim(),
+        children: [],
+        createdAt,
+        father: f,
+        grandfather: gf,
+        personDob: personDob.trim(),
+        personName: name,
+        requestId: reqId,
+        submitterEmail: email.trim(),
+        submitterName: submitterName.trim(),
+        submitterPhone: cleanPhone(phone),
+      });
+
+      await insertPublicRow('approval_requests', {
+        request_id: reqId,
+        kind: 'tree_card',
+        branch_key: branch,
+        name: submitterName.trim(),
+        phone: cleanPhone(phone),
+        email: email.trim() || null,
+        message,
+        status: 'pending',
+        created_at: createdAt,
+      });
+
+      setGrandfather('');
+      setGrandfather2('');
+      setGrandfather3('');
+      setGrandfather4('');
+      setFather('');
+      setPersonName('');
+      setPersonDob('');
+      setPersonCity('');
+      setPersonArea('');
+      setStatus({ kind: 'success', text: 'تم إرسال طلب إضافة الفرد للمراجعة.' });
+    } catch (error) {
+      setStatus({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'تعذر إرسال طلب الإضافة.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const submitCorrection = async () => {
     const submitterError = validateSubmitter();
     if (submitterError) {
@@ -202,7 +292,7 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
   return (
     <Screen
       title="الإضافات"
-      description="أرسل مناسبة أو تصحيحًا ليصل إلى الإدارة والمناديب للمراجعة."
+      description="أرسل طلب إضافة فرد أو مناسبة أو تصحيحًا ليصل إلى الإدارة للمراجعة."
     >
       <SectionCard eyebrow="بيانات المرسل" title="من يرسل الطلب؟">
         <View style={styles.branchPicker}>
@@ -245,6 +335,85 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
           style={styles.input}
           textAlign="right"
           value={email}
+        />
+      </SectionCard>
+
+      <SectionCard eyebrow="شجرة" title="إضافة فرد">
+        <TextInput
+          onChangeText={setGrandfather}
+          placeholder="الجد 1 (إجباري)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={grandfather}
+        />
+        <TextInput
+          onChangeText={setGrandfather2}
+          placeholder="الجد 2 (اختياري)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={grandfather2}
+        />
+        <TextInput
+          onChangeText={setGrandfather3}
+          placeholder="الجد 3 (اختياري)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={grandfather3}
+        />
+        <TextInput
+          onChangeText={setGrandfather4}
+          placeholder="الجد 4 (اختياري)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={grandfather4}
+        />
+        <TextInput
+          onChangeText={setFather}
+          placeholder="الأب (إجباري)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={father}
+        />
+        <TextInput
+          onChangeText={setPersonName}
+          placeholder="اسم الشخص (إجباري)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={personName}
+        />
+        <TextInput
+          onChangeText={setPersonDob}
+          placeholder="تاريخ الميلاد اختياري (YYYY-MM-DD)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={personDob}
+        />
+        <TextInput
+          onChangeText={setPersonCity}
+          placeholder="المدينة (اختياري)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={personCity}
+        />
+        <TextInput
+          onChangeText={setPersonArea}
+          placeholder="الحي/القرية (اختياري)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          textAlign="right"
+          value={personArea}
+        />
+        <ActionButton
+          label={submitting ? 'جاري الإرسال...' : 'إرسال طلب إضافة فرد'}
+          onPress={submitAddPerson}
         />
       </SectionCard>
 

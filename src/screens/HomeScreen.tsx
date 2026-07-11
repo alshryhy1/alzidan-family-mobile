@@ -130,6 +130,7 @@ type HomeScreenProps = {
   onOpenBranches: () => void;
   onOpenEvents: () => void;
   onOpenProfile: () => void;
+  onOpenAdditions: () => void;
   onOpenTree: () => void;
   onRetry: () => void;
 };
@@ -157,7 +158,7 @@ function formatDateShort(value?: string) {
 
 function requestKindLabel(kind: string) {
   if (kind === 'event_card') return 'مناسبة';
-  if (kind === 'tree_card') return 'تصحيح شجرة';
+  if (kind === 'tree_card') return 'شجرة';
   return 'طلب';
 }
 
@@ -238,6 +239,7 @@ export function HomeScreen({
   onOpenBranches,
   onOpenEvents,
   onOpenProfile,
+  onOpenAdditions,
   onOpenTree,
   onRetry,
 }: HomeScreenProps) {
@@ -415,6 +417,11 @@ export function HomeScreen({
 
       <SectionCard eyebrow="اختصارات" title="وصول سريع">
         <View style={styles.shortcutsGrid}>
+          <Pressable onPress={onOpenAdditions} style={({ pressed }) => [styles.shortcut, pressed && { opacity: 0.75 }]}>
+            <Text style={styles.shortcutIcon}>+</Text>
+            <Text style={styles.shortcutLabel}>الطلبات والإضافات</Text>
+          </Pressable>
+
           <Pressable onPress={onOpenProfile} style={({ pressed }) => [styles.shortcut, pressed && { opacity: 0.75 }]}>
             <Text style={styles.shortcutIcon}>i</Text>
             <Text style={styles.shortcutLabel}>بطاقتي</Text>

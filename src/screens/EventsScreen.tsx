@@ -48,13 +48,13 @@ const categoryColor: Record<FamilyEvent['category'], string> = {
 };
 
 const eventTypes = [
-  { key: 'birth', label: 'عقيقة مولود' },
-  { key: 'marriage', label: 'زواج' },
-  { key: 'graduation', label: 'حفل تخرج' },
-  { key: 'promotion', label: 'حفل ترقية' },
-  { key: 'new_house', label: 'منزل جديد' },
-  { key: 'gathering', label: 'اجتماع عائلي' },
-  { key: 'general', label: 'مناسبة عامة' },
+  { key: 'birth', label: 'عقيقة مولود', adminTypeLabel: 'مولود' },
+  { key: 'marriage', label: 'زواج', adminTypeLabel: 'زواج' },
+  { key: 'graduation', label: 'حفل تخرج', adminTypeLabel: 'تخرج' },
+  { key: 'promotion', label: 'حفل ترقية', adminTypeLabel: 'ترقية' },
+  { key: 'new_house', label: 'منزل جديد', adminTypeLabel: 'اجتماع' },
+  { key: 'gathering', label: 'اجتماع عائلي', adminTypeLabel: 'اجتماع' },
+  { key: 'general', label: 'مناسبة عامة', adminTypeLabel: 'اجتماع' },
 ];
 
 function requestId() {
@@ -367,7 +367,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
         phone,
         submitterName: submitterName.trim(),
         text: addText.trim(),
-        typeLabel: selectedType.label,
+        typeLabel: selectedType.adminTypeLabel,
         videoUrl: finalVideoUrl,
       });
 

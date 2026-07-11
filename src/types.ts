@@ -1,4 +1,4 @@
-export type PublicScreen = 'home' | 'branches' | 'tree' | 'events' | 'memory' | 'profile' | 'about';
+export type PublicScreen = 'home' | 'branches' | 'tree' | 'events' | 'memory' | 'profile' | 'about' | 'additions';
 
 export type Branch = {
   id: string;

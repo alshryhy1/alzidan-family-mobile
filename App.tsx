@@ -12,6 +12,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { AboutScreen } from './src/screens/AboutScreen';
+import { AdditionsScreen } from './src/screens/AdditionsScreen';
 import { BranchesScreen } from './src/screens/BranchesScreen';
 import { EventsScreen } from './src/screens/EventsScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -474,6 +475,8 @@ export default function App() {
         );
       case 'memory':
         return <MemoryScreen />;
+      case 'additions':
+        return <AdditionsScreen branches={publicData.branches} />;
       case 'about':
         return <AboutScreen />;
       default:
@@ -494,6 +497,7 @@ export default function App() {
             onOpenBranches={() => setScreen('branches')}
             onOpenEvents={() => setScreen('events')}
             onOpenProfile={() => setScreen('profile')}
+            onOpenAdditions={() => setScreen('additions')}
             onOpenTree={() => openTree()}
             onRetry={publicData.reload}
           />
