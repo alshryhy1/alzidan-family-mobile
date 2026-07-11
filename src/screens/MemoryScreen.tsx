@@ -13,6 +13,7 @@ import {
   type MemoryUiKind,
 } from '../services/memory';
 import { colors, spacing, typography } from '../theme';
+import { matchesSearchQuery } from '../utils/searchText';
 
 type IndexFilterKind = 'all' | MemoryUiKind;
 type DetailFilterKind = 'all' | MemoryUiKind | 'reaction';
@@ -301,16 +302,13 @@ export function MemoryScreen() {
   }, [items]);
 
   const filteredItems = useMemo(() => {
-    const q = cleanText(query).toLowerCase();
     return items.filter((item) => {
       if (branch !== 'all' && item.branchKey !== branch) return false;
       if (indexKind !== 'all' && !matchesKind(item, indexKind)) return false;
-
-      if (!q) return true;
-      const haystack = [item.personName, item.title, item.description, item.storyText, item.personLineage]
-        .map((part) => cleanText(part).toLowerCase())
-        .join(' ');
-      return haystack.includes(q);
+      return matchesSearchQuery(
+        [item.personName, item.title, item.description, item.storyText, item.personLineage],
+        query,
+      );
     });
   }, [branch, indexKind, items, query]);
 

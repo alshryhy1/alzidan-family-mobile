@@ -12,6 +12,7 @@ import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { insertPublicRow, selectPublicRows, uploadPublicFileUri } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
+import { matchesSearchQuery } from '../utils/searchText';
 import type { Branch, FamilyEvent } from '../types';
 
 type Filter = 'all' | FamilyEvent['category'];
@@ -218,6 +219,7 @@ function EventVideo({ uri }: { uri: string }) {
 
 export function EventsScreen({ branches, error, events, loading, onRetry }: EventsScreenProps) {
   const [filter, setFilter] = useState<Filter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [addBranch, setAddBranch] = useState(branches[0]?.id ?? 'زيدان');
   const [addType, setAddType] = useState(eventTypes[0].key);
@@ -236,7 +238,13 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   });
   const [submitting, setSubmitting] = useState(false);
   const [pickingMedia, setPickingMedia] = useState<'image' | 'video' | null>(null);
-  const visibleEvents = filter === 'all' ? events : events.filter((event) => event.category === filter);
+  const visibleEvents = events.filter((event) => {
+    if (filter !== 'all' && event.category !== filter) return false;
+    return matchesSearchQuery(
+      [event.title, event.person, event.details, event.branch, event.categoryLabel, event.hospitalName],
+      searchQuery,
+    );
+  });
   const happyCount = events.filter((event) => event.category === 'happy').length;
   const healthCount = events.filter((event) => event.category === 'health').length;
   const condolenceCount = events.filter((event) => event.category === 'condolence').length;
@@ -425,6 +433,16 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
           );
         })}
       </View>
+
+      <TextInput
+        onChangeText={setSearchQuery}
+        placeholder="ابحث باسم الشخص أو عنوان المناسبة"
+        placeholderTextColor={colors.textMuted}
+        returnKeyType="search"
+        style={styles.searchInput}
+        textAlign="right"
+        value={searchQuery}
+      />
 
       {!loading && !error ? (
         <View style={styles.summary}>
@@ -702,6 +720,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',
     gap: spacing.xs,
+  },
+  searchInput: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: typography.body,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    writingDirection: 'rtl',
   },
   filter: {
     backgroundColor: colors.surface,
