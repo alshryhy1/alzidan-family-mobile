@@ -1,17 +1,36 @@
-import { StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { colors, spacing, typography } from '../theme';
 
+const LEGAL_BASE = 'https://alzidan.org/pages';
+
+const legalLinks = [
+  { label: 'سياسة الخصوصية', url: `${LEGAL_BASE}/privacy.html` },
+  { label: 'شروط الاستخدام', url: `${LEGAL_BASE}/terms.html` },
+  {
+    label: 'طلب حذف البيانات الشخصية',
+    url: `${LEGAL_BASE}/delete-account.html`,
+  },
+  { label: 'تواصل معنا', url: `${LEGAL_BASE}/contact.html` },
+];
+
 const principles = [
   'توثيق شجرة العائلة بطريقة مرتبة وسهلة القراءة.',
-  'المحافظة على الخصوصية وعدم عرض بيانات التواصل الحساسة.',
+  'المحافظة على الخصوصية وعدم عرض أرقام الجوال في بطاقات الشجرة العامة.',
   'تقوية صلة الرحم وتسهيل متابعة أخبار ومناسبات العائلة.',
   'إتاحة المحتوى العام للجميع دون الحاجة إلى تسجيل دخول.',
 ];
 
+function openUrl(url: string) {
+  Linking.openURL(url).catch(() => {});
+}
+
 export function AboutScreen() {
+  const appVersion = Constants.expoConfig?.version ?? '1.0.0';
+
   return (
     <Screen title="عن المشروع" description="تطبيق جوال مستقل لمشروع عائلة الزيدان.">
       <SectionCard eyebrow="الرؤية" title="ذاكرة عائلية حديثة">
@@ -32,10 +51,41 @@ export function AboutScreen() {
         </View>
       </SectionCard>
 
+      <SectionCard eyebrow="قانوني" title="السياسات والتواصل">
+        <View style={styles.legalList}>
+          {legalLinks.map((link) => (
+            <Pressable
+              key={link.url}
+              accessibilityRole="link"
+              onPress={() => openUrl(link.url)}
+              style={({ pressed }) => [styles.legalLink, pressed && styles.legalLinkPressed]}
+            >
+              <Text style={styles.legalLinkText}>{link.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable
+          accessibilityRole="link"
+          onPress={() => openUrl('mailto:alzidan990@gmail.com')}
+          style={({ pressed }) => [styles.emailRow, pressed && styles.legalLinkPressed]}
+        >
+          <Text style={styles.emailLabel}>البريد:</Text>
+          <Text style={styles.emailValue}>alzidan990@gmail.com</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="link"
+          onPress={() => openUrl('https://wa.me/966551840058')}
+          style={({ pressed }) => [styles.emailRow, pressed && styles.legalLinkPressed]}
+        >
+          <Text style={styles.emailLabel}>واتساب:</Text>
+          <Text style={styles.emailValue}>0551840058</Text>
+        </Pressable>
+      </SectionCard>
+
       <View style={styles.version}>
-        <Text style={styles.versionTitle}>النسخة الحالية</Text>
+        <Text style={styles.versionTitle}>النسخة {appVersion}</Text>
         <Text style={styles.versionText}>
-          واجهات عامة للقراءة فقط، مرتبطة بمصدر البيانات المعتمد دون تسجيل دخول.
+          واجهات عامة للقراءة والطلبات، مرتبطة بمصدر البيانات المعتمد على alzidan.org.
         </Text>
       </View>
     </Screen>
@@ -68,6 +118,46 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: typography.body,
     lineHeight: 24,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  legalList: {
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  legalLink: {
+    borderRadius: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  legalLinkPressed: {
+    backgroundColor: colors.primarySoft,
+  },
+  legalLinkText: {
+    color: colors.primary,
+    fontSize: typography.body,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  emailRow: {
+    alignItems: 'center',
+    borderRadius: 12,
+    flexDirection: 'row-reverse',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  emailLabel: {
+    color: colors.textMuted,
+    fontSize: typography.body,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  emailValue: {
+    color: colors.primary,
+    fontSize: typography.body,
+    fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
