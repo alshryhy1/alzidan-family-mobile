@@ -17,6 +17,7 @@ import { EventsScreen } from './src/screens/EventsScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { MemoryScreen } from './src/screens/MemoryScreen';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
+import { GlobalSearchModal } from './src/components/GlobalSearchModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
@@ -168,6 +169,7 @@ export default function App() {
   const [specialCards, setSpecialCards] = useState<SpecialCard[]>([]);
   const [specialCardIndex, setSpecialCardIndex] = useState(0);
   const [specialCardVisible, setSpecialCardVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
 
   useEffect(() => {
     registerPushToken().catch((error) => {
@@ -507,6 +509,14 @@ export default function App() {
         <StatusBar style="dark" />
         <View style={styles.app}>
           <View style={styles.header}>
+            <Pressable
+              accessibilityLabel="بحث"
+              accessibilityRole="button"
+              onPress={() => setSearchVisible(true)}
+              style={({ pressed }) => [styles.searchButton, pressed && styles.pressedSearchButton]}
+            >
+              <Text style={styles.searchButtonText}>⌕</Text>
+            </Pressable>
             <View style={styles.brandMark}>
               <Text style={styles.brandLetter}>ز</Text>
             </View>
@@ -522,6 +532,18 @@ export default function App() {
             card={currentSpecialCard}
             visible={specialCardVisible}
             onClose={closeSpecialCard}
+          />
+
+          <GlobalSearchModal
+            branches={publicData.branches}
+            childrenRows={publicData.children}
+            events={activeEvents}
+            onClose={() => setSearchVisible(false)}
+            onOpenEvents={() => setScreen('events')}
+            onOpenMemory={() => setScreen('memory')}
+            onOpenTree={(branchKey, treeChildId) => openTree(branchKey, treeChildId)}
+            parents={publicData.parents}
+            visible={searchVisible}
           />
 
           {!specialCardVisible && remainingSpecialCards > 0 && (
@@ -579,6 +601,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+  },
+  searchButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: 14,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  pressedSearchButton: {
+    opacity: 0.75,
+  },
+  searchButtonText: {
+    color: colors.primary,
+    fontSize: 22,
+    fontWeight: '700',
   },
   brandMark: {
     alignItems: 'center',
