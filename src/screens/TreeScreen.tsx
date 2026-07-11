@@ -16,6 +16,7 @@ import {
   normalizePersonName,
 } from '../utils/groupChildrenRows';
 import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
+import { matchesSearchQuery } from '../utils/searchText';
 
 type TreeScreenProps = {
   branchKey: string | null;
@@ -361,16 +362,18 @@ export function TreeScreen({
       .flatMap((item) => collectSearchResults(item.tree, item.branch.id, item.branch.name))
       .filter((result) => {
         if (result.path.length <= 1) return false;
-        const haystack = [
-          result.branchName,
-          result.person.name,
-          result.person.fullName,
-          result.person.meta,
-          result.path.map((item) => item.name).join(' '),
-        ]
-          .filter(Boolean)
-          .join(' ');
-        return haystack.includes(query);
+        return matchesSearchQuery(
+          [
+            result.branchName,
+            result.person.name,
+            result.person.fullName,
+            result.person.meta,
+            result.person.city,
+            result.person.area,
+            result.path.map((item) => item.name).join(' '),
+          ],
+          query,
+        );
       })
       .slice(0, 40);
   }, [allBranchTrees, searchQuery]);
@@ -487,7 +490,7 @@ export function TreeScreen({
                   );
                 })
               ) : (
-                <Text style={styles.searchEmpty}>لا يوجد اسم مطابق.</Text>
+                <Text style={styles.searchEmpty}>لا يوجد اسم مطابق في جميع الفروع.</Text>
               )}
             </View>
           ) : null}
