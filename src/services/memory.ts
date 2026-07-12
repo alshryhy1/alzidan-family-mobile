@@ -16,6 +16,7 @@ export type MemoryItem = {
   memoryYear: number | null;
   submittedByName: string;
   submittedByPhone: string;
+  submittedByRelation: string;
   createdAt: string;
   displayOrder: number | null;
   media: MemoryMedia[];
@@ -65,6 +66,7 @@ type MemoryItemRow = {
   memory_year: number | null;
   submitted_by_name: string | null;
   submitted_by_phone: string | null;
+  submitted_by_relation: string | null;
   created_at: string | null;
   display_order: number | null;
 };
@@ -128,7 +130,7 @@ function inFilter(ids: string[]) {
 
 export async function fetchApprovedMemoryItems(limit = 240): Promise<MemoryItem[]> {
   const rows = await selectPublicRows<MemoryItemRow>(
-    `family_memory_items?select=id,branch_key,person_id,person_name,person_lineage,title,description,story_text,memory_kind,memory_date,memory_year,submitted_by_name,submitted_by_phone,created_at,display_order&status=eq.approved&order=display_order.asc.nullslast&order=created_at.desc&limit=${limit}`,
+    `family_memory_items?select=id,branch_key,person_id,person_name,person_lineage,title,description,story_text,memory_kind,memory_date,memory_year,submitted_by_name,submitted_by_phone,submitted_by_relation,created_at,display_order&status=eq.approved&order=display_order.asc.nullslast&order=created_at.desc&limit=${limit}`,
   );
 
   const items: MemoryItem[] = rows
@@ -146,6 +148,7 @@ export async function fetchApprovedMemoryItems(limit = 240): Promise<MemoryItem[
       memoryYear: typeof row.memory_year === 'number' ? row.memory_year : null,
       submittedByName: cleanText(row.submitted_by_name),
       submittedByPhone: cleanText(row.submitted_by_phone),
+      submittedByRelation: cleanText(row.submitted_by_relation),
       createdAt: cleanText(row.created_at),
       displayOrder: typeof row.display_order === 'number' ? row.display_order : null,
       media: [],

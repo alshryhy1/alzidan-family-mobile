@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
+import { MemorySubmitPanel } from '../components/MemorySubmitPanel';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { insertPublicRow } from '../services/supabase';
@@ -35,7 +36,10 @@ function requestId(prefix: string) {
 }
 
 function cleanPhone(value: string) {
-  return value.replace(/[^\d+]/g, '');
+  return String(value || '')
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
+    .replace(/[^\d+]/g, '');
 }
 
 function buildEventMessage(payload: {
@@ -292,7 +296,7 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
   return (
     <Screen
       title="الإضافات"
-      description="أرسل طلب إضافة فرد أو مناسبة أو تصحيحًا ليصل إلى الإدارة للمراجعة."
+      description="أرسل طلب إضافة فرد أو مناسبة أو ذكرى أو تصحيحًا — تُراجع قبل النشر."
     >
       <SectionCard eyebrow="بيانات المرسل" title="من يرسل الطلب؟">
         <View style={styles.branchPicker}>
@@ -481,6 +485,8 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
         <ActionButton label={submitting ? 'جاري الإرسال...' : 'إرسال التصحيح'} onPress={submitCorrection} />
       </SectionCard>
 
+      <MemorySubmitPanel branches={branches} defaultBranch={branch} />
+
       {status.text ? (
         <View style={[styles.status, status.kind === 'error' ? styles.errorStatus : styles.successStatus]}>
           <Text style={styles.statusText}>{status.text}</Text>
@@ -532,6 +538,13 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 92,
     textAlignVertical: 'top',
+  },
+  fileHint: {
+    color: colors.textMuted,
+    fontSize: typography.caption,
+    marginTop: spacing.xs,
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   status: {
     borderRadius: 16,

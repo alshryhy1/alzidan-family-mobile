@@ -51,6 +51,35 @@ export async function insertPublicRow(path: string, row: Record<string, unknown>
   }
 }
 
+export async function insertPublicRowReturning<T extends Record<string, unknown>>(
+  path: string,
+  row: Record<string, unknown>,
+) {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+  }
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${supabaseAnonKey}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(row),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `تعذر حفظ الطلب (${response.status}).`);
+  }
+
+  const data = (await response.json()) as T[] | T;
+  return Array.isArray(data) ? data[0] : data;
+}
+
 
 export async function upsertPublicRow(path: string, row: Record<string, unknown>, onConflict: string) {
   if (!supabaseUrl || !supabaseAnonKey) {

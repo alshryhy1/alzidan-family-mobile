@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 
 import type { SpecialCard } from '../services/specialCards';
+import { formatSpecialCardDate } from '../utils/formatSpecialCardDate';
+import { resolveSpecialCardTextColors } from '../utils/specialCardTextColors';
 
 type Props = {
   card: SpecialCard | null;
@@ -50,18 +52,6 @@ function typeIcon(type: SpecialCard['type']) {
     announcement: '📣',
   };
   return map[type] ?? '✨';
-}
-
-function dateText(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(`${value}T12:00:00`);
-  if (!Number.isFinite(date.getTime())) return value;
-  return new Intl.DateTimeFormat('ar-SA', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(date);
 }
 
 export function SpecialCardModal({ card, visible, onClose }: Props) {
@@ -171,7 +161,8 @@ export function SpecialCardModal({ card, visible, onClose }: Props) {
   if (!card) return null;
 
   const [start, end, accent] = themeColors(card.theme);
-  const formattedDate = dateText(card.event_date);
+  const textColors = resolveSpecialCardTextColors(card);
+  const formattedDate = formatSpecialCardDate(card.event_date);
   const edgeTranslate = edgeMove.interpolate({
     inputRange: [0, 1],
     outputRange: [-16, 16],
@@ -239,17 +230,17 @@ export function SpecialCardModal({ card, visible, onClose }: Props) {
           ]}
         />
 
-        <Text style={[styles.family, { color: accent }]}>عائلة الزيدان</Text>
+        <Text style={[styles.family, { color: textColors.accent }]}>عائلة الزيدان</Text>
 
         <View style={[styles.badge, { borderColor: accent }]}>
-          <Text style={[styles.badgeText, { color: accent }]}>
+          <Text style={[styles.badgeText, { color: textColors.accent }]}>
             {typeIcon(card.type)} {typeLabel(card.type)}
           </Text>
         </View>
 
-        <Text style={styles.title}>{card.title}</Text>
+        <Text style={[styles.title, { color: textColors.title }]}>{card.title}</Text>
 
-        {!!card.subtitle && <Text style={styles.subtitle}>{card.subtitle}</Text>}
+        {!!card.subtitle && <Text style={[styles.subtitle, { color: textColors.subtitle }]}>{card.subtitle}</Text>}
 
         {!!card.image_url && (
           <Animated.View style={[styles.photoFrame, { borderColor: accent, transform: [{ scale: photoScale }] }]}>
@@ -258,18 +249,18 @@ export function SpecialCardModal({ card, visible, onClose }: Props) {
         )}
 
         <View style={[styles.nameBox, { borderColor: accent }]}>
-          <Text style={[styles.personName, { color: accent }]}>{card.person_name}</Text>
+          <Text style={[styles.personName, { color: textColors.person }]}>{card.person_name}</Text>
           {!!card.secondary_person && (
-            <Text style={styles.secondaryName}>{card.secondary_person}</Text>
+            <Text style={[styles.secondaryName, { color: textColors.secondary }]}>{card.secondary_person}</Text>
           )}
         </View>
 
-        {!!card.degree_name && <Text style={styles.meta}>{card.degree_name}</Text>}
-        {!!card.university && <Text style={styles.meta}>{card.university}</Text>}
-        {!!formattedDate && <Text style={styles.date}>{formattedDate}</Text>}
-        {!!card.location && <Text style={styles.location}>📍 {card.location}</Text>}
+        {!!card.degree_name && <Text style={[styles.meta, { color: textColors.meta }]}>{card.degree_name}</Text>}
+        {!!card.university && <Text style={[styles.meta, { color: textColors.meta }]}>{card.university}</Text>}
+        {!!formattedDate && <Text style={[styles.date, { color: textColors.meta }]}>{formattedDate}</Text>}
+        {!!card.location && <Text style={[styles.location, { color: textColors.meta }]}>📍 {card.location}</Text>}
 
-        {!!card.message && <Text style={styles.message}>{card.message}</Text>}
+        {!!card.message && <Text style={[styles.message, { color: textColors.message }]}>{card.message}</Text>}
 
         <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
           <Pressable style={[styles.primaryButton, { backgroundColor: accent }]} onPress={onClose}>
@@ -391,7 +382,6 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   title: {
-    color: '#fff',
     fontSize: 34,
     fontWeight: '900',
     marginBottom: 8,
@@ -399,7 +389,6 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   subtitle: {
-    color: 'rgba(255,255,255,0.82)',
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 22,
@@ -436,7 +425,6 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   secondaryName: {
-    color: 'rgba(255,255,255,0.86)',
     fontSize: 21,
     fontWeight: '800',
     marginTop: 8,
@@ -444,7 +432,6 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   meta: {
-    color: 'rgba(255,255,255,0.86)',
     fontSize: 15,
     fontWeight: '700',
     marginTop: 4,
@@ -452,15 +439,14 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   date: {
-    color: '#fff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
+    lineHeight: 22,
     marginTop: 14,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   location: {
-    color: 'rgba(255,255,255,0.82)',
     fontSize: 14,
     fontWeight: '700',
     marginTop: 8,
@@ -468,7 +454,6 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   message: {
-    color: 'rgba(255,255,255,0.9)',
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 26,

@@ -4,11 +4,208 @@ import Foundation
 
 struct FamilyEvent: Identifiable {
     let id = UUID()
-    let type: String
+    let rawType: String
+    let typeLabel: String
     let icon: String
     let name: String
     let dateText: String
     let daysLeft: Int?
+    let sortDate: Date?
+    let hijriDisplay: String
+    let gregorianDisplay: String
+
+    init(rawType: String, name: String, dateLabel: String?, eventDateISO: String?, daysLeft: Int?) {
+        let cleanType = rawType.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.rawType = cleanType
+        self.typeLabel = EventArabic.typeLabel(cleanType)
+        self.icon = EventArabic.icon(for: cleanType)
+        self.name = name
+
+        let parsed = EventDateFormatter.resolve(dateLabel: dateLabel, eventDateISO: eventDateISO)
+        self.sortDate = parsed.sortDate
+        self.hijriDisplay = parsed.hijriDisplay
+        self.gregorianDisplay = parsed.gregorianDisplay
+        self.dateText = parsed.displayLine
+        self.daysLeft = daysLeft ?? parsed.daysLeft
+    }
+
+    var dateLine: String {
+        if !hijriDisplay.isEmpty && !gregorianDisplay.isEmpty {
+            return "\(hijriDisplay) · \(gregorianDisplay)"
+        }
+        if !hijriDisplay.isEmpty { return hijriDisplay }
+        if !gregorianDisplay.isEmpty { return gregorianDisplay }
+        return dateText
+    }
+}
+
+enum EventDateFormatter {
+    static func arabicDigitsToWestern(_ s: String) -> String {
+        let map: [Character: Character] = [
+            "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+            "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+        ]
+        return String(s.map { map[$0] ?? $0 })
+    }
+
+    static func parseGregorianISO(_ iso: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: iso.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    static func parseHijriLabel(_ label: String) -> Date? {
+        let normalized = arabicDigitsToWestern(label)
+            .replacingOccurrences(of: "\\", with: "/")
+            .replacingOccurrences(of: "-", with: "/")
+            .replacingOccurrences(of: "هـ", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let parts = normalized.split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 3,
+              let day = Int(parts[0]),
+              let month = Int(parts[1]),
+              let year = Int(parts[2]) else { return nil }
+
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .islamicUmmAlQura)
+        components.day = day
+        components.month = month
+        components.year = year
+        return components.date
+    }
+
+    static func hijriText(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .islamicUmmAlQura)
+        formatter.locale = Locale(identifier: "ar_SA")
+        formatter.dateFormat = "d/M/yyyy"
+        return formatter.string(from: date) + " هـ"
+    }
+
+    static func gregorianText(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "ar_SA")
+        formatter.dateFormat = "d/M/yyyy"
+        return formatter.string(from: date)
+    }
+
+    static func daysLeft(from date: Date) -> Int {
+        let startToday = Calendar.current.startOfDay(for: Date())
+        let startEvent = Calendar.current.startOfDay(for: date)
+        return Calendar.current.dateComponents([.day], from: startToday, to: startEvent).day ?? 0
+    }
+
+    static func resolve(dateLabel: String?, eventDateISO: String?) -> (sortDate: Date?, hijriDisplay: String, gregorianDisplay: String, displayLine: String, daysLeft: Int?) {
+        let label = (dateLabel ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let iso = (eventDateISO ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let gregorianDate = parseGregorianISO(iso) {
+            let hijri = hijriText(from: gregorianDate)
+            let gregorian = gregorianText(from: gregorianDate)
+            return (gregorianDate, hijri, gregorian, "\(hijri) · \(gregorian)", daysLeft(from: gregorianDate))
+        }
+
+        if !label.isEmpty, let hijriDate = parseHijriLabel(label) {
+            let hijri = hijriText(from: hijriDate)
+            let gregorian = gregorianText(from: hijriDate)
+            return (hijriDate, hijri, gregorian, "\(hijri) · \(gregorian)", daysLeft(from: hijriDate))
+        }
+
+        if !label.isEmpty {
+            let hijri = label.contains("هـ") ? label : "\(label) هـ"
+            return (nil, hijri, "", hijri, nil)
+        }
+
+        return (nil, "", "", "", nil)
+    }
+}
+
+enum EventArabic {
+    private static let labels: [String: String] = [
+        "birth": "عقيقة مولود",
+        "marriage": "زواج",
+        "wedding": "زواج",
+        "graduation": "حفل تخرج",
+        "promotion": "حفل ترقية",
+        "new_house": "منزل جديد",
+        "gathering": "اجتماع عائلي",
+        "meeting": "اجتماع عائلي",
+        "success": "نجاح / تفوق",
+        "travel": "سفر",
+        "engagement": "خطوبة",
+        "contract": "عقد قران",
+        "sick": "مريض",
+        "operation": "عملية",
+        "discharge": "خروج من المستشفى",
+        "death": "وفاة",
+        "general": "مناسبة عامة",
+        "happy": "فرح",
+    ]
+
+    static func typeLabel(_ type: String) -> String {
+        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if key.isEmpty { return "مناسبة" }
+        if let exact = labels[key] { return exact }
+        if key.contains("marriage") || key.contains("wedding") || key.contains("زواج") { return "زواج" }
+        if key.contains("graduation") || key.contains("تخرج") { return "حفل تخرج" }
+        if key.contains("birth") || key.contains("baby") || key.contains("عقيقة") || key.contains("مولود") { return "عقيقة مولود" }
+        if key.contains("promotion") || key.contains("ترقية") { return "حفل ترقية" }
+        if key.contains("house") || key.contains("منزل") { return "منزل جديد" }
+        if key.contains("gathering") || key.contains("meeting") || key.contains("اجتماع") { return "اجتماع عائلي" }
+        if key.contains("success") || key.contains("نجاح") { return "نجاح / تفوق" }
+        if key.contains("travel") || key.contains("سفر") { return "سفر" }
+        if key.contains("engagement") || key.contains("خطوبة") { return "خطوبة" }
+        if key.contains("contract") || key.contains("عقد") { return "عقد قران" }
+        if key.contains("sick") || key.contains("مريض") { return "مريض" }
+        if key.contains("operation") || key.contains("عملية") { return "عملية" }
+        if key.contains("discharge") { return "خروج من المستشفى" }
+        if key.contains("death") || key.contains("وفاة") { return "وفاة" }
+        if key.contains("general") { return "مناسبة عامة" }
+        return "مناسبة عامة"
+    }
+
+    static func icon(for type: String) -> String {
+        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if key == "marriage" || key.contains("marriage") || key.contains("wedding") || key.contains("زواج") { return "💍" }
+        if key.contains("graduation") || key.contains("تخرج") { return "🎓" }
+        if key.contains("baby") || key.contains("birth") || key.contains("عقيقة") || key.contains("مولود") { return "👶" }
+        if key.contains("meeting") || key.contains("gathering") || key.contains("اجتماع") { return "🎉" }
+        if key.contains("promotion") || key.contains("ترقية") { return "⭐️" }
+        if key.contains("house") || key.contains("منزل") { return "🏠" }
+        if key.contains("death") || key.contains("وفاة") { return "🕊️" }
+        if key.contains("sick") || key.contains("operation") || key.contains("مريض") { return "🤲" }
+        return "📌"
+    }
+}
+
+struct WidgetBackgroundView: View {
+    var body: some View {
+        LinearGradient(
+            colors: [
+                Color(red: 0.98, green: 0.94, blue: 0.84),
+                Color(red: 0.78, green: 0.62, blue: 0.36)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+    }
+}
+
+struct WidgetRoot<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ZStack {
+            WidgetBackgroundView()
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        }
+    }
 }
 
 struct PrayerEntry: TimelineEntry {
@@ -17,21 +214,34 @@ struct PrayerEntry: TimelineEntry {
 }
 
 struct Provider: TimelineProvider {
+    private static let sampleEvents: [FamilyEvent] = [
+        FamilyEvent(rawType: "birth", name: "سلمان عيد عبدالمحسن", dateLabel: "٢/٢/١٤٤٨", eventDateISO: nil, daysLeft: nil),
+        FamilyEvent(rawType: "marriage", name: "عبدالرحمن هليل محمد", dateLabel: "١٦/٢/١٤٤٨", eventDateISO: nil, daysLeft: nil),
+    ]
+
     func placeholder(in context: Context) -> PrayerEntry {
-        PrayerEntry(date: Date(), events: [])
+        PrayerEntry(date: Date(), events: Self.sampleEvents)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (PrayerEntry) -> Void) {
+        if context.isPreview {
+            completion(PrayerEntry(date: Date(), events: Self.sampleEvents))
+            return
+        }
         fetchEvents { events in
-            completion(PrayerEntry(date: Date(), events: events))
+            DispatchQueue.main.async {
+                completion(PrayerEntry(date: Date(), events: events))
+            }
         }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<PrayerEntry>) -> Void) {
         let now = Date()
         fetchEvents { events in
-            let next = Calendar.current.date(byAdding: .minute, value: 1, to: now) ?? now
-            completion(Timeline(entries: [PrayerEntry(date: now, events: events)], policy: .after(next)))
+            let next = Calendar.current.date(byAdding: .minute, value: 15, to: now) ?? now
+            DispatchQueue.main.async {
+                completion(Timeline(entries: [PrayerEntry(date: now, events: events)], policy: .after(next)))
+            }
         }
     }
 
@@ -64,21 +274,37 @@ struct Provider: TimelineProvider {
                 let cleanType = row.type.trimmingCharacters(in: .whitespacesAndNewlines)
                 let cleanName = row.person.trimmingCharacters(in: .whitespacesAndNewlines)
                 let cleanDate = (row.event_date ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanLabel = (row.date_label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
                 guard !cleanType.isEmpty || !cleanName.isEmpty else { return nil }
 
-                let days = Self.daysLeft(cleanDate)
+                let days = cleanDate.isEmpty ? nil : Self.daysLeft(cleanDate)
                 return FamilyEvent(
-                    type: cleanType.isEmpty ? "مناسبة" : Self.arabicType(cleanType),
-                    icon: Self.iconForType(cleanType),
+                    rawType: cleanType,
                     name: cleanName.isEmpty ? "بدون اسم" : cleanName,
-                    dateText: row.date_label?.isEmpty == false ? row.date_label! : Self.prettyDate(cleanDate),
+                    dateLabel: cleanLabel.isEmpty ? nil : cleanLabel,
+                    eventDateISO: cleanDate.isEmpty ? nil : cleanDate,
                     daysLeft: days
                 )
             }
+            .sorted(by: Self.sortEvents)
 
             completion(events)
         }.resume()
+    }
+
+    private static func sortEvents(_ lhs: FamilyEvent, _ rhs: FamilyEvent) -> Bool {
+        switch (lhs.sortDate, rhs.sortDate) {
+        case let (left?, right?):
+            if left != right { return left < right }
+            return lhs.name < rhs.name
+        case (nil, _?):
+            return false
+        case (_?, nil):
+            return true
+        case (nil, nil):
+            return lhs.name < rhs.name
+        }
     }
 
     private static func isoDate(_ date: Date) -> String {
@@ -101,43 +327,6 @@ struct Provider: TimelineProvider {
         let startEvent = Calendar.current.startOfDay(for: date)
         return Calendar.current.dateComponents([.day], from: startToday, to: startEvent).day
     }
-
-    private static func prettyDate(_ iso: String) -> String {
-        let parser = DateFormatter()
-        parser.calendar = Calendar(identifier: .gregorian)
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.dateFormat = "yyyy-MM-dd"
-
-        guard let date = parser.date(from: iso) else { return iso }
-
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "ar_SA")
-        formatter.dateFormat = "EEEE d MMMM"
-        return formatter.string(from: date)
-    }
-
-    private static func arabicType(_ type: String) -> String {
-        let key = type.lowercased()
-        if key.contains("wedding") || key.contains("زواج") { return "زواج" }
-        if key.contains("graduation") || key.contains("تخرج") { return "تخرج" }
-        if key.contains("baby") || key.contains("birth") || key.contains("عقيقة") || key.contains("مولود") { return "مولود" }
-        if key.contains("meeting") || key.contains("gathering") || key.contains("اجتماع") { return "اجتماع عائلي" }
-        if key.contains("promotion") || key.contains("ترقية") { return "ترقية" }
-        if key.contains("house") || key.contains("منزل") { return "منزل" }
-        return type
-    }
-
-    private static func iconForType(_ type: String) -> String {
-        let key = type.lowercased()
-        if key.contains("wedding") || key.contains("زواج") { return "🎉" }
-        if key.contains("graduation") || key.contains("تخرج") { return "🎓" }
-        if key.contains("baby") || key.contains("birth") || key.contains("عقيقة") || key.contains("مولود") { return "👶" }
-        if key.contains("meeting") || key.contains("gathering") || key.contains("اجتماع") { return "🎉" }
-        if key.contains("promotion") || key.contains("ترقية") { return "⭐️" }
-        if key.contains("house") || key.contains("منزل") { return "🏠" }
-        return "📌"
-    }
 }
 
 struct SupabaseEventRow: Codable {
@@ -150,14 +339,18 @@ struct SupabaseEventRow: Codable {
 }
 
 extension FamilyEvent {
-    func daysLeftText(prefix: String) -> String {
+    var statusText: String {
         guard let days = daysLeft else {
-            return "\(prefix) قريباً"
+            return "\(typeLabel) — قريباً"
         }
-        if days <= 0 { return "\(prefix) اليوم" }
-        if days == 1 { return "\(prefix) غداً" }
-        if days == 2 { return "\(prefix) بعد يومين" }
-        return "\(prefix) بعد \(days) أيام"
+        if days <= 0 { return "\(typeLabel) — اليوم" }
+        if days == 1 { return "\(typeLabel) — غداً" }
+        if days == 2 { return "\(typeLabel) — بعد يومين" }
+        return "\(typeLabel) — بعد \(days) أيام"
+    }
+
+    func daysLeftText(prefix: String) -> String {
+        statusText
     }
 }
 
@@ -287,233 +480,284 @@ struct AlzidanFamilyWidgetEntryView: View {
     var entry: PrayerEntry
     @Environment(\.widgetFamily) var family
 
+    private let contentPadding: CGFloat = 8
+    private let ink = Color(red: 0.12, green: 0.08, blue: 0.03)
+    private let maxEvents = 2
+
     var body: some View {
-        switch family {
-        case .systemSmall:
-            smallEventView
-        case .systemMedium:
-            mediumEventView
-        default:
-            largePrayerAndEventsView
+        Group {
+            switch family {
+            case .systemSmall:
+                smallEventView
+            case .systemMedium:
+                mediumEventView
+            default:
+                largePrayerAndEventsView
+            }
+        }
+        .foregroundStyle(ink)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+    }
+
+    private func safeTimerRange(until end: Date) -> ClosedRange<Date> {
+        let safeEnd = end > entry.date ? end : entry.date.addingTimeInterval(60)
+        return entry.date...safeEnd
+    }
+
+    private var visibleEvents: [FamilyEvent] {
+        Array(entry.events.prefix(maxEvents))
+    }
+
+    private var compactTodayLine: String {
+        let gregorian = compactGregorianDate(entry.date)
+        let hijri = compactHijriDate(entry.date)
+        return "\(gregorian) · \(hijri)"
+    }
+
+    @ViewBuilder
+    private func widgetEventBlock(_ event: FamilyEvent, titleSize: Font, nameSize: Font, dateSize: Font) -> some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(event.statusText)
+                .font(titleSize)
+                .fontWeight(.bold)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text(event.name)
+                .font(nameSize)
+                .fontWeight(.semibold)
+                .opacity(0.8)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            if !event.dateLine.isEmpty {
+                Text(event.dateLine)
+                    .font(dateSize)
+                    .opacity(0.72)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func nextPrayerSection(info: PrayerInfo, alignment: HorizontalAlignment = .leading, compact: Bool = false) -> some View {
+        VStack(alignment: alignment, spacing: compact ? 2 : 3) {
+            Text("الصلاة القادمة")
+                .font(.caption2)
+                .opacity(0.8)
+
+            Text(info.nextName)
+                .font(compact ? .headline : .title3)
+                .fontWeight(.bold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            HStack(spacing: 4) {
+                Text("الساعة:")
+                    .font(.caption2)
+                    .opacity(0.75)
+                Text(timeText(info.nextTime))
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 4) {
+                Text("المتبقي:")
+                    .font(.caption2)
+                    .opacity(0.75)
+                Text(timerInterval: safeTimerRange(until: info.nextTime), countsDown: true)
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
         }
     }
 
     var smallEventView: some View {
         let info = HailPrayerCalculator.prayerInfo(now: entry.date)
 
-        return ZStack {
-            background
+        return VStack(alignment: .trailing, spacing: 2) {
+            Text("🌳 عائلة الزيدان")
+                .font(.caption2)
+                .fontWeight(.bold)
+                .lineLimit(1)
 
-            VStack(alignment: .trailing, spacing: 6) {
-                Text("🌳 عائلة الزيدان")
-                    .font(.caption)
-                    .fontWeight(.bold)
+            Text(compactTodayLine)
+                .font(.system(size: 8))
+                .opacity(0.78)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            nextPrayerSection(info: info, alignment: .trailing, compact: true)
+
+            Divider().opacity(0.25)
+
+            if visibleEvents.isEmpty {
+                Text("لا توجد مناسبات")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .opacity(0.75)
                     .lineLimit(1)
-
-                Spacer(minLength: 2)
-
-                Text(info.nextName)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .lineLimit(1)
-
-                Text(timerInterval: entry.date...info.nextTime, countsDown: true)
-                    .font(.headline.weight(.semibold))
-                    .monospacedDigit()
-                    .lineLimit(1)
-
-                Divider().opacity(0.25)
-
-                if let event = entry.events.first {
-                    Text(event.daysLeftText(prefix: event.icon))
-                        .font(.caption2)
-                        .fontWeight(.bold)
-                        .lineLimit(1)
-
-                    Text(event.type)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
-                } else {
-                    Text("لا توجد مناسبات")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .opacity(0.75)
-                        .lineLimit(1)
+            } else {
+                ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
+                    if index > 0 {
+                        Divider().opacity(0.18)
+                    }
+                    widgetEventBlock(
+                        event,
+                        titleSize: .system(size: 10, weight: .bold),
+                        nameSize: .system(size: 9, weight: .semibold),
+                        dateSize: .system(size: 8)
+                    )
                 }
             }
-            .padding()
         }
+        .padding(contentPadding)
     }
 
     var mediumEventView: some View {
         let info = HailPrayerCalculator.prayerInfo(now: entry.date)
 
-        return ZStack {
-            background
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("🌳 عائلة الزيدان")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .lineLimit(1)
 
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("🌳 عائلة الزيدان")
-                        .font(.headline)
-                        .fontWeight(.bold)
+                Text(compactTodayLine)
+                    .font(.system(size: 9))
+                    .opacity(0.78)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
 
-                    Text("الصلاة القادمة")
+                nextPrayerSection(info: info, alignment: .leading, compact: false)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                if visibleEvents.isEmpty {
+                    Text("🌿 لا توجد")
                         .font(.caption)
-                        .opacity(0.8)
-
-                    Text(info.nextName)
-                        .font(.title2)
                         .fontWeight(.bold)
-
-                    Text(timerInterval: entry.date...info.nextTime, countsDown: true)
-                        .font(.headline.weight(.semibold))
-                        .monospacedDigit()
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 5) {
-                    if let event = entry.events.first {
-                        Text(event.daysLeftText(prefix: event.icon))
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .lineLimit(1)
-
-                        Text(event.type)
-                            .font(.system(size: 18, weight: .bold))
-                            .lineLimit(1)
-
-                        Text(event.name)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .opacity(0.75)
-                            .lineLimit(1)
-                    } else {
-                        Text("🌿 لا توجد")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                        Text("مناسبات قريبة")
-                            .font(.caption)
-                            .opacity(0.75)
+                    Text("مناسبات قريبة")
+                        .font(.caption2)
+                        .opacity(0.75)
+                } else {
+                    ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
+                        if index > 0 {
+                            Divider().opacity(0.18)
+                        }
+                        widgetEventBlock(
+                            event,
+                            titleSize: .caption2,
+                            nameSize: .caption2,
+                            dateSize: .system(size: 9)
+                        )
                     }
                 }
             }
-            .padding()
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
+        .padding(contentPadding)
     }
 
     var largePrayerAndEventsView: some View {
         let info = HailPrayerCalculator.prayerInfo(now: entry.date)
-        let nextEvents = Array(entry.events.prefix(1))
 
-        return ZStack {
-            background
-
-            VStack(alignment: .trailing, spacing: 9) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("حائل")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                        Text(miladiDate(entry.date))
-                            .font(.caption)
-                        Text(hijriDate(entry.date))
-                            .font(.caption)
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text("🌳 عائلة الزيدان")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        Text("أوقات الصلاة والمناسبات")
-                            .font(.caption)
-                    }
-                }
-
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.white.opacity(0.24))
-                    .overlay(
-                        VStack(spacing: 5) {
-                            Text("الصلاة القادمة")
-                                .font(.caption)
-
-                            Text(info.nextName)
-                                .font(.title2)
-                                .fontWeight(.bold)
-
-                            Text(timerInterval: entry.date...info.nextTime, countsDown: true)
-                                .monospacedDigit()
-                                .font(.title3.weight(.semibold))
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                    )
-                    .frame(height: 56)
-
-                VStack(spacing: 4) {
-                    ForEach(info.prayers) { p in
-                        HStack {
-                            Text(timeText(p.time))
-                                .font(.system(size: 12, weight: p.name == info.nextName ? .bold : .semibold))
-                            Spacer()
-                            Text(p.name)
-                                .font(.system(size: 12, weight: p.name == info.nextName ? .bold : .regular))
-                        }
-                        .padding(.vertical, 1)
-                        .padding(.horizontal, 6)
-                        .background(p.name == info.nextName ? Color(red: 0.55, green: 0.68, blue: 0.32).opacity(0.28) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-
-                Divider().opacity(0.25)
-
-                if let event = nextEvents.first {
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text(event.daysLeftText(prefix: event.icon))
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .lineLimit(1)
-
-                        Text(event.type)
-                            .font(.system(size: 17, weight: .bold))
-                            .lineLimit(1)
-
-                        Text(event.name)
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .opacity(0.75)
-                            .lineLimit(1)
-
-                    }
-                    .padding(.top, 2)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                } else {
-                    Text("🌿 لا توجد مناسبات خلال الأيام القادمة")
+        return VStack(alignment: .trailing, spacing: 4) {
+            HStack(alignment: .top, spacing: 6) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("حائل")
                         .font(.caption)
-                        .fontWeight(.semibold)
-                        .opacity(0.8)
+                        .fontWeight(.bold)
+                    Text(miladiDate(entry.date))
+                        .font(.system(size: 9))
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .minimumScaleFactor(0.8)
+                    Text(hijriDate(entry.date))
+                        .font(.system(size: 9))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+
+                Spacer(minLength: 0)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("🌳 عائلة الزيدان")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .lineLimit(1)
+
+                    Text("الصلاة القادمة: \(info.nextName)")
+                        .font(.caption2)
+                        .lineLimit(1)
+
+                    HStack(spacing: 4) {
+                        Text("الساعة:")
+                            .font(.caption2)
+                            .opacity(0.75)
+                        Text(timeText(info.nextTime))
+                            .font(.caption2.weight(.semibold))
+                    }
+
+                    HStack(spacing: 4) {
+                        Text("المتبقي:")
+                            .font(.caption2)
+                            .opacity(0.75)
+                        Text(timerInterval: safeTimerRange(until: info.nextTime), countsDown: true)
+                            .font(.caption2.weight(.semibold))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
                 }
             }
-            .padding()
-        }
-    }
 
-    var background: some View {
-        LinearGradient(
-            colors: [
-                Color(red: 0.98, green: 0.94, blue: 0.84),
-                Color(red: 0.78, green: 0.62, blue: 0.36)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .foregroundStyle(Color(red: 0.12, green: 0.08, blue: 0.03))
+            VStack(spacing: 1) {
+                ForEach(info.prayers) { p in
+                    HStack {
+                        Text(timeText(p.time))
+                            .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .semibold))
+                        Spacer(minLength: 0)
+                        Text(p.name)
+                            .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .regular))
+                    }
+                    .padding(.vertical, 1)
+                    .padding(.horizontal, 4)
+                    .background(p.name == info.nextName ? Color(red: 0.55, green: 0.68, blue: 0.32).opacity(0.28) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+            }
+
+            Divider().opacity(0.25)
+
+            if visibleEvents.isEmpty {
+                Text("🌿 لا توجد مناسبات خلال الأيام القادمة")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .opacity(0.8)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            } else {
+                VStack(alignment: .trailing, spacing: 4) {
+                    ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
+                        if index > 0 {
+                            Divider().opacity(0.18)
+                        }
+                        widgetEventBlock(
+                            event,
+                            titleSize: .caption,
+                            nameSize: .caption2,
+                            dateSize: .system(size: 9)
+                        )
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+            }
+        }
+        .padding(contentPadding)
     }
 
     func timeText(_ date: Date) -> String {
@@ -533,6 +777,14 @@ struct AlzidanFamilyWidgetEntryView: View {
         return f.string(from: date)
     }
 
+    func compactGregorianDate(_ date: Date) -> String {
+        EventDateFormatter.gregorianText(from: date)
+    }
+
+    func compactHijriDate(_ date: Date) -> String {
+        EventDateFormatter.hijriText(from: date)
+    }
+
     func hijriDate(_ date: Date) -> String {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .islamicUmmAlQura)
@@ -546,18 +798,26 @@ struct AlzidanFamilyWidget: Widget {
     let kind: String = "AlzidanFamilyWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: Provider()) { entry in
+        let configuration = StaticConfiguration(kind: kind, provider: Provider()) { entry in
             if #available(iOS 17.0, *) {
                 AlzidanFamilyWidgetEntryView(entry: entry)
-                    .containerBackground(.clear, for: .widget)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .containerBackground(for: .widget) {
+                        WidgetBackgroundView()
+                    }
             } else {
-                AlzidanFamilyWidgetEntryView(entry: entry)
-                    .padding()
-                    .background()
+                WidgetRoot {
+                    AlzidanFamilyWidgetEntryView(entry: entry)
+                }
             }
         }
         .configurationDisplayName("عائلة الزيدان")
         .description("يعرض مناسبات العائلة وأوقات الصلاة في حائل.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+
+        if #available(iOS 17.0, *) {
+            return configuration.contentMarginsDisabled()
+        }
+        return configuration
     }
 }

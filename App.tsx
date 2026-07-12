@@ -25,7 +25,7 @@ import {
   formatFormalNotificationFromPayload,
   registerPushToken,
 } from './src/services/pushNotifications';
-import { fetchActiveSpecialCard, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
+import { fetchPendingSpecialCards, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
 import { colors, spacing, typography } from './src/theme';
 import type { MemberRequest, PublicScreen } from './src/types';
@@ -383,10 +383,10 @@ export default function App() {
   useEffect(() => {
     let alive = true;
 
-    fetchActiveSpecialCard()
-      .then((card: SpecialCard | null) => {
-        if (!alive || !card) return;
-        setSpecialCards([card]);
+    fetchPendingSpecialCards()
+      .then((cards: SpecialCard[]) => {
+        if (!alive || !cards.length) return;
+        setSpecialCards(cards);
         setSpecialCardIndex(0);
         setSpecialCardVisible(true);
       })
@@ -405,7 +405,7 @@ export default function App() {
   const closeSpecialCard = () => {
     const card = currentSpecialCard;
     setSpecialCardVisible(false);
-    if (card && card.id) {
+    if (card?.id && card.show_once_per_day !== false) {
       markSpecialCardSeen(card.id).catch((error) => {
         console.warn('تعذر حفظ حالة البطاقة الخاصة:', error);
       });
@@ -474,7 +474,7 @@ export default function App() {
           />
         );
       case 'memory':
-        return <MemoryScreen />;
+        return <MemoryScreen branches={publicData.branches} />;
       case 'additions':
         return <AdditionsScreen branches={publicData.branches} />;
       case 'about':
@@ -506,27 +506,22 @@ export default function App() {
   };
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <StatusBar style="dark" />
-        <View style={styles.app}>
-          <View style={styles.header}>
-            <View style={styles.brandMark}>
-              <Text style={styles.brandLetter}>ز</Text>
+    <>
+      <SafeAreaProvider>
+        <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+          <StatusBar style="dark" />
+          <View style={styles.app}>
+            <View style={styles.header}>
+              <View style={styles.brandMark}>
+                <Text style={styles.brandLetter}>ز</Text>
+              </View>
+              <View style={styles.headerText}>
+                <Text style={styles.title}>عائلة الزيدان</Text>
+                <Text style={styles.subtitle}>صلة، توثيق، ومشاركة</Text>
+              </View>
             </View>
-            <View style={styles.headerText}>
-              <Text style={styles.title}>عائلة الزيدان</Text>
-              <Text style={styles.subtitle}>صلة، توثيق، ومشاركة</Text>
-            </View>
-          </View>
 
-          <View style={styles.content}>{renderScreen()}</View>
-
-          <SpecialCardModal
-            card={currentSpecialCard}
-            visible={specialCardVisible}
-            onClose={closeSpecialCard}
-          />
+            <View style={styles.content}>{renderScreen()}</View>
 
           {!specialCardVisible && remainingSpecialCards > 0 && (
             <Pressable style={styles.nextSpecialCardButton} onPress={showNextSpecialCard}>
@@ -562,6 +557,13 @@ export default function App() {
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
+
+      <SpecialCardModal
+        card={currentSpecialCard}
+        visible={specialCardVisible}
+        onClose={closeSpecialCard}
+      />
+    </>
   );
 }
 

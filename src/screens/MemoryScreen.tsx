@@ -3,6 +3,7 @@ import { Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 're
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { DataState } from '../components/DataState';
+import { MemorySubmitPanel } from '../components/MemorySubmitPanel';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import {
@@ -13,6 +14,7 @@ import {
   type MemoryUiKind,
 } from '../services/memory';
 import { colors, spacing, typography } from '../theme';
+import type { Branch } from '../types';
 
 type IndexFilterKind = 'all' | MemoryUiKind;
 type DetailFilterKind = 'all' | MemoryUiKind | 'reaction';
@@ -65,14 +67,23 @@ function mediaTypeLabel(kind: MemoryUiKind) {
 }
 
 function sourceSignature(item: MemoryItem) {
+  const relation = cleanText(item.submittedByRelation).toLowerCase();
   const name = cleanText(item.submittedByName);
   const phone = cleanText(item.submittedByPhone);
-  if (!name && !phone) return 'أُرسلت من الإدارة';
 
-  const parts = ['أُرسلت بواسطة المندوب'];
+  if (relation === 'admin' || (!name && !phone && !relation)) {
+    return 'تم الرفع بواسطة الإدارة';
+  }
+
+  if (relation === 'delegate' || relation.includes('مندوب')) {
+    if (!name && !phone) return 'تم الرفع بواسطة المندوب';
+    return `تم الرفع بواسطة المندوب: ${[name, phone].filter(Boolean).join(' — ')}`;
+  }
+
+  const parts: string[] = [];
   if (name) parts.push(`الاسم: ${name}`);
   if (phone) parts.push(`الجوال: ${phone}`);
-  return parts.join(' — ');
+  return parts.length ? parts.join(' — ') : 'تم الرفع بواسطة الإدارة';
 }
 
 function matchesKind(item: MemoryItem, kind: MemoryUiKind) {
@@ -254,7 +265,7 @@ function ReactionCard({ reaction, title }: { reaction: MemoryReaction; title: st
   );
 }
 
-export function MemoryScreen() {
+export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -597,6 +608,8 @@ export function MemoryScreen() {
               </Pressable>
             ))}
           </SectionCard>
+
+          <MemorySubmitPanel branches={branchList} />
         </>
       ) : null}
     </Screen>

@@ -9,7 +9,7 @@
     "ios": {
       "bundleIdentifier": "com.alzidan.family",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية.",
+        "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية أو ذكرى.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "supportsTablet": true,
@@ -41,7 +41,9 @@
     "plugins": [
       "expo-video",
       "expo-notifications",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-image-picker",
+      "expo-document-picker"
     ],
     "extra": {
       "eas": {

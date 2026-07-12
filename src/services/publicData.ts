@@ -1,4 +1,5 @@
 import type { Branch, FamilyEvent, PublicAffinityStats, TreeChild, TreeParent } from '../types';
+import { eventTypeArabicLabel } from '../utils/eventTypeLabels';
 import { selectPublicRows } from './supabase';
 
 type BranchRow = {
@@ -70,7 +71,12 @@ const eventTitles: Record<string, string> = {
   operation: 'عملية',
   discharge: 'خروج من المستشفى',
   death: 'وفاة',
+  general: 'مناسبة عامة',
 };
+
+function eventTitle(type: string) {
+  return eventTitles[type] || eventTypeArabicLabel(type);
+}
 
 function eventCategory(type: string): FamilyEvent['category'] {
   if (type === 'death') return 'condolence';
@@ -171,7 +177,7 @@ function mapEvent(row: EventRow): FamilyEvent {
     id: String(row.id),
     category,
     categoryLabel: categoryLabel(category),
-    title: eventTitles[row.type] || 'مناسبة عائلية',
+    title: eventTitle(row.type),
     type: row.type,
     person: row.person,
     date: formatEventDate(row),
