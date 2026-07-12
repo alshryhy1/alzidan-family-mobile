@@ -27,6 +27,7 @@ import {
 } from './src/services/pushNotifications';
 import { fetchPendingSpecialCards, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
+import { trackAppView } from './src/services/viewTracking';
 import { colors, spacing, typography } from './src/theme';
 import type { MemberRequest, PublicScreen } from './src/types';
 
@@ -175,6 +176,15 @@ export default function App() {
       console.warn('تعذر تسجيل إشعارات التطبيق:', error);
     });
   }, []);
+
+  useEffect(() => {
+    trackAppView('app/mobile').catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (screen !== 'memory') return;
+    trackAppView('app/mobile/memory').catch(() => undefined);
+  }, [screen]);
 
   useEffect(() => {
     const receivedSub = Notifications.addNotificationReceivedListener((notification) => {

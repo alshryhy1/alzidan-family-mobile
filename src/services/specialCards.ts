@@ -67,10 +67,6 @@ function isWithinSchedule(card: SpecialCard) {
   return true;
 }
 
-function isAutoDisplay(card: SpecialCard) {
-  return String(card.display_mode || 'auto').trim() !== 'manual';
-}
-
 export async function markSpecialCardSeen(cardId: number) {
   await AsyncStorage.setItem(storageKey(cardId), '1');
 }
@@ -96,7 +92,6 @@ export async function fetchPendingSpecialCards() {
 
   for (const card of rows) {
     if (!isWithinSchedule(card)) continue;
-    if (!isAutoDisplay(card)) continue;
     if (!(await shouldShowSpecialCard(card))) continue;
 
     pending.push(card);

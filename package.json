@@ -31,6 +31,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "sync:ios-icon": "node scripts/sync-ios-icon.mjs",
     "web": "expo start --web",
     "verify:tree-card": "node scripts/verify-tree-card-compat.mjs",
     "verify:push": "node scripts/verify-push-readiness.mjs",
