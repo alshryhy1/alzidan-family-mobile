@@ -3,6 +3,7 @@ import { Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 're
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { DataState } from '../components/DataState';
+import { ImageViewerModal } from '../components/ImageViewerModal';
 import { MemorySubmitPanel } from '../components/MemorySubmitPanel';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
@@ -151,10 +152,12 @@ function MemoryVideo({ uri }: { uri: string }) {
 function MediaTile({
   caption,
   kind,
+  onViewImage,
   url,
 }: {
   caption: string;
   kind: MemoryUiKind;
+  onViewImage: (uri: string, caption: string) => void;
   url: string;
 }) {
   const text = cleanText(caption) || `فتح ${mediaTypeLabel(kind)}`;
@@ -163,10 +166,15 @@ function MediaTile({
 
   if (kind === 'image') {
     return (
-      <View style={styles.mediaBlock}>
+      <Pressable
+        accessibilityLabel={text}
+        accessibilityRole="button"
+        onPress={() => onViewImage(url, text)}
+        style={({ pressed }) => [styles.mediaBlock, pressed && styles.pressed]}
+      >
         <Image source={{ uri: url }} style={styles.image} />
         <Text style={styles.mediaCaption}>{text}</Text>
-      </View>
+      </Pressable>
     );
   }
 
@@ -194,9 +202,11 @@ function MediaTile({
 function MemoryCard({
   item,
   onSelectPerson,
+  onViewImage,
 }: {
   item: MemoryItem;
   onSelectPerson: (person: PersonSummary) => void;
+  onViewImage: (uri: string, caption: string) => void;
 }) {
   const person: PersonSummary = {
     key: personKey(item),
@@ -244,6 +254,7 @@ function MemoryCard({
           caption={entry.caption}
           key={entry.id || `${entry.mediaType}-${entry.mediaUrl}`}
           kind={entry.mediaType}
+          onViewImage={onViewImage}
           url={entry.mediaUrl}
         />
       ))}
@@ -280,6 +291,15 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
   const [personReactions, setPersonReactions] = useState<MemoryReaction[]>([]);
   const [loadingReactions, setLoadingReactions] = useState(false);
   const [reactionsError, setReactionsError] = useState('');
+  const [viewerImage, setViewerImage] = useState<{ uri: string; caption: string } | null>(null);
+
+  const openImageViewer = (uri: string, caption: string) => {
+    setViewerImage({ uri, caption });
+  };
+
+  const closeImageViewer = () => {
+    setViewerImage(null);
+  };
 
   const load = () => {
     setLoading(true);
@@ -425,14 +445,24 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
     return map;
   }, [personItems]);
 
+  const imageViewer = (
+    <ImageViewerModal
+      caption={viewerImage?.caption}
+      onClose={closeImageViewer}
+      uri={viewerImage?.uri || ''}
+      visible={Boolean(viewerImage)}
+    />
+  );
+
   if (selectedPerson) {
     return (
-      <Screen
-        description="عرض ذاكرة الشخص مع الصور والفيديو والصوت والقصص والوثائق، إضافة إلى الدعاء والتعليقات المعتمدة."
-        onRefresh={load}
-        refreshing={loading}
-        title={selectedPerson.personName}
-      >
+      <>
+        <Screen
+          description="عرض ذاكرة الشخص مع الصور والفيديو والصوت والقصص والوثائق، إضافة إلى الدعاء والتعليقات المعتمدة."
+          onRefresh={load}
+          refreshing={loading}
+          title={selectedPerson.personName}
+        >
         <Pressable
           onPress={() => {
             setSelectedPerson(null);
@@ -481,15 +511,23 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
           <>
             <DataState empty={!detailItems.length} emptyText="لا توجد مواد في هذا القسم." />
             {detailItems.map((item) => (
-              <MemoryCard key={item.id} item={item} onSelectPerson={setSelectedPerson} />
+              <MemoryCard
+                key={item.id}
+                item={item}
+                onSelectPerson={setSelectedPerson}
+                onViewImage={openImageViewer}
+              />
             ))}
           </>
         )}
       </Screen>
+      {imageViewer}
+      </>
     );
   }
 
   return (
+    <>
     <Screen
       description="فهرس من الذاكرة: أحدث الذكريات، بطاقات الأشخاص، والبحث والفلاتر على المواد المعتمدة فقط."
       onRefresh={load}
@@ -578,7 +616,12 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
           <SectionCard title="أحدث الذكريات" eyebrow={`المواد المعتمدة: ${filteredItems.length}`}>
             {!latestItems.length ? <DataState empty emptyText="لا توجد ذكريات مطابقة للبحث الحالي." /> : null}
             {latestItems.map((item) => (
-              <MemoryCard key={item.id} item={item} onSelectPerson={setSelectedPerson} />
+              <MemoryCard
+                key={item.id}
+                item={item}
+                onSelectPerson={setSelectedPerson}
+                onViewImage={openImageViewer}
+              />
             ))}
           </SectionCard>
 
@@ -613,6 +656,8 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
         </>
       ) : null}
     </Screen>
+    {imageViewer}
+    </>
   );
 }
 

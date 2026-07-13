@@ -40,12 +40,13 @@ function toEventDate(parsed: { kind: 'hijri' | 'gregorian'; year: number; month:
 }
 
 function formatGregorianArabic(date: Date) {
-  return new Intl.DateTimeFormat('ar-SA', {
+  // Hermes/React Native يتجاهل خيار calendar مع ar-SA ويعرض الهجري افتراضياً؛
+  // امتداد u-ca-gregory في الـ locale هو الطريقة الموثوقة (مثل TreeScreen).
+  return new Intl.DateTimeFormat('ar-SA-u-ca-gregory', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-    calendar: 'gregory',
   }).format(date);
 }
 
