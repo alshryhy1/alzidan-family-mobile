@@ -175,11 +175,16 @@ export default function App() {
     registerPushToken()
       .then((result) => {
         if (!result?.ok) {
-          console.warn('تعذر تسجيل إشعارات التطبيق:', result?.reason || result);
+          console.warn('[PUSH] registerPushToken finished with failure:', result?.reason || result);
+        } else {
+          console.log('[PUSH] registerPushToken finished successfully', {
+            via: 'via' in result ? result.via : 'rpc',
+            token: result.token ? `${result.token.slice(0, 12)}…` : null,
+          });
         }
       })
       .catch((error) => {
-        console.warn('تعذر تسجيل إشعارات التطبيق:', error);
+        console.error('[PUSH] registerPushToken unhandled error:', error);
       });
   }, []);
 

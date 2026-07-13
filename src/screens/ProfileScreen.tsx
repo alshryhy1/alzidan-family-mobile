@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
+import { getPushDebugTrace, registerPushToken, type PushDebugTrace } from '../services/pushNotifications';
 import { selectPublicRows } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, TreeChild } from '../types';
@@ -65,6 +66,29 @@ function tripleNameFromPath(value: string) {
   return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : displayPersonName(value);
 }
 
+function formatPushDebugStep(step: string) {
+  const labels: Record<string, string> = {
+    register_start: 'بدء التسجيل',
+    not_physical_device: 'يتطلب جهازاً حقيقياً',
+    permission_denied: 'تم رفض إذن الإشعارات',
+    permission_granted: 'تم منح إذن الإشعارات',
+    project_id: 'جلب معرف المشروع',
+    token_received: 'تم الحصول على التوكن',
+    token_fetch_failed: 'فشل الحصول على التوكن',
+    rpc_success: 'نجح تسجيل التوكن (RPC)',
+    rpc_failed: 'فشل RPC — جاري المحاولة بالبديل',
+    fallback_upsert_success: 'نجح التسجيل (upsert)',
+    fallback_upsert_failed: 'فشل التسجيل بالكامل',
+  };
+  return labels[step] || step;
+}
+
+function formatPushDebugTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('ar-SA');
+}
+
 export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: ProfileScreenProps) {
   const [phone, setPhone] = useState('');
   const [savedPhone, setSavedPhone] = useState('');
@@ -74,6 +98,8 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
     text: '',
   });
   const [loading, setLoading] = useState(false);
+  const [pushDebug, setPushDebug] = useState<PushDebugTrace | null>(null);
+  const [pushRetrying, setPushRetrying] = useState(false);
 
   const memberTreeRow = useMemo(
     () => childrenRows.find((row) => row.id === member?.tree_child_id) ?? null,
@@ -141,6 +167,37 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const refreshPushDebug = async () => {
+    const trace = await getPushDebugTrace();
+    setPushDebug(trace);
+  };
+
+  useEffect(() => {
+    refreshPushDebug().catch(() => {});
+  }, []);
+
+  const retryPushRegistration = async () => {
+    setPushRetrying(true);
+    try {
+      const result = await registerPushToken();
+      await refreshPushDebug();
+      if (!result?.ok) {
+        setStatus({
+          kind: 'error',
+          text: `تعذر تسجيل الإشعارات: ${result?.reason || 'unknown'}`,
+        });
+      }
+    } catch (error) {
+      await refreshPushDebug();
+      setStatus({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'تعذر تسجيل الإشعارات.',
+      });
+    } finally {
+      setPushRetrying(false);
+    }
+  };
+
   const logout = () => {
     AsyncStorage.removeItem(MEMBER_PHONE_KEY).catch(() => {});
     setMember(null);
@@ -206,6 +263,32 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
           <Text style={styles.statusText}>{status.text}</Text>
         </View>
       ) : null}
+
+      <SectionCard eyebrow="تشخيص" title="حالة الإشعارات">
+        {pushDebug ? (
+          <View style={styles.pushDebugBlock}>
+            <Text style={styles.pushDebugLine}>
+              {pushDebug.ok ? '✓ مسجل' : '✗ غير مسجل'} — {formatPushDebugStep(pushDebug.step)}
+            </Text>
+            <Text style={styles.pushDebugMeta}>آخر محاولة: {formatPushDebugTime(pushDebug.timestamp)}</Text>
+            {pushDebug.tokenPrefix ? (
+              <Text style={styles.pushDebugMeta}>التوكن: {pushDebug.tokenPrefix}</Text>
+            ) : null}
+            {pushDebug.projectId ? (
+              <Text style={styles.pushDebugMeta}>Project ID: {pushDebug.projectId}</Text>
+            ) : null}
+            {pushDebug.errorMessage ? (
+              <Text style={styles.pushDebugError}>{pushDebug.errorMessage}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <Text style={styles.pushDebugMeta}>لا توجد محاولة تسجيل بعد.</Text>
+        )}
+        <ActionButton
+          label={pushRetrying ? 'جاري إعادة التسجيل...' : 'إعادة تسجيل الإشعارات'}
+          onPress={retryPushRegistration}
+        />
+      </SectionCard>
     </Screen>
   );
 }
@@ -287,6 +370,29 @@ const styles = StyleSheet.create({
   statusText: {
     color: colors.text,
     fontWeight: '800',
+    textAlign: 'right',
+  },
+  pushDebugBlock: {
+    gap: 6,
+    marginBottom: spacing.md,
+  },
+  pushDebugLine: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  pushDebugMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'right',
+  },
+  pushDebugError: {
+    color: '#B91C1C',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
     textAlign: 'right',
   },
 });

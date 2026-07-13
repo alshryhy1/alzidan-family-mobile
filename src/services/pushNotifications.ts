@@ -1,9 +1,67 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 
 import { callPublicRpc, upsertPublicRow } from './supabase';
+
+export const PUSH_DEBUG_STORAGE_KEY = 'push_debug_v1';
+
+export type PushDebugTrace = {
+  timestamp: string;
+  step: string;
+  tokenPrefix?: string | null;
+  projectId?: string | null;
+  errorMessage?: string | null;
+  ok?: boolean;
+  detail?: string | null;
+};
+
+function tokenPrefix(token: string | null | undefined) {
+  const value = String(token || '').trim();
+  if (!value) return null;
+  return value.length <= 12 ? value : `${value.slice(0, 12)}…`;
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+export async function savePushDebugTrace(trace: PushDebugTrace) {
+  try {
+    await AsyncStorage.setItem(PUSH_DEBUG_STORAGE_KEY, JSON.stringify(trace));
+  } catch (storageError) {
+    console.warn('[PUSH] failed to persist debug trace:', storageError);
+  }
+}
+
+export async function getPushDebugTrace(): Promise<PushDebugTrace | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PUSH_DEBUG_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PushDebugTrace;
+  } catch {
+    return null;
+  }
+}
+
+async function tracePush(step: string, patch: Partial<Omit<PushDebugTrace, 'timestamp' | 'step'>> = {}) {
+  const entry: PushDebugTrace = {
+    timestamp: new Date().toISOString(),
+    step,
+    ...patch,
+  };
+  console.log('[PUSH]', step, entry);
+  await savePushDebugTrace(entry);
+  return entry;
+}
 
 export type FormalNotificationText = {
   typeLabel: string;
@@ -143,7 +201,13 @@ function getProjectId() {
 }
 
 export async function registerPushToken() {
+  await tracePush('register_start', { ok: false, detail: Platform.OS });
+
   if (!Device.isDevice) {
+    await tracePush('not_physical_device', {
+      ok: false,
+      errorMessage: 'push_requires_physical_device',
+    });
     return { ok: false, reason: 'push_requires_physical_device' };
   }
 
@@ -156,8 +220,14 @@ export async function registerPushToken() {
   }
 
   if (status !== 'granted') {
+    await tracePush('permission_denied', {
+      ok: false,
+      errorMessage: `permission_status:${status}`,
+    });
     return { ok: false, reason: 'permission_denied' };
   }
+
+  await tracePush('permission_granted', { ok: false });
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('family-events', {
@@ -169,9 +239,35 @@ export async function registerPushToken() {
   }
 
   const projectId = getProjectId();
-  const tokenResult = await Notifications.getExpoPushTokenAsync(
-    projectId ? { projectId } : undefined,
-  );
+  console.log('[PUSH] projectId:', projectId ?? '(missing)');
+  await tracePush('project_id', {
+    ok: false,
+    projectId: projectId ?? null,
+    detail: projectId ? 'project_id_present' : 'project_id_missing',
+  });
+
+  let tokenResult: Notifications.ExpoPushToken;
+  try {
+    tokenResult = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined,
+    );
+  } catch (tokenError) {
+    const message = errorMessage(tokenError);
+    console.error('[PUSH] getExpoPushTokenAsync failed:', message);
+    await tracePush('token_fetch_failed', {
+      ok: false,
+      projectId: projectId ?? null,
+      errorMessage: message,
+    });
+    return { ok: false, reason: 'token_fetch_failed', error: message };
+  }
+
+  console.log('[PUSH] token:', tokenResult.data);
+  await tracePush('token_received', {
+    ok: false,
+    projectId: projectId ?? null,
+    tokenPrefix: tokenPrefix(tokenResult.data),
+  });
 
   const now = new Date().toISOString();
   const tokenRow = {
@@ -183,20 +279,77 @@ export async function registerPushToken() {
     updated_at: now,
   };
 
+  const rpcArgs = {
+    p_token: tokenRow.token,
+    p_platform: tokenRow.platform,
+    p_device_name: tokenRow.device_name,
+    p_app_version: tokenRow.app_version,
+  };
+
+  console.log('[PUSH] RPC register_push_token_v1 call:', {
+    ...rpcArgs,
+    p_token: tokenPrefix(tokenRow.token),
+  });
+
   try {
-    const rpcResult = await callPublicRpc<{ ok?: boolean; error?: string }>('register_push_token_v1', {
-      p_token: tokenRow.token,
-      p_platform: tokenRow.platform,
-      p_device_name: tokenRow.device_name,
-      p_app_version: tokenRow.app_version,
-    });
+    const rpcResult = await callPublicRpc<{ ok?: boolean; error?: string }>(
+      'register_push_token_v1',
+      rpcArgs,
+    );
+    console.log('[PUSH] RPC register_push_token_v1 result:', rpcResult);
+
     if (rpcResult?.ok === false) {
       throw new Error(rpcResult.error || 'register_push_token_v1_failed');
     }
-  } catch (rpcError) {
-    console.warn('register_push_token_v1 unavailable, falling back to push_tokens upsert:', rpcError);
-    await upsertPublicRow('push_tokens', tokenRow, 'token');
-  }
 
-  return { ok: true, token: tokenResult.data };
+    await tracePush('rpc_success', {
+      ok: true,
+      projectId: projectId ?? null,
+      tokenPrefix: tokenPrefix(tokenResult.data),
+      detail: 'register_push_token_v1',
+    });
+    return { ok: true, token: tokenResult.data };
+  } catch (rpcError) {
+    const message = errorMessage(rpcError);
+    console.warn('[PUSH] RPC register_push_token_v1 failed, falling back to push_tokens upsert:', message);
+    await tracePush('rpc_failed', {
+      ok: false,
+      projectId: projectId ?? null,
+      tokenPrefix: tokenPrefix(tokenResult.data),
+      errorMessage: message,
+      detail: 'register_push_token_v1',
+    });
+
+    try {
+      console.log('[PUSH] fallback upsert push_tokens:', {
+        ...tokenRow,
+        token: tokenPrefix(tokenRow.token),
+      });
+      await upsertPublicRow('push_tokens', tokenRow, 'token');
+      console.log('[PUSH] fallback upsert push_tokens: success');
+      await tracePush('fallback_upsert_success', {
+        ok: true,
+        projectId: projectId ?? null,
+        tokenPrefix: tokenPrefix(tokenResult.data),
+        detail: 'push_tokens',
+      });
+      return { ok: true, token: tokenResult.data, via: 'fallback_upsert' as const };
+    } catch (upsertError) {
+      const upsertMessage = errorMessage(upsertError);
+      console.error('[PUSH] fallback upsert push_tokens failed:', upsertMessage);
+      await tracePush('fallback_upsert_failed', {
+        ok: false,
+        projectId: projectId ?? null,
+        tokenPrefix: tokenPrefix(tokenResult.data),
+        errorMessage: upsertMessage,
+        detail: 'push_tokens',
+      });
+      return {
+        ok: false,
+        reason: 'registration_failed',
+        error: upsertMessage,
+        rpcError: message,
+      };
+    }
+  }
 }
