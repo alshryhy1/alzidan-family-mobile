@@ -221,6 +221,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				695BD5AC36B449FDAA832FF9 /* PBXTargetDependency */,
 			);
 			name = aaelhalzydan;
 			productName = aaelhalzydan;
@@ -738,6 +739,24 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin PBXTargetDependency section */
+		695BD5AC36B449FDAA832FF9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A86C805FB5248B6ACC4DE0AD /* AlzidanFamilyWidgetExtension */;
+			targetProxy = B82917A1FE78480294C1C52D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		B82917A1FE78480294C1C52D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A86C805FB5248B6ACC4DE0AD;
+			remoteInfo = AlzidanFamilyWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
 	};
 	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
 }
