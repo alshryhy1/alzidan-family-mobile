@@ -20,7 +20,7 @@ function check(label, ok, detail) {
 
 check('expo-notifications dependency', Boolean(pkg.dependencies?.['expo-notifications']));
 check('expo-device dependency', Boolean(pkg.dependencies?.['expo-device']));
-check('expo-notifications plugin', Array.isArray(app.expo?.plugins) && app.expo.plugins.includes('expo-notifications'));
+check('expo-notifications plugin', Array.isArray(app.expo?.plugins) && app.expo.plugins.some((p) => Array.isArray(p) ? p[0] === 'expo-notifications' : p === 'expo-notifications'));
 check('EAS projectId', Boolean(app.expo?.extra?.eas?.projectId), app.expo?.extra?.eas?.projectId || '');
 
 const pushSource = readFileSync(join(root, 'src/services/pushNotifications.ts'), 'utf8');
@@ -29,6 +29,12 @@ check('physical device guard', pushSource.includes('Device.isDevice'));
 check('push_tokens upsert', pushSource.includes("'push_tokens'"));
 check('Android channel family-events', pushSource.includes("'family-events'"));
 check('notification handler configured', pushSource.includes('setNotificationHandler'));
+
+const pushNotifyFn = join(root, '../alzidan-family/supabase/functions/alzidan-push-notify/index.ts');
+check('push sender edge function exists', existsSync(pushNotifyFn));
+
+const requestActions = readFileSync(join(root, '../alzidan-family/assets/js/modules/request-actions.js'), 'utf8');
+check('admin invokes alzidan-push-notify', requestActions.includes('alzidan-push-notify'));
 
 const appTsx = readFileSync(join(root, 'App.tsx'), 'utf8');
 check('App registers push on mount', appTsx.includes('registerPushToken'));

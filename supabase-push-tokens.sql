@@ -27,3 +27,6 @@ using (true)
 with check (true);
 
 grant insert, update on public.push_tokens to anon;
+
+-- نشر الدالة alzidan-push-notify في Supabase وتشغيل هذا الملف إن لم يكن الجدول موجودًا.
+-- التحقق: SELECT count(*) FROM push_tokens; (بصلاحية service role)
