@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 
-import { upsertPublicRow } from './supabase';
+import { callPublicRpc, upsertPublicRow } from './supabase';
 
 export type FormalNotificationText = {
   typeLabel: string;
@@ -174,19 +174,29 @@ export async function registerPushToken() {
   );
 
   const now = new Date().toISOString();
+  const tokenRow = {
+    token: tokenResult.data,
+    platform: Platform.OS,
+    device_name: Device.deviceName || null,
+    app_version: Constants.expoConfig?.version || null,
+    enabled: true,
+    updated_at: now,
+  };
 
-  await upsertPublicRow(
-    'push_tokens',
-    {
-      token: tokenResult.data,
-      platform: Platform.OS,
-      device_name: Device.deviceName || null,
-      app_version: Constants.expoConfig?.version || null,
-      enabled: true,
-      updated_at: now,
-    },
-    'token',
-  );
+  try {
+    const rpcResult = await callPublicRpc<{ ok?: boolean; error?: string }>('register_push_token_v1', {
+      p_token: tokenRow.token,
+      p_platform: tokenRow.platform,
+      p_device_name: tokenRow.device_name,
+      p_app_version: tokenRow.app_version,
+    });
+    if (rpcResult?.ok === false) {
+      throw new Error(rpcResult.error || 'register_push_token_v1_failed');
+    }
+  } catch (rpcError) {
+    console.warn('register_push_token_v1 unavailable, falling back to push_tokens upsert:', rpcError);
+    await upsertPublicRow('push_tokens', tokenRow, 'token');
+  }
 
   return { ok: true, token: tokenResult.data };
 }

@@ -172,9 +172,15 @@ export default function App() {
   const [specialCardVisible, setSpecialCardVisible] = useState(false);
 
   useEffect(() => {
-    registerPushToken().catch((error) => {
-      console.warn('تعذر تسجيل إشعارات التطبيق:', error);
-    });
+    registerPushToken()
+      .then((result) => {
+        if (!result?.ok) {
+          console.warn('تعذر تسجيل إشعارات التطبيق:', result?.reason || result);
+        }
+      })
+      .catch((error) => {
+        console.warn('تعذر تسجيل إشعارات التطبيق:', error);
+      });
   }, []);
 
   useEffect(() => {

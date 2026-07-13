@@ -105,6 +105,33 @@ export async function upsertPublicRow(path: string, row: Record<string, unknown>
   }
 }
 
+export async function callPublicRpc<T = Record<string, unknown>>(
+  functionName: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+  }
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${functionName}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${supabaseAnonKey}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(args),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `تعذر استدعاء ${functionName} (${response.status}).`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
 function publicStorageUrl(bucket: string, path: string) {
   if (!supabaseUrl) return '';
   return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path
