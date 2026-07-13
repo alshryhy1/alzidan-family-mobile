@@ -12,18 +12,7 @@
         "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية أو ذكرى.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "supportsTablet": true,
-      "appExtensions": [
-        {
-          "targetName": "AlzidanFamilyWidgetExtension",
-          "bundleIdentifier": "com.alzidan.family.AlzidanFamilyWidgetExtension",
-          "entitlements": {
-            "com.apple.security.application-groups": [
-              "group.com.alzidan.family"
-            ]
-          }
-        }
-      ]
+      "supportsTablet": true
     },
     "android": {
       "package": "com.alzidan.family",
@@ -40,14 +29,36 @@
     },
     "plugins": [
       "expo-video",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "mode": "production"
+        }
+      ],
       "expo-sharing",
       "expo-image-picker",
       "expo-document-picker"
     ],
     "extra": {
       "eas": {
-        "projectId": "8a6659eb-ef85-49b5-a8db-7b7be96b8c1f"
+        "projectId": "8a6659eb-ef85-49b5-a8db-7b7be96b8c1f",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "AlzidanFamilyWidgetExtension",
+                  "bundleIdentifier": "com.alzidan.family.AlzidanFamilyWidgetExtension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.alzidan.family"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "owner": "alshryhy"
