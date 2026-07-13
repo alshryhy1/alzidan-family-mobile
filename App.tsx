@@ -23,7 +23,7 @@ import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
 import {
   formatFormalNotificationFromPayload,
-  registerPushToken,
+  setupPushRegistration,
 } from './src/services/pushNotifications';
 import { fetchPendingSpecialCards, markSpecialCardSeen, type SpecialCard } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
@@ -171,22 +171,7 @@ export default function App() {
   const [specialCardIndex, setSpecialCardIndex] = useState(0);
   const [specialCardVisible, setSpecialCardVisible] = useState(false);
 
-  useEffect(() => {
-    registerPushToken()
-      .then((result) => {
-        if (!result?.ok) {
-          console.warn('[PUSH] registerPushToken finished with failure:', result?.reason || result);
-        } else {
-          console.log('[PUSH] registerPushToken finished successfully', {
-            via: 'via' in result ? result.via : 'rpc',
-            token: result.token ? `${result.token.slice(0, 12)}…` : null,
-          });
-        }
-      })
-      .catch((error) => {
-        console.error('[PUSH] registerPushToken unhandled error:', error);
-      });
-  }, []);
+  useEffect(() => setupPushRegistration(), []);
 
   useEffect(() => {
     trackAppView('app/mobile').catch(() => undefined);

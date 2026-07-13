@@ -1,10 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 
-import { callPublicRpc, upsertPublicRow } from './supabase';
+import { callPublicRpc, isSupabaseConfigured, upsertPublicRow } from './supabase';
+
+/** EAS project UUID — required in bare/TestFlight when Constants omit projectId. */
+const EAS_PROJECT_ID = '8a6659eb-ef85-49b5-a8db-7b7be96b8c1f';
 
 export const PUSH_DEBUG_STORAGE_KEY = 'push_debug_v1';
 
@@ -16,6 +19,15 @@ export type PushDebugTrace = {
   errorMessage?: string | null;
   ok?: boolean;
   detail?: string | null;
+};
+
+export type RegisterPushTokenResult = {
+  ok: boolean;
+  token?: string;
+  reason?: string;
+  error?: string;
+  via?: 'rpc' | 'fallback_upsert';
+  rpcError?: string;
 };
 
 function tokenPrefix(token: string | null | undefined) {
@@ -32,6 +44,26 @@ function errorMessage(error: unknown) {
   } catch {
     return String(error);
   }
+}
+
+function errorStack(error: unknown) {
+  if (error instanceof Error && error.stack) return error.stack;
+  return null;
+}
+
+function logPushError(label: string, error: unknown) {
+  const message = errorMessage(error);
+  const stack = errorStack(error);
+  console.error(`[PUSH] ${label}:`, message);
+  if (stack) {
+    console.error(`[PUSH] ${label} stack:`, stack);
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export async function savePushDebugTrace(trace: PushDebugTrace) {
@@ -193,85 +225,70 @@ Notifications.setNotificationHandler({
 });
 
 function getProjectId() {
-  return (
-    Constants.expoConfig?.extra?.eas?.projectId ||
-    Constants.easConfig?.projectId ||
-    undefined
-  );
+  const fromExpoConfig = Constants.expoConfig?.extra?.eas?.projectId;
+  const fromEasConfig = Constants.easConfig?.projectId;
+  const manifest2Extra = (Constants as { manifest2?: { extra?: { eas?: { projectId?: string } } } }).manifest2?.extra;
+  const fromManifest2 = manifest2Extra?.eas?.projectId;
+
+  return fromExpoConfig || fromEasConfig || fromManifest2 || EAS_PROJECT_ID;
 }
 
-export async function registerPushToken() {
-  await tracePush('register_start', { ok: false, detail: Platform.OS });
-
-  if (!Device.isDevice) {
-    await tracePush('not_physical_device', {
-      ok: false,
-      errorMessage: 'push_requires_physical_device',
-    });
-    return { ok: false, reason: 'push_requires_physical_device' };
-  }
-
+async function ensureNotificationPermission() {
   const current = await Notifications.getPermissionsAsync();
   let status = current.status;
 
   if (status !== 'granted') {
-    const requested = await Notifications.requestPermissionsAsync();
+    const requested = await Notifications.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+      },
+    });
     status = requested.status;
   }
 
-  if (status !== 'granted') {
-    await tracePush('permission_denied', {
-      ok: false,
-      errorMessage: `permission_status:${status}`,
-    });
-    return { ok: false, reason: 'permission_denied' };
+  return status;
+}
+
+async function fetchExpoPushToken(projectId: string) {
+  const maxAttempts = 4;
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      console.log(`[PUSH] getExpoPushTokenAsync attempt ${attempt}/${maxAttempts}`, { projectId });
+      const tokenResult = await Notifications.getExpoPushTokenAsync({ projectId });
+      console.log('[PUSH] Got Expo Push Token?', Boolean(tokenResult?.data), tokenPrefix(tokenResult?.data));
+      return tokenResult;
+    } catch (error) {
+      lastError = error;
+      logPushError(`getExpoPushTokenAsync attempt ${attempt} failed`, error);
+      if (attempt < maxAttempts) {
+        await sleep(750 * attempt);
+      }
+    }
   }
 
-  await tracePush('permission_granted', { ok: false });
+  throw lastError instanceof Error ? lastError : new Error(errorMessage(lastError));
+}
 
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('family-events', {
-      name: 'أخبار العائلة',
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#047857',
-    });
-  }
-
-  const projectId = getProjectId();
-  console.log('[PUSH] projectId:', projectId ?? '(missing)');
-  await tracePush('project_id', {
-    ok: false,
-    projectId: projectId ?? null,
-    detail: projectId ? 'project_id_present' : 'project_id_missing',
-  });
-
-  let tokenResult: Notifications.ExpoPushToken;
-  try {
-    tokenResult = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined,
-    );
-  } catch (tokenError) {
-    const message = errorMessage(tokenError);
-    console.error('[PUSH] getExpoPushTokenAsync failed:', message);
-    await tracePush('token_fetch_failed', {
+async function persistPushToken(token: string, projectId: string): Promise<RegisterPushTokenResult> {
+  if (!isSupabaseConfigured()) {
+    const message = 'supabase_env_missing';
+    console.error('[PUSH] Supabase not configured — RPC/upsert skipped');
+    await tracePush('supabase_not_configured', {
       ok: false,
-      projectId: projectId ?? null,
+      projectId,
+      tokenPrefix: tokenPrefix(token),
       errorMessage: message,
     });
-    return { ok: false, reason: 'token_fetch_failed', error: message };
+    return { ok: false, reason: 'supabase_not_configured', error: message };
   }
-
-  console.log('[PUSH] token:', tokenResult.data);
-  await tracePush('token_received', {
-    ok: false,
-    projectId: projectId ?? null,
-    tokenPrefix: tokenPrefix(tokenResult.data),
-  });
 
   const now = new Date().toISOString();
   const tokenRow = {
-    token: tokenResult.data,
+    token,
     platform: Platform.OS,
     device_name: Device.deviceName || null,
     app_version: Constants.expoConfig?.version || null,
@@ -286,7 +303,7 @@ export async function registerPushToken() {
     p_app_version: tokenRow.app_version,
   };
 
-  console.log('[PUSH] RPC register_push_token_v1 call:', {
+  console.log('[PUSH] RPC called? yes — register_push_token_v1', {
     ...rpcArgs,
     p_token: tokenPrefix(tokenRow.token),
   });
@@ -296,7 +313,7 @@ export async function registerPushToken() {
       'register_push_token_v1',
       rpcArgs,
     );
-    console.log('[PUSH] RPC register_push_token_v1 result:', rpcResult);
+    console.log('[PUSH] RPC result:', rpcResult);
 
     if (rpcResult?.ok === false) {
       throw new Error(rpcResult.error || 'register_push_token_v1_failed');
@@ -304,43 +321,44 @@ export async function registerPushToken() {
 
     await tracePush('rpc_success', {
       ok: true,
-      projectId: projectId ?? null,
-      tokenPrefix: tokenPrefix(tokenResult.data),
+      projectId,
+      tokenPrefix: tokenPrefix(token),
       detail: 'register_push_token_v1',
     });
-    return { ok: true, token: tokenResult.data };
+    return { ok: true, token, via: 'rpc' };
   } catch (rpcError) {
     const message = errorMessage(rpcError);
-    console.warn('[PUSH] RPC register_push_token_v1 failed, falling back to push_tokens upsert:', message);
+    logPushError('RPC register_push_token_v1 failed', rpcError);
     await tracePush('rpc_failed', {
       ok: false,
-      projectId: projectId ?? null,
-      tokenPrefix: tokenPrefix(tokenResult.data),
+      projectId,
+      tokenPrefix: tokenPrefix(token),
       errorMessage: message,
       detail: 'register_push_token_v1',
     });
 
+    console.log('[PUSH] Fallback upsert executed? attempting push_tokens upsert', {
+      ...tokenRow,
+      token: tokenPrefix(tokenRow.token),
+    });
+
     try {
-      console.log('[PUSH] fallback upsert push_tokens:', {
-        ...tokenRow,
-        token: tokenPrefix(tokenRow.token),
-      });
       await upsertPublicRow('push_tokens', tokenRow, 'token');
-      console.log('[PUSH] fallback upsert push_tokens: success');
+      console.log('[PUSH] Fallback upsert push_tokens: success');
       await tracePush('fallback_upsert_success', {
         ok: true,
-        projectId: projectId ?? null,
-        tokenPrefix: tokenPrefix(tokenResult.data),
+        projectId,
+        tokenPrefix: tokenPrefix(token),
         detail: 'push_tokens',
       });
-      return { ok: true, token: tokenResult.data, via: 'fallback_upsert' as const };
+      return { ok: true, token, via: 'fallback_upsert' };
     } catch (upsertError) {
       const upsertMessage = errorMessage(upsertError);
-      console.error('[PUSH] fallback upsert push_tokens failed:', upsertMessage);
+      logPushError('fallback upsert push_tokens failed', upsertError);
       await tracePush('fallback_upsert_failed', {
         ok: false,
-        projectId: projectId ?? null,
-        tokenPrefix: tokenPrefix(tokenResult.data),
+        projectId,
+        tokenPrefix: tokenPrefix(token),
         errorMessage: upsertMessage,
         detail: 'push_tokens',
       });
@@ -352,4 +370,153 @@ export async function registerPushToken() {
       };
     }
   }
+}
+
+let registrationInFlight: Promise<RegisterPushTokenResult> | null = null;
+let lastRegisteredToken: string | null = null;
+
+export async function registerPushToken(source = 'direct'): Promise<RegisterPushTokenResult> {
+  if (registrationInFlight) {
+    console.log('[PUSH] registerPushToken already in flight, awaiting existing call', { source });
+    return registrationInFlight;
+  }
+
+  registrationInFlight = (async () => {
+    await tracePush('register_start', { ok: false, detail: `${Platform.OS}:${source}` });
+
+    if (!Device.isDevice) {
+      await tracePush('not_physical_device', {
+        ok: false,
+        errorMessage: 'push_requires_physical_device',
+      });
+      return { ok: false, reason: 'push_requires_physical_device' };
+    }
+
+    const status = await ensureNotificationPermission();
+    if (status !== 'granted') {
+      await tracePush('permission_denied', {
+        ok: false,
+        errorMessage: `permission_status:${status}`,
+      });
+      return { ok: false, reason: 'permission_denied' };
+    }
+
+    await tracePush('permission_granted', { ok: false });
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('family-events', {
+        name: 'أخبار العائلة',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#047857',
+      });
+    }
+
+    const projectId = getProjectId();
+    console.log('[PUSH] projectId resolved:', projectId, {
+      expoConfig: Constants.expoConfig?.extra?.eas?.projectId ?? null,
+      easConfig: Constants.easConfig?.projectId ?? null,
+      fallback: EAS_PROJECT_ID,
+    });
+    await tracePush('project_id', {
+      ok: false,
+      projectId,
+      detail: 'project_id_present',
+    });
+
+    let tokenResult: Notifications.ExpoPushToken;
+    try {
+      tokenResult = await fetchExpoPushToken(projectId);
+    } catch (tokenError) {
+      const message = errorMessage(tokenError);
+      logPushError('getExpoPushTokenAsync failed (all retries)', tokenError);
+      await tracePush('token_fetch_failed', {
+        ok: false,
+        projectId,
+        errorMessage: message,
+      });
+      return { ok: false, reason: 'token_fetch_failed', error: message };
+    }
+
+    const token = String(tokenResult.data || '').trim();
+    if (!token) {
+      await tracePush('token_empty', {
+        ok: false,
+        projectId,
+        errorMessage: 'empty_expo_push_token',
+      });
+      return { ok: false, reason: 'token_empty' };
+    }
+
+    if (token === lastRegisteredToken) {
+      console.log('[PUSH] token unchanged, skipping Supabase write', { token: tokenPrefix(token) });
+      await tracePush('token_unchanged', {
+        ok: true,
+        projectId,
+        tokenPrefix: tokenPrefix(token),
+      });
+      return { ok: true, token, via: 'rpc' };
+    }
+
+    await tracePush('token_received', {
+      ok: false,
+      projectId,
+      tokenPrefix: tokenPrefix(token),
+    });
+
+    const result = await persistPushToken(token, projectId);
+    if (result.ok) {
+      lastRegisteredToken = token;
+    }
+    return result;
+  })();
+
+  try {
+    return await registrationInFlight;
+  } finally {
+    registrationInFlight = null;
+  }
+}
+
+export function setupPushRegistration() {
+  console.log('[PUSH] setupPushRegistration');
+
+  const runRegistration = (source: string) => {
+    registerPushToken(source)
+      .then((result) => {
+        if (!result?.ok) {
+          console.warn('[PUSH] registerPushToken finished with failure:', result?.reason || result);
+        } else {
+          console.log('[PUSH] registerPushToken finished successfully', {
+            source,
+            via: result.via ?? 'rpc',
+            token: result.token ? tokenPrefix(result.token) : null,
+          });
+        }
+      })
+      .catch((error) => {
+        logPushError('registerPushToken unhandled error', error);
+      });
+  };
+
+  runRegistration('mount');
+
+  const pushTokenSub = Notifications.addPushTokenListener(() => {
+    console.log('[PUSH] native push token changed — re-registering');
+    runRegistration('push_token_listener');
+  });
+
+  let lastAppState: AppStateStatus = AppState.currentState;
+  const appStateSub = AppState.addEventListener('change', (nextState) => {
+    if (lastAppState.match(/inactive|background/) && nextState === 'active') {
+      console.log('[PUSH] app became active — re-registering');
+      runRegistration('app_active');
+    }
+    lastAppState = nextState;
+  });
+
+  return () => {
+    pushTokenSub.remove();
+    appStateSub.remove();
+  };
 }

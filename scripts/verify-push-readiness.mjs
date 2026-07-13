@@ -25,6 +25,9 @@ check('EAS projectId', Boolean(app.expo?.extra?.eas?.projectId), app.expo?.extra
 
 const pushSource = readFileSync(join(root, 'src/services/pushNotifications.ts'), 'utf8');
 check('registerPushToken defined', pushSource.includes('export async function registerPushToken'));
+check('setupPushRegistration defined', pushSource.includes('export function setupPushRegistration'));
+check('EAS projectId fallback constant', pushSource.includes('8a6659eb-ef85-49b5-a8db-7b7be96b8c1f'));
+check('push token listener hook', pushSource.includes('addPushTokenListener'));
 check('physical device guard', pushSource.includes('Device.isDevice'));
 check('push_tokens upsert', pushSource.includes("'push_tokens'"));
 check('Android channel family-events', pushSource.includes("'family-events'"));
@@ -37,7 +40,7 @@ const requestActions = readFileSync(join(root, '../alzidan-family/assets/js/modu
 check('admin invokes alzidan-push-notify', requestActions.includes('alzidan-push-notify'));
 
 const appTsx = readFileSync(join(root, 'App.tsx'), 'utf8');
-check('App registers push on mount', appTsx.includes('registerPushToken'));
+check('App registers push on mount', appTsx.includes('setupPushRegistration'));
 
 const envPath = join(root, '.env');
 const envExamplePath = join(root, '.env.example');
