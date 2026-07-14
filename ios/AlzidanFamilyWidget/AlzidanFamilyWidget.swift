@@ -539,10 +539,7 @@ func arabicCountdownText(until endDate: Date, now: Date) -> String {
 }
 
 struct PrayerProgressRing: View {
-    let progress: Double
-    let nextName: String
     let now: Date
-    let endDate: Date
     var ringColor = Color(red: 0.55, green: 0.68, blue: 0.32)
     var size: CGFloat = 108
 
@@ -550,48 +547,54 @@ struct PrayerProgressRing: View {
     private var timerMinWidth: CGFloat { size < 90 ? 54 : 66 }
 
     var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.primary.opacity(0.14), lineWidth: 8)
+        TimelineView(.periodic(from: now, by: 1)) { timeline in
+            let liveNow = timeline.date
+            let liveInfo = HailPrayerCalculator.prayerInfo(now: liveNow)
+            let progress = HailPrayerCalculator.progressUntilNextPrayer(now: liveNow)
 
-            Circle()
-                .trim(from: 0, to: progress)
-                .stroke(
-                    ringColor,
-                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
+            ZStack {
+                Circle()
+                    .stroke(Color.primary.opacity(0.14), lineWidth: 8)
 
-            VStack(alignment: .center, spacing: size < 90 ? 2 : 3) {
-                Text(nextName)
-                    .font(.system(size: size < 90 ? 9 : 11, weight: .bold))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(
+                        ringColor,
+                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
 
-                Text("المتبقي")
-                    .font(.system(size: size < 90 ? 7 : 8, weight: .medium))
-                    .opacity(0.72)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                VStack(alignment: .center, spacing: size < 90 ? 2 : 3) {
+                    Text(liveInfo.nextName)
+                        .font(.system(size: size < 90 ? 9 : 11, weight: .bold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(maxWidth: .infinity, alignment: .center)
 
-                Text(arabicCountdownText(until: endDate, now: now))
-                    .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
-                    .monospacedDigit()
-                    .multilineTextAlignment(.center)
-                    .frame(minWidth: timerMinWidth, alignment: .center)
-                    .lineLimit(1)
+                    Text("المتبقي")
+                        .font(.system(size: size < 90 ? 7 : 8, weight: .medium))
+                        .opacity(0.72)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    Text(arabicCountdownText(until: liveInfo.nextTime, now: liveNow))
+                        .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
+                        .monospacedDigit()
+                        .multilineTextAlignment(.center)
+                        .frame(minWidth: timerMinWidth, alignment: .center)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(size < 90 ? 10 : 12)
             }
-            .frame(maxWidth: .infinity)
-            .padding(size < 90 ? 10 : 12)
+            .background(
+                Circle()
+                    .fill(Color.white.opacity(0.55))
+            )
+            .frame(width: size, height: size)
         }
-        .background(
-            Circle()
-                .fill(Color.white.opacity(0.55))
-        )
-        .frame(width: size, height: size)
     }
 }
 
@@ -684,10 +687,13 @@ struct AlzidanFamilyWidgetEntryView: View {
                     Text("المتبقي:")
                         .font(.caption2)
                         .opacity(0.75)
-                    Text(arabicCountdownText(until: info.nextTime, now: entry.date))
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
-                        .lineLimit(1)
+                    TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
+                        let liveInfo = HailPrayerCalculator.prayerInfo(now: timeline.date)
+                        Text(arabicCountdownText(until: liveInfo.nextTime, now: timeline.date))
+                            .font(.caption.weight(.semibold))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
                 }
             }
         }
@@ -755,14 +761,8 @@ struct AlzidanFamilyWidgetEntryView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            PrayerProgressRing(
-                progress: HailPrayerCalculator.progressUntilNextPrayer(now: entry.date),
-                nextName: info.nextName,
-                now: entry.date,
-                endDate: info.nextTime,
-                size: 76
-            )
-            .frame(width: 76)
+            PrayerProgressRing(now: entry.date, size: 76)
+                .frame(width: 76)
 
             VStack(alignment: .trailing, spacing: 4) {
                 if visibleEvents.isEmpty {
@@ -818,13 +818,8 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .lineLimit(1)
             }
 
-            PrayerProgressRing(
-                progress: HailPrayerCalculator.progressUntilNextPrayer(now: entry.date),
-                nextName: info.nextName,
-                now: entry.date,
-                endDate: info.nextTime
-            )
-            .frame(maxWidth: .infinity)
+            PrayerProgressRing(now: entry.date)
+                .frame(maxWidth: .infinity)
             .padding(.top, 2)
             .padding(.bottom, 2)
 
