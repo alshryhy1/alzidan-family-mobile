@@ -525,21 +525,10 @@ struct HailPrayerCalculator {
     static func rad2deg(_ r: Double) -> Double { r * 180 / .pi }
 }
 
-func arabicDigits(_ s: String) -> String {
-    let map = ["0": "٠", "1": "١", "2": "٢", "3": "٣", "4": "٤", "5": "٥", "6": "٦", "7": "٧", "8": "٨", "9": "٩"]
-    return s.map { map[String($0)] ?? String($0) }.joined()
-}
-
-func arabicCountdownText(until endDate: Date, now: Date) -> String {
-    let total = max(0, Int(endDate.timeIntervalSince(now)))
-    let hours = total / 3600
-    let minutes = (total % 3600) / 60
-    let seconds = total % 60
-    return arabicDigits(String(format: "%02d:%02d:%02d", hours, minutes, seconds))
-}
-
 struct PrayerProgressRing: View {
-    let now: Date
+    let progress: Double
+    let nextName: String
+    let remainingRange: ClosedRange<Date>
     var ringColor = Color(red: 0.55, green: 0.68, blue: 0.32)
     var size: CGFloat = 108
 
@@ -547,54 +536,49 @@ struct PrayerProgressRing: View {
     private var timerMinWidth: CGFloat { size < 90 ? 54 : 66 }
 
     var body: some View {
-        TimelineView(.periodic(from: now, by: 1)) { timeline in
-            let liveNow = timeline.date
-            let liveInfo = HailPrayerCalculator.prayerInfo(now: liveNow)
-            let progress = HailPrayerCalculator.progressUntilNextPrayer(now: liveNow)
+        ZStack {
+            Circle()
+                .stroke(Color.primary.opacity(0.14), lineWidth: 8)
 
-            ZStack {
-                Circle()
-                    .stroke(Color.primary.opacity(0.14), lineWidth: 8)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(
+                    ringColor,
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
 
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(
-                        ringColor,
-                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
+            VStack(alignment: .center, spacing: size < 90 ? 2 : 3) {
+                Text(nextName)
+                    .font(.system(size: size < 90 ? 9 : 11, weight: .bold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(maxWidth: .infinity, alignment: .center)
 
-                VStack(alignment: .center, spacing: size < 90 ? 2 : 3) {
-                    Text(liveInfo.nextName)
-                        .font(.system(size: size < 90 ? 9 : 11, weight: .bold))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                Text("المتبقي")
+                    .font(.system(size: size < 90 ? 7 : 8, weight: .medium))
+                    .opacity(0.72)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .center)
 
-                    Text("المتبقي")
-                        .font(.system(size: size < 90 ? 7 : 8, weight: .medium))
-                        .opacity(0.72)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .center)
-
-                    Text(arabicCountdownText(until: liveInfo.nextTime, now: liveNow))
-                        .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
-                        .monospacedDigit()
-                        .multilineTextAlignment(.center)
-                        .frame(minWidth: timerMinWidth, alignment: .center)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(size < 90 ? 10 : 12)
+                Text(timerInterval: remainingRange, countsDown: true)
+                    .environment(\.locale, Locale(identifier: "ar_SA"))
+                    .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
+                    .monospacedDigit()
+                    .multilineTextAlignment(.center)
+                    .frame(minWidth: timerMinWidth, alignment: .center)
+                    .lineLimit(1)
             }
-            .background(
-                Circle()
-                    .fill(Color.white.opacity(0.55))
-            )
-            .frame(width: size, height: size)
+            .frame(maxWidth: .infinity)
+            .padding(size < 90 ? 10 : 12)
         }
+        .background(
+            Circle()
+                .fill(Color.white.opacity(0.55))
+        )
+        .frame(width: size, height: size)
     }
 }
 
@@ -621,6 +605,11 @@ struct AlzidanFamilyWidgetEntryView: View {
                 .foregroundStyle(ink)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func safeTimerRange(from start: Date, until end: Date) -> ClosedRange<Date> {
+        let safeEnd = end > start ? end : start.addingTimeInterval(60)
+        return start...safeEnd
     }
 
     private var visibleEvents: [FamilyEvent] {
@@ -687,13 +676,11 @@ struct AlzidanFamilyWidgetEntryView: View {
                     Text("المتبقي:")
                         .font(.caption2)
                         .opacity(0.75)
-                    TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
-                        let liveInfo = HailPrayerCalculator.prayerInfo(now: timeline.date)
-                        Text(arabicCountdownText(until: liveInfo.nextTime, now: timeline.date))
-                            .font(.caption.weight(.semibold))
-                            .monospacedDigit()
-                            .lineLimit(1)
-                    }
+                    Text(timerInterval: safeTimerRange(from: entry.date, until: info.nextTime), countsDown: true)
+                        .environment(\.locale, Locale(identifier: "ar_SA"))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
                 }
             }
         }
@@ -761,8 +748,19 @@ struct AlzidanFamilyWidgetEntryView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            PrayerProgressRing(now: entry.date, size: 76)
-                .frame(width: 76)
+            TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
+                let now = timeline.date
+                let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
+                let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
+
+                PrayerProgressRing(
+                    progress: progress,
+                    nextName: liveInfo.nextName,
+                    remainingRange: safeTimerRange(from: now, until: liveInfo.nextTime),
+                    size: 76
+                )
+            }
+            .frame(width: 76)
 
             VStack(alignment: .trailing, spacing: 4) {
                 if visibleEvents.isEmpty {
@@ -818,8 +816,18 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .lineLimit(1)
             }
 
-            PrayerProgressRing(now: entry.date)
-                .frame(maxWidth: .infinity)
+            TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
+                let now = timeline.date
+                let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
+                let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
+
+                PrayerProgressRing(
+                    progress: progress,
+                    nextName: liveInfo.nextName,
+                    remainingRange: safeTimerRange(from: now, until: liveInfo.nextTime)
+                )
+            }
+            .frame(maxWidth: .infinity)
             .padding(.top, 2)
             .padding(.bottom, 2)
 
