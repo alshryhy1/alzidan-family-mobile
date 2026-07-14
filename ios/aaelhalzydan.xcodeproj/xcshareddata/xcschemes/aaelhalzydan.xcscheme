@@ -20,6 +20,20 @@
                ReferencedContainer = "container:aaelhalzydan.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A86C805FB5248B6ACC4DE0AD"
+               BuildableName = "AlzidanFamilyWidgetExtension.appex"
+               BlueprintName = "AlzidanFamilyWidgetExtension"
+               ReferencedContainer = "container:aaelhalzydan.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
