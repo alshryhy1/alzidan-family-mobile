@@ -760,7 +760,7 @@ struct AlzidanFamilyWidgetEntryView: View {
     var largePrayerAndEventsView: some View {
         let info = HailPrayerCalculator.prayerInfo(now: entry.date)
 
-        return VStack(alignment: .trailing, spacing: 6) {
+        return VStack(alignment: .trailing, spacing: 0) {
             HStack(alignment: .top, spacing: 6) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("حائل")
@@ -783,6 +783,8 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .fontWeight(.bold)
                     .lineLimit(1)
             }
+
+            Spacer(minLength: 0)
 
             HStack(alignment: .center, spacing: 6) {
                 VStack(spacing: 1) {
@@ -840,7 +842,11 @@ struct AlzidanFamilyWidgetEntryView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
+            .frame(maxWidth: .infinity)
+
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(contentPadding)
     }
 
