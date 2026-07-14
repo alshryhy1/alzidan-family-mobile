@@ -510,6 +510,19 @@ struct HailPrayerCalculator {
     static func rad2deg(_ r: Double) -> Double { r * 180 / .pi }
 }
 
+func arabicDigits(_ s: String) -> String {
+    let map = ["0": "٠", "1": "١", "2": "٢", "3": "٣", "4": "٤", "5": "٥", "6": "٦", "7": "٧", "8": "٨", "9": "٩"]
+    return s.map { map[String($0)] ?? String($0) }.joined()
+}
+
+func arabicCountdownText(until endDate: Date, now: Date) -> String {
+    let total = max(0, Int(endDate.timeIntervalSince(now)))
+    let hours = total / 3600
+    let minutes = (total % 3600) / 60
+    let seconds = total % 60
+    return arabicDigits(String(format: "%02d:%02d:%02d", hours, minutes, seconds))
+}
+
 struct PrayerProgressRing: View {
     let progress: Double
     let nextName: String
@@ -517,14 +530,6 @@ struct PrayerProgressRing: View {
     let endDate: Date
     var ringColor = Color(red: 0.55, green: 0.68, blue: 0.32)
     var size: CGFloat = 108
-
-    private var countdownText: String {
-        let total = max(0, Int(endDate.timeIntervalSince(now)))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
-    }
 
     private var timerFontSize: CGFloat { size < 90 ? 9 : 11 }
     private var timerMinWidth: CGFloat { size < 90 ? 54 : 66 }
@@ -557,12 +562,14 @@ struct PrayerProgressRing: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .center)
 
-                Text(countdownText)
-                    .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
-                    .monospacedDigit()
-                    .multilineTextAlignment(.center)
-                    .frame(minWidth: timerMinWidth, alignment: .center)
-                    .lineLimit(1)
+                TimelineView(.periodic(from: now, by: 1)) { timeline in
+                    Text(arabicCountdownText(until: endDate, now: timeline.date))
+                        .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
+                        .monospacedDigit()
+                        .multilineTextAlignment(.center)
+                        .frame(minWidth: timerMinWidth, alignment: .center)
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(size < 90 ? 10 : 12)
