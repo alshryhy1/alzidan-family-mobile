@@ -513,9 +513,21 @@ struct HailPrayerCalculator {
 struct PrayerProgressRing: View {
     let progress: Double
     let nextName: String
-    let remainingRange: ClosedRange<Date>
+    let now: Date
+    let endDate: Date
     var ringColor = Color(red: 0.55, green: 0.68, blue: 0.32)
     var size: CGFloat = 108
+
+    private var countdownText: String {
+        let total = max(0, Int(endDate.timeIntervalSince(now)))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+
+    private var timerFontSize: CGFloat { size < 90 ? 9 : 11 }
+    private var timerMinWidth: CGFloat { size < 90 ? 54 : 66 }
 
     var body: some View {
         ZStack {
@@ -530,23 +542,29 @@ struct PrayerProgressRing: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            VStack(spacing: size < 90 ? 1 : 2) {
+            VStack(alignment: .center, spacing: size < 90 ? 2 : 3) {
                 Text(nextName)
                     .font(.system(size: size < 90 ? 9 : 11, weight: .bold))
+                    .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+                    .frame(maxWidth: .infinity, alignment: .center)
 
                 Text("المتبقي")
                     .font(.system(size: size < 90 ? 7 : 8, weight: .medium))
                     .opacity(0.72)
+                    .multilineTextAlignment(.center)
                     .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .center)
 
-                Text(timerInterval: remainingRange, countsDown: true)
-                    .font(.system(size: size < 90 ? 9 : 11, weight: .bold, design: .monospaced))
+                Text(countdownText)
+                    .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
                     .monospacedDigit()
+                    .multilineTextAlignment(.center)
+                    .frame(minWidth: timerMinWidth, alignment: .center)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
             }
+            .frame(maxWidth: .infinity)
             .padding(size < 90 ? 10 : 12)
         }
         .background(
@@ -730,7 +748,8 @@ struct AlzidanFamilyWidgetEntryView: View {
                 PrayerProgressRing(
                     progress: progress,
                     nextName: liveInfo.nextName,
-                    remainingRange: safeTimerRange(until: liveInfo.nextTime),
+                    now: now,
+                    endDate: liveInfo.nextTime,
                     size: 76
                 )
             }
@@ -816,7 +835,8 @@ struct AlzidanFamilyWidgetEntryView: View {
                     PrayerProgressRing(
                         progress: progress,
                         nextName: liveInfo.nextName,
-                        remainingRange: safeTimerRange(until: liveInfo.nextTime)
+                        now: now,
+                        endDate: liveInfo.nextTime
                     )
                 }
                 .frame(width: 108)
