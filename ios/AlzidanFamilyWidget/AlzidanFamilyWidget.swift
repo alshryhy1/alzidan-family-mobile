@@ -760,49 +760,80 @@ struct AlzidanFamilyWidgetEntryView: View {
     var largePrayerAndEventsView: some View {
         let info = HailPrayerCalculator.prayerInfo(now: entry.date)
 
-        return VStack(alignment: .trailing, spacing: 0) {
-            HStack(alignment: .top, spacing: 6) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("حائل")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                    Text(miladiDate(entry.date))
-                        .font(.system(size: 10))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Text(hijriDate(entry.date))
-                        .font(.system(size: 10))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-
-                Spacer(minLength: 0)
-
-                Text("🌳 عائلة الزيدان")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-
-            HStack(alignment: .center, spacing: 6) {
-                VStack(spacing: 1) {
-                    ForEach(info.prayers) { p in
-                        HStack {
-                            Text(timeText(p.time))
-                                .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .semibold))
-                            Spacer(minLength: 0)
-                            Text(p.name)
-                                .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .regular))
+        return GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                VStack(alignment: .trailing, spacing: 0) {
+                    HStack(alignment: .top, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("حائل")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                            Text(miladiDate(entry.date))
+                                .font(.system(size: 10))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            Text(hijriDate(entry.date))
+                                .font(.system(size: 10))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         }
-                        .padding(.vertical, 1)
-                        .padding(.horizontal, 4)
-                        .background(p.name == info.nextName ? Color(red: 0.55, green: 0.68, blue: 0.32).opacity(0.28) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                        Spacer(minLength: 0)
+
+                        Text("🌳 عائلة الزيدان")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .lineLimit(1)
                     }
+
+                    HStack(alignment: .top, spacing: 6) {
+                        VStack(spacing: 1) {
+                            ForEach(info.prayers) { p in
+                                HStack {
+                                    Text(timeText(p.time))
+                                        .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .semibold))
+                                    Spacer(minLength: 0)
+                                    Text(p.name)
+                                        .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .regular))
+                                }
+                                .padding(.vertical, 1)
+                                .padding(.horizontal, 4)
+                                .background(p.name == info.nextName ? Color(red: 0.55, green: 0.68, blue: 0.32).opacity(0.28) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .trailing, spacing: 4) {
+                            if visibleEvents.isEmpty {
+                                Text("🌿 لا توجد مناسبات")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .opacity(0.8)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.trailing)
+                            } else {
+                                ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
+                                    if index > 0 {
+                                        Divider().opacity(0.18)
+                                    }
+                                    widgetEventBlock(
+                                        event,
+                                        titleSize: .caption,
+                                        nameSize: .caption2,
+                                        dateSize: .system(size: 10)
+                                    )
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
 
                 TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
                     let now = timeline.date
@@ -816,37 +847,10 @@ struct AlzidanFamilyWidgetEntryView: View {
                     )
                 }
                 .frame(width: 108)
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    if visibleEvents.isEmpty {
-                        Text("🌿 لا توجد مناسبات")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .opacity(0.8)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.trailing)
-                    } else {
-                        ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
-                            if index > 0 {
-                                Divider().opacity(0.18)
-                            }
-                            widgetEventBlock(
-                                event,
-                                titleSize: .caption,
-                                nameSize: .caption2,
-                                dateSize: .system(size: 10)
-                            )
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, geometry.size.height * 0.40)
             }
-            .frame(maxWidth: .infinity)
-
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(contentPadding)
     }
 
