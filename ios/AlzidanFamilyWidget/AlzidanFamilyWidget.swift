@@ -235,12 +235,27 @@ struct Provider: TimelineProvider {
         }
     }
 
+    private static let timelineEntryCount = 120
+
     func getTimeline(in context: Context, completion: @escaping (Timeline<PrayerEntry>) -> Void) {
         let now = Date()
         fetchEvents { events in
-            let next = Calendar.current.date(byAdding: .minute, value: 15, to: now) ?? now
+            var entries: [PrayerEntry] = []
+            entries.reserveCapacity(Self.timelineEntryCount)
+
+            for minuteOffset in 0..<Self.timelineEntryCount {
+                guard let entryDate = Calendar.current.date(byAdding: .minute, value: minuteOffset, to: now) else {
+                    continue
+                }
+                entries.append(PrayerEntry(date: entryDate, events: events))
+            }
+
+            if entries.isEmpty {
+                entries.append(PrayerEntry(date: now, events: events))
+            }
+
             DispatchQueue.main.async {
-                completion(Timeline(entries: [PrayerEntry(date: now, events: events)], policy: .after(next)))
+                completion(Timeline(entries: entries, policy: .atEnd))
             }
         }
     }
@@ -562,14 +577,12 @@ struct PrayerProgressRing: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .center)
 
-                TimelineView(.periodic(from: now, by: 1)) { timeline in
-                    Text(arabicCountdownText(until: endDate, now: timeline.date))
-                        .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
-                        .monospacedDigit()
-                        .multilineTextAlignment(.center)
-                        .frame(minWidth: timerMinWidth, alignment: .center)
-                        .lineLimit(1)
-                }
+                Text(arabicCountdownText(until: endDate, now: now))
+                    .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
+                    .monospacedDigit()
+                    .multilineTextAlignment(.center)
+                    .frame(minWidth: timerMinWidth, alignment: .center)
+                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
             .padding(size < 90 ? 10 : 12)
@@ -605,11 +618,6 @@ struct AlzidanFamilyWidgetEntryView: View {
                 .foregroundStyle(ink)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    private func safeTimerRange(until end: Date) -> ClosedRange<Date> {
-        let safeEnd = end > entry.date ? end : entry.date.addingTimeInterval(60)
-        return entry.date...safeEnd
     }
 
     private var visibleEvents: [FamilyEvent] {
@@ -676,7 +684,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                     Text("المتبقي:")
                         .font(.caption2)
                         .opacity(0.75)
-                    Text(timerInterval: safeTimerRange(until: info.nextTime), countsDown: true)
+                    Text(arabicCountdownText(until: info.nextTime, now: entry.date))
                         .font(.caption.weight(.semibold))
                         .monospacedDigit()
                         .lineLimit(1)
@@ -747,19 +755,13 @@ struct AlzidanFamilyWidgetEntryView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
-                let now = timeline.date
-                let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
-                let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
-
-                PrayerProgressRing(
-                    progress: progress,
-                    nextName: liveInfo.nextName,
-                    now: now,
-                    endDate: liveInfo.nextTime,
-                    size: 76
-                )
-            }
+            PrayerProgressRing(
+                progress: HailPrayerCalculator.progressUntilNextPrayer(now: entry.date),
+                nextName: info.nextName,
+                now: entry.date,
+                endDate: info.nextTime,
+                size: 76
+            )
             .frame(width: 76)
 
             VStack(alignment: .trailing, spacing: 4) {
@@ -816,18 +818,12 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .lineLimit(1)
             }
 
-            TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
-                let now = timeline.date
-                let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
-                let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
-
-                PrayerProgressRing(
-                    progress: progress,
-                    nextName: liveInfo.nextName,
-                    now: now,
-                    endDate: liveInfo.nextTime
-                )
-            }
+            PrayerProgressRing(
+                progress: HailPrayerCalculator.progressUntilNextPrayer(now: entry.date),
+                nextName: info.nextName,
+                now: entry.date,
+                endDate: info.nextTime
+            )
             .frame(maxWidth: .infinity)
             .padding(.top, 2)
             .padding(.bottom, 2)
