@@ -338,15 +338,22 @@ struct SupabaseEventRow: Codable {
     let created_at: String?
 }
 
+enum ArabicRelativeDays {
+    static func untilEvent(_ days: Int) -> String {
+        if days <= 0 { return "اليوم" }
+        if days == 1 { return "غداً" }
+        if days == 2 { return "بعد يومين" }
+        if days >= 3 && days <= 10 { return "بعد \(days) أيام" }
+        return "بعد \(days) يومًا"
+    }
+}
+
 extension FamilyEvent {
     var statusText: String {
         guard let days = daysLeft else {
             return "\(typeLabel) — قريباً"
         }
-        if days <= 0 { return "\(typeLabel) — اليوم" }
-        if days == 1 { return "\(typeLabel) — غداً" }
-        if days == 2 { return "\(typeLabel) — بعد يومين" }
-        return "\(typeLabel) — بعد \(days) أيام"
+        return "\(typeLabel) — \(ArabicRelativeDays.untilEvent(days))"
     }
 
     func daysLeftText(prefix: String) -> String {
@@ -472,8 +479,78 @@ struct HailPrayerCalculator {
         return h > 0 ? "\(h) س \(m) د" : "\(m) د"
     }
 
+    static func prayerWindow(now: Date = Date()) -> (previous: Date, next: Date) {
+        let today = prayerTimes(for: now)
+
+        if let nextPrayer = today.first(where: { $0.time > now }) {
+            if let previousPrayer = today.last(where: { $0.time <= now }) {
+                return (previousPrayer.time, nextPrayer.time)
+            }
+
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now
+            let previous = prayerTimes(for: yesterday).last!.time
+            return (previous, nextPrayer.time)
+        }
+
+        let previous = today.last!.time
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
+        let next = prayerTimes(for: tomorrow).first!.time
+        return (previous, next)
+    }
+
+    static func progressUntilNextPrayer(now: Date = Date()) -> Double {
+        let window = prayerWindow(now: now)
+        let total = window.next.timeIntervalSince(window.previous)
+        guard total > 0 else { return 0 }
+        let elapsed = now.timeIntervalSince(window.previous)
+        return min(1, max(0, elapsed / total))
+    }
+
     static func deg2rad(_ d: Double) -> Double { d * .pi / 180 }
     static func rad2deg(_ r: Double) -> Double { r * 180 / .pi }
+}
+
+struct PrayerProgressRing: View {
+    let progress: Double
+    let nextName: String
+    let remainingRange: ClosedRange<Date>
+    var ringColor = Color(red: 0.55, green: 0.68, blue: 0.32)
+    var size: CGFloat = 108
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.primary.opacity(0.14), lineWidth: 8)
+
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(
+                    ringColor,
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            VStack(spacing: 3) {
+                Text(nextName)
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                Text(timerInterval: remainingRange, countsDown: true)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .padding(12)
+        }
+        .background(
+            Circle()
+                .fill(Color.white.opacity(0.55))
+        )
+        .frame(width: size, height: size)
+    }
 }
 
 struct AlzidanFamilyWidgetEntryView: View {
@@ -542,7 +619,7 @@ struct AlzidanFamilyWidgetEntryView: View {
     }
 
     @ViewBuilder
-    private func nextPrayerSection(info: PrayerInfo, alignment: HorizontalAlignment = .leading, compact: Bool = false) -> some View {
+    private func nextPrayerSection(info: PrayerInfo, alignment: HorizontalAlignment = .leading, compact: Bool = false, showRemaining: Bool = true) -> some View {
         VStack(alignment: alignment, spacing: compact ? 2 : 3) {
             Text("الصلاة القادمة")
                 .font(.caption2)
@@ -563,14 +640,16 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .lineLimit(1)
             }
 
-            HStack(spacing: 4) {
-                Text("المتبقي:")
-                    .font(.caption2)
-                    .opacity(0.75)
-                Text(timerInterval: safeTimerRange(until: info.nextTime), countsDown: true)
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .lineLimit(1)
+            if showRemaining {
+                HStack(spacing: 4) {
+                    Text("المتبقي:")
+                        .font(.caption2)
+                        .opacity(0.75)
+                    Text(timerInterval: safeTimerRange(until: info.nextTime), countsDown: true)
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
             }
         }
     }
@@ -620,7 +699,7 @@ struct AlzidanFamilyWidgetEntryView: View {
     var mediumEventView: some View {
         let info = HailPrayerCalculator.prayerInfo(now: entry.date)
 
-        return HStack(alignment: .top, spacing: 8) {
+        return HStack(alignment: .center, spacing: 6) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("🌳 عائلة الزيدان")
                     .font(.caption)
@@ -633,9 +712,23 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
 
-                nextPrayerSection(info: info, alignment: .leading, compact: false)
+                nextPrayerSection(info: info, alignment: .leading, compact: false, showRemaining: false)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
+                let now = timeline.date
+                let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
+                let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
+
+                PrayerProgressRing(
+                    progress: progress,
+                    nextName: liveInfo.nextName,
+                    remainingRange: safeTimerRange(until: liveInfo.nextTime),
+                    size: 76
+                )
+            }
+            .frame(width: 76)
 
             VStack(alignment: .trailing, spacing: 4) {
                 if visibleEvents.isEmpty {
@@ -667,94 +760,85 @@ struct AlzidanFamilyWidgetEntryView: View {
     var largePrayerAndEventsView: some View {
         let info = HailPrayerCalculator.prayerInfo(now: entry.date)
 
-        return VStack(alignment: .trailing, spacing: 4) {
+        return VStack(alignment: .trailing, spacing: 6) {
             HStack(alignment: .top, spacing: 6) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("حائل")
                         .font(.caption)
                         .fontWeight(.bold)
                     Text(miladiDate(entry.date))
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     Text(hijriDate(entry.date))
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
 
                 Spacer(minLength: 0)
 
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("🌳 عائلة الزيدان")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .lineLimit(1)
-
-                    Text("الصلاة القادمة: \(info.nextName)")
-                        .font(.caption2)
-                        .lineLimit(1)
-
-                    HStack(spacing: 4) {
-                        Text("الساعة:")
-                            .font(.caption2)
-                            .opacity(0.75)
-                        Text(timeText(info.nextTime))
-                            .font(.caption2.weight(.semibold))
-                    }
-
-                    HStack(spacing: 4) {
-                        Text("المتبقي:")
-                            .font(.caption2)
-                            .opacity(0.75)
-                        Text(timerInterval: safeTimerRange(until: info.nextTime), countsDown: true)
-                            .font(.caption2.weight(.semibold))
-                            .monospacedDigit()
-                            .lineLimit(1)
-                    }
-                }
-            }
-
-            VStack(spacing: 1) {
-                ForEach(info.prayers) { p in
-                    HStack {
-                        Text(timeText(p.time))
-                            .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .semibold))
-                        Spacer(minLength: 0)
-                        Text(p.name)
-                            .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .regular))
-                    }
-                    .padding(.vertical, 1)
-                    .padding(.horizontal, 4)
-                    .background(p.name == info.nextName ? Color(red: 0.55, green: 0.68, blue: 0.32).opacity(0.28) : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-            }
-
-            Divider().opacity(0.25)
-
-            if visibleEvents.isEmpty {
-                Text("🌿 لا توجد مناسبات خلال الأيام القادمة")
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                    .opacity(0.8)
+                Text("🌳 عائلة الزيدان")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
                     .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            } else {
-                VStack(alignment: .trailing, spacing: 4) {
-                    ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
-                        if index > 0 {
-                            Divider().opacity(0.18)
+            }
+
+            HStack(alignment: .center, spacing: 6) {
+                VStack(spacing: 1) {
+                    ForEach(info.prayers) { p in
+                        HStack {
+                            Text(timeText(p.time))
+                                .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .semibold))
+                            Spacer(minLength: 0)
+                            Text(p.name)
+                                .font(.system(size: 10, weight: p.name == info.nextName ? .bold : .regular))
                         }
-                        widgetEventBlock(
-                            event,
-                            titleSize: .caption,
-                            nameSize: .caption2,
-                            dateSize: .system(size: 9)
-                        )
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.vertical, 1)
+                        .padding(.horizontal, 4)
+                        .background(p.name == info.nextName ? Color(red: 0.55, green: 0.68, blue: 0.32).opacity(0.28) : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
+                    let now = timeline.date
+                    let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
+                    let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
+
+                    PrayerProgressRing(
+                        progress: progress,
+                        nextName: liveInfo.nextName,
+                        remainingRange: safeTimerRange(until: liveInfo.nextTime)
+                    )
+                }
+                .frame(width: 108)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    if visibleEvents.isEmpty {
+                        Text("🌿 لا توجد مناسبات")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .opacity(0.8)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.trailing)
+                    } else {
+                        ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
+                            if index > 0 {
+                                Divider().opacity(0.18)
+                            }
+                            widgetEventBlock(
+                                event,
+                                titleSize: .caption,
+                                nameSize: .caption2,
+                                dateSize: .system(size: 10)
+                            )
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .padding(contentPadding)
