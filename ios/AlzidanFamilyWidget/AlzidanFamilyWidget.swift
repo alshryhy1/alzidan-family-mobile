@@ -816,7 +816,25 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .lineLimit(1)
             }
 
-            HStack(alignment: .center, spacing: 6) {
+            TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
+                let now = timeline.date
+                let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
+                let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
+
+                PrayerProgressRing(
+                    progress: progress,
+                    nextName: liveInfo.nextName,
+                    now: now,
+                    endDate: liveInfo.nextTime
+                )
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 2)
+            .padding(.bottom, 2)
+
+            Spacer(minLength: 0)
+
+            HStack(alignment: .top, spacing: 6) {
                 VStack(spacing: 1) {
                     ForEach(info.prayers) { p in
                         HStack {
@@ -833,20 +851,6 @@ struct AlzidanFamilyWidgetEntryView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
-                    let now = timeline.date
-                    let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
-                    let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
-
-                    PrayerProgressRing(
-                        progress: progress,
-                        nextName: liveInfo.nextName,
-                        now: now,
-                        endDate: liveInfo.nextTime
-                    )
-                }
-                .frame(width: 108)
 
                 VStack(alignment: .trailing, spacing: 4) {
                     if visibleEvents.isEmpty {
@@ -873,7 +877,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity)
         }
         .padding(contentPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
