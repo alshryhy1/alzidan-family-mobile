@@ -5,12 +5,6 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
-import {
-  getPushDebugTrace,
-  getPushRegistrationUserMessage,
-  registerPushToken,
-  type PushDebugTrace,
-} from '../services/pushNotifications';
 import { selectPublicRows } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, TreeChild } from '../types';
@@ -71,12 +65,6 @@ function tripleNameFromPath(value: string) {
   return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : displayPersonName(value);
 }
 
-function formatPushDebugTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('ar-SA');
-}
-
 export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: ProfileScreenProps) {
   const [phone, setPhone] = useState('');
   const [savedPhone, setSavedPhone] = useState('');
@@ -86,8 +74,6 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
     text: '',
   });
   const [loading, setLoading] = useState(false);
-  const [pushDebug, setPushDebug] = useState<PushDebugTrace | null>(null);
-  const [pushRetrying, setPushRetrying] = useState(false);
 
   const memberTreeRow = useMemo(
     () => childrenRows.find((row) => row.id === member?.tree_child_id) ?? null,
@@ -155,38 +141,6 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const refreshPushDebug = async () => {
-    const trace = await getPushDebugTrace();
-    setPushDebug(trace);
-  };
-
-  useEffect(() => {
-    if (!__DEV__) return;
-    refreshPushDebug().catch(() => {});
-  }, []);
-
-  const retryPushRegistration = async () => {
-    setPushRetrying(true);
-    try {
-      const result = await registerPushToken();
-      await refreshPushDebug();
-      if (!result?.ok) {
-        setStatus({
-          kind: 'error',
-          text: getPushRegistrationUserMessage({ reason: result?.reason }),
-        });
-      }
-    } catch (error) {
-      await refreshPushDebug();
-      setStatus({
-        kind: 'error',
-        text: error instanceof Error ? error.message : 'تعذر تسجيل الإشعارات.',
-      });
-    } finally {
-      setPushRetrying(false);
-    }
-  };
-
   const logout = () => {
     AsyncStorage.removeItem(MEMBER_PHONE_KEY).catch(() => {});
     setMember(null);
@@ -251,32 +205,6 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
         <View style={[styles.status, status.kind === 'error' ? styles.errorStatus : styles.successStatus]}>
           <Text style={styles.statusText}>{status.text}</Text>
         </View>
-      ) : null}
-
-      {__DEV__ ? (
-        <SectionCard eyebrow="تشخيص" title="حالة الإشعارات">
-          {pushDebug ? (
-            <View style={styles.pushDebugBlock}>
-              <Text style={styles.pushDebugLine}>
-                {pushDebug.ok ? '✓ مسجل' : '✗ غير مسجل'} —{' '}
-                {getPushRegistrationUserMessage({ step: pushDebug.step, reason: pushDebug.step })}
-              </Text>
-              <Text style={styles.pushDebugMeta}>آخر محاولة: {formatPushDebugTime(pushDebug.timestamp)}</Text>
-              {pushDebug.tokenPrefix ? (
-                <Text style={styles.pushDebugMeta}>التوكن: {pushDebug.tokenPrefix}</Text>
-              ) : null}
-              {pushDebug.projectId ? (
-                <Text style={styles.pushDebugMeta}>Project ID: {pushDebug.projectId}</Text>
-              ) : null}
-            </View>
-          ) : (
-            <Text style={styles.pushDebugMeta}>لا توجد محاولة تسجيل بعد.</Text>
-          )}
-          <ActionButton
-            label={pushRetrying ? 'جاري إعادة التسجيل...' : 'إعادة تسجيل الإشعارات'}
-            onPress={retryPushRegistration}
-          />
-        </SectionCard>
       ) : null}
     </Screen>
   );
@@ -359,22 +287,6 @@ const styles = StyleSheet.create({
   statusText: {
     color: colors.text,
     fontWeight: '800',
-    textAlign: 'right',
-  },
-  pushDebugBlock: {
-    gap: 6,
-    marginBottom: spacing.md,
-  },
-  pushDebugLine: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '800',
-    textAlign: 'right',
-  },
-  pushDebugMeta: {
-    color: colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
     textAlign: 'right',
   },
 });
