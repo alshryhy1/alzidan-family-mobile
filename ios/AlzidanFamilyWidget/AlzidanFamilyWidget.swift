@@ -562,18 +562,20 @@ struct AlzidanFamilyWidgetEntryView: View {
     private let maxEvents = 2
 
     var body: some View {
-        Group {
-            switch family {
-            case .systemSmall:
-                smallEventView
-            case .systemMedium:
-                mediumEventView
-            default:
-                largePrayerAndEventsView
-            }
+        switch family {
+        case .systemSmall:
+            smallEventView
+                .foregroundStyle(ink)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        case .systemMedium:
+            mediumEventView
+                .foregroundStyle(ink)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        default:
+            largePrayerAndEventsView
+                .foregroundStyle(ink)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .foregroundStyle(ink)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     }
 
     private func safeTimerRange(until end: Date) -> ClosedRange<Date> {
@@ -784,24 +786,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .lineLimit(1)
             }
 
-            TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
-                let now = timeline.date
-                let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
-                let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
-
-                PrayerProgressRing(
-                    progress: progress,
-                    nextName: liveInfo.nextName,
-                    remainingRange: safeTimerRange(until: liveInfo.nextTime)
-                )
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 6)
-            .padding(.bottom, 4)
-
-            Spacer(minLength: 0)
-
-            HStack(alignment: .top, spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
                 VStack(spacing: 1) {
                     ForEach(info.prayers) { p in
                         HStack {
@@ -818,6 +803,19 @@ struct AlzidanFamilyWidgetEntryView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
+                    let now = timeline.date
+                    let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
+                    let progress = HailPrayerCalculator.progressUntilNextPrayer(now: now)
+
+                    PrayerProgressRing(
+                        progress: progress,
+                        nextName: liveInfo.nextName,
+                        remainingRange: safeTimerRange(until: liveInfo.nextTime)
+                    )
+                }
+                .frame(width: 108)
 
                 VStack(alignment: .trailing, spacing: 4) {
                     if visibleEvents.isEmpty {
@@ -844,7 +842,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .padding(contentPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
