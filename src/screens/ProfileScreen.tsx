@@ -5,7 +5,12 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
-import { getPushDebugTrace, registerPushToken, type PushDebugTrace } from '../services/pushNotifications';
+import {
+  getPushDebugTrace,
+  getPushRegistrationUserMessage,
+  registerPushToken,
+  type PushDebugTrace,
+} from '../services/pushNotifications';
 import { selectPublicRows } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, TreeChild } from '../types';
@@ -64,26 +69,6 @@ function tripleNameFromPath(value: string) {
   });
 
   return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : displayPersonName(value);
-}
-
-function formatPushDebugStep(step: string) {
-  const labels: Record<string, string> = {
-    register_start: 'بدء التسجيل',
-    not_physical_device: 'يتطلب جهازاً حقيقياً',
-    permission_denied: 'تم رفض إذن الإشعارات',
-    permission_granted: 'تم منح إذن الإشعارات',
-    project_id: 'جلب معرف المشروع',
-    supabase_not_configured: 'إعداد Supabase غير مكتمل',
-    token_received: 'تم الحصول على التوكن',
-    token_empty: 'التوكن فارغ',
-    token_unchanged: 'التوكن مسجل مسبقاً',
-    token_fetch_failed: 'فشل الحصول على التوكن',
-    rpc_success: 'نجح تسجيل التوكن (RPC)',
-    rpc_failed: 'فشل RPC — جاري المحاولة بالبديل',
-    fallback_upsert_success: 'نجح التسجيل (upsert)',
-    fallback_upsert_failed: 'فشل التسجيل بالكامل',
-  };
-  return labels[step] || step;
 }
 
 function formatPushDebugTime(value: string) {
@@ -176,6 +161,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
   };
 
   useEffect(() => {
+    if (!__DEV__) return;
     refreshPushDebug().catch(() => {});
   }, []);
 
@@ -187,7 +173,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
       if (!result?.ok) {
         setStatus({
           kind: 'error',
-          text: `تعذر تسجيل الإشعارات: ${result?.reason || 'unknown'}`,
+          text: getPushRegistrationUserMessage({ reason: result?.reason }),
         });
       }
     } catch (error) {
@@ -267,31 +253,31 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
         </View>
       ) : null}
 
-      <SectionCard eyebrow="تشخيص" title="حالة الإشعارات">
-        {pushDebug ? (
-          <View style={styles.pushDebugBlock}>
-            <Text style={styles.pushDebugLine}>
-              {pushDebug.ok ? '✓ مسجل' : '✗ غير مسجل'} — {formatPushDebugStep(pushDebug.step)}
-            </Text>
-            <Text style={styles.pushDebugMeta}>آخر محاولة: {formatPushDebugTime(pushDebug.timestamp)}</Text>
-            {pushDebug.tokenPrefix ? (
-              <Text style={styles.pushDebugMeta}>التوكن: {pushDebug.tokenPrefix}</Text>
-            ) : null}
-            {pushDebug.projectId ? (
-              <Text style={styles.pushDebugMeta}>Project ID: {pushDebug.projectId}</Text>
-            ) : null}
-            {pushDebug.errorMessage ? (
-              <Text style={styles.pushDebugError}>{pushDebug.errorMessage}</Text>
-            ) : null}
-          </View>
-        ) : (
-          <Text style={styles.pushDebugMeta}>لا توجد محاولة تسجيل بعد.</Text>
-        )}
-        <ActionButton
-          label={pushRetrying ? 'جاري إعادة التسجيل...' : 'إعادة تسجيل الإشعارات'}
-          onPress={retryPushRegistration}
-        />
-      </SectionCard>
+      {__DEV__ ? (
+        <SectionCard eyebrow="تشخيص" title="حالة الإشعارات">
+          {pushDebug ? (
+            <View style={styles.pushDebugBlock}>
+              <Text style={styles.pushDebugLine}>
+                {pushDebug.ok ? '✓ مسجل' : '✗ غير مسجل'} —{' '}
+                {getPushRegistrationUserMessage({ step: pushDebug.step, reason: pushDebug.step })}
+              </Text>
+              <Text style={styles.pushDebugMeta}>آخر محاولة: {formatPushDebugTime(pushDebug.timestamp)}</Text>
+              {pushDebug.tokenPrefix ? (
+                <Text style={styles.pushDebugMeta}>التوكن: {pushDebug.tokenPrefix}</Text>
+              ) : null}
+              {pushDebug.projectId ? (
+                <Text style={styles.pushDebugMeta}>Project ID: {pushDebug.projectId}</Text>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={styles.pushDebugMeta}>لا توجد محاولة تسجيل بعد.</Text>
+          )}
+          <ActionButton
+            label={pushRetrying ? 'جاري إعادة التسجيل...' : 'إعادة تسجيل الإشعارات'}
+            onPress={retryPushRegistration}
+          />
+        </SectionCard>
+      ) : null}
     </Screen>
   );
 }
@@ -389,13 +375,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
-    textAlign: 'right',
-  },
-  pushDebugError: {
-    color: '#B91C1C',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 4,
     textAlign: 'right',
   },
 });

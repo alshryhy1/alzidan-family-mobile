@@ -30,6 +30,38 @@ export type RegisterPushTokenResult = {
   rpcError?: string;
 };
 
+const PUSH_REGISTRATION_USER_MESSAGES: Record<string, string> = {
+  register_start: 'جاري تسجيل الإشعارات…',
+  not_physical_device: 'يتطلب جهازاً حقيقياً',
+  push_requires_physical_device: 'يتطلب جهازاً حقيقياً',
+  permission_denied: 'تم رفض إذن الإشعارات',
+  permission_granted: 'تم منح إذن الإشعارات',
+  project_id: 'جاري إعداد الإشعارات…',
+  supabase_not_configured: 'إعداد الخادم غير مكتمل',
+  supabase_env_missing: 'إعداد الخادم غير مكتمل',
+  token_received: 'تم الحصول على رمز الإشعارات',
+  token_empty: 'تعذر الحصول على رمز الإشعارات',
+  empty_expo_push_token: 'تعذر الحصول على رمز الإشعارات',
+  token_unchanged: 'الإشعارات مسجّلة مسبقاً',
+  token_fetch_failed: 'تعذر الحصول على رمز الإشعارات',
+  rpc_success: 'تم تسجيل الإشعارات بنجاح',
+  rpc_failed: 'تعذر تسجيل الإشعارات',
+  fallback_upsert_success: 'تم تسجيل الإشعارات بنجاح',
+  fallback_upsert_failed: 'تعذر تسجيل الإشعارات',
+  registration_failed: 'تعذر تسجيل الإشعارات',
+};
+
+export function getPushRegistrationUserMessage(input: {
+  reason?: string | null;
+  step?: string | null;
+}): string {
+  const key = String(input.reason || input.step || '').trim();
+  if (key && PUSH_REGISTRATION_USER_MESSAGES[key]) {
+    return PUSH_REGISTRATION_USER_MESSAGES[key];
+  }
+  return 'تعذر تسجيل الإشعارات. حاول مرة أخرى لاحقاً.';
+}
+
 function tokenPrefix(token: string | null | undefined) {
   const value = String(token || '').trim();
   if (!value) return null;
