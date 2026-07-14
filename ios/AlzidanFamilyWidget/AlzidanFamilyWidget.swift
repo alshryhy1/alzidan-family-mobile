@@ -530,20 +530,24 @@ struct PrayerProgressRing: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            VStack(spacing: 3) {
+            VStack(spacing: size < 90 ? 1 : 2) {
                 Text(nextName)
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.system(size: size < 90 ? 9 : 11, weight: .bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
 
+                Text("المتبقي")
+                    .font(.system(size: size < 90 ? 7 : 8, weight: .medium))
+                    .opacity(0.72)
+                    .lineLimit(1)
+
                 Text(timerInterval: remainingRange, countsDown: true)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: size < 90 ? 9 : 11, weight: .bold, design: .monospaced))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .padding(12)
+            .padding(size < 90 ? 10 : 12)
         }
         .background(
             Circle()
