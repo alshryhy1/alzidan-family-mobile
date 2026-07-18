@@ -38,7 +38,7 @@ type EventRow = {
   person: string;
   date_label: string | null;
   event_date: string | null;
-  details: string | null;
+  details: string | Record<string, unknown> | null;
   hospital_name: string | null;
   hospital_dept: string | null;
   contact_method: string | null;
@@ -56,26 +56,9 @@ type SpouseSummaryRow = {
   status: string | null;
 };
 
-const eventTitles: Record<string, string> = {
-  birth: 'مولود جديد',
-  engagement: 'خطوبة',
-  contract: 'عقد قران',
-  marriage: 'زواج',
-  graduation: 'تخرج',
-  success: 'نجاح وتفوق',
-  promotion: 'ترقية أو وظيفة',
-  new_house: 'منزل جديد',
-  travel: 'سفر',
-  gathering: 'اجتماع عائلي',
-  sick: 'خبر صحي',
-  operation: 'عملية',
-  discharge: 'خروج من المستشفى',
-  death: 'وفاة',
-  general: 'مناسبة عامة',
-};
-
 function eventTitle(type: string) {
-  return eventTitles[type] || eventTypeArabicLabel(type);
+  // Align with web formatEventTypeLabel / eventTypeArabicLabel (مريض, زواج, …)
+  return eventTypeArabicLabel(type);
 }
 
 function eventCategory(type: string): FamilyEvent['category'] {
@@ -90,38 +73,45 @@ function categoryLabel(category: FamilyEvent['category']) {
   return 'فرح';
 }
 
-function parseEventDetails(details: string | null) {
-  if (!details) return null;
+type ParsedEventDetails = {
+  text?: string;
+  extra?: string;
+  notes?: string;
+  hospitalName?: string;
+  hospital_name?: string;
+  hospitalDept?: string;
+  hospital_dept?: string;
+  imageUrl?: string;
+  image_url?: string;
+  photoUrl?: string;
+  photo_url?: string;
+  videoUrl?: string;
+  video_url?: string;
+};
+
+function parseEventDetails(details: string | ParsedEventDetails | null | undefined) {
+  if (details == null || details === '') return null;
+  if (typeof details === 'object') return details as ParsedEventDetails;
   try {
-    return JSON.parse(details) as {
-      text?: string;
-      extra?: string;
-      notes?: string;
-      imageUrl?: string;
-      image_url?: string;
-      photoUrl?: string;
-      photo_url?: string;
-      videoUrl?: string;
-      video_url?: string;
-    };
+    return JSON.parse(String(details)) as ParsedEventDetails;
   } catch {
     return null;
   }
 }
 
-function extractEventDetails(details: string | null) {
-  if (!details) return '';
+function extractEventDetails(details: string | ParsedEventDetails | null | undefined) {
+  if (details == null || details === '') return '';
   const parsed = parseEventDetails(details);
   if (parsed) return parsed.text || parsed.extra || parsed.notes || '';
-  return details;
+  return typeof details === 'string' ? details : '';
 }
 
-function extractEventImageUrl(details: string | null) {
+function extractEventImageUrl(details: string | ParsedEventDetails | null | undefined) {
   const parsed = parseEventDetails(details);
   return parsed?.imageUrl || parsed?.image_url || parsed?.photoUrl || parsed?.photo_url || '';
 }
 
-function extractEventVideoUrl(details: string | null) {
+function extractEventVideoUrl(details: string | ParsedEventDetails | null | undefined) {
   const parsed = parseEventDetails(details);
   return parsed?.videoUrl || parsed?.video_url || '';
 }
@@ -173,6 +163,9 @@ function buildAffinityStats(rows: SpouseSummaryRow[]): PublicAffinityStats {
 
 function mapEvent(row: EventRow): FamilyEvent {
   const category = eventCategory(row.type);
+  const parsed = parseEventDetails(row.details);
+  const hospitalFromDetails = parsed?.hospitalName || parsed?.hospital_name || undefined;
+  const deptFromDetails = parsed?.hospitalDept || parsed?.hospital_dept || undefined;
   return {
     id: String(row.id),
     category,
@@ -186,8 +179,8 @@ function mapEvent(row: EventRow): FamilyEvent {
     imageUrl: extractEventImageUrl(row.details) || undefined,
     videoUrl: extractEventVideoUrl(row.details) || undefined,
     branch: `فرع ${row.branch_key}`,
-    hospitalName: row.hospital_name ?? undefined,
-    hospitalDepartment: row.hospital_dept ?? undefined,
+    hospitalName: row.hospital_name || hospitalFromDetails || undefined,
+    hospitalDepartment: row.hospital_dept || deptFromDetails || undefined,
     contactMethod: row.contact_method ?? undefined,
     contactPhone: row.contact_phone ?? undefined,
     visitDateFrom: row.visit_date_from ?? undefined,

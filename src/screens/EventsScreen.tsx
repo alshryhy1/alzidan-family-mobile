@@ -13,6 +13,7 @@ import { SectionCard } from '../components/SectionCard';
 import { insertPublicRow, selectPublicRows, uploadPublicFileUri } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, FamilyEvent } from '../types';
+import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
 
 type Filter = 'all' | FamilyEvent['category'];
 
@@ -174,16 +175,16 @@ function visitDateRange(event: FamilyEvent) {
 }
 
 function visitTimeRange(event: FamilyEvent) {
-  if (event.visitTimeFrom && event.visitTimeTo) return `من ${event.visitTimeFrom} إلى ${event.visitTimeTo}`;
-  return event.visitTimeFrom || event.visitTimeTo || '';
+  return formatVisitTimeRangeAr(event.visitTimeFrom, event.visitTimeTo);
 }
 
 function eventDetailRows(event: FamilyEvent) {
+  const isVisit = event.contactMethod === 'visit';
   return [
     event.hospitalName ? { label: 'المستشفى', value: event.hospitalName } : null,
     event.hospitalDepartment ? { label: 'القسم', value: event.hospitalDepartment } : null,
-    visitDateRange(event) ? { label: 'تاريخ الزيارة', value: visitDateRange(event) } : null,
-    visitTimeRange(event) ? { label: 'وقت الزيارة', value: visitTimeRange(event) } : null,
+    isVisit && visitDateRange(event) ? { label: 'تاريخ الزيارة', value: visitDateRange(event) } : null,
+    isVisit && visitTimeRange(event) ? { label: 'وقت الزيارة', value: visitTimeRange(event) } : null,
     event.contactMethod
       ? {
           label: 'طريقة التواصل',

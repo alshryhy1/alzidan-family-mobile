@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import moment from 'moment-hijri';
 import { selectPublicRows } from './supabase';
 
 export type SpecialCardType =
@@ -57,6 +58,40 @@ function isGregorianDateKey(value: string) {
   return /^(19|20)\d{2}-\d{2}-\d{2}$/.test(value);
 }
 
+function eventDateToGregorianKey(value?: string | null) {
+  const raw = String(value || '')
+    .trim()
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776))
+    .replace(/\//g, '-');
+
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!iso) return '';
+
+  const year = Number(iso[1]);
+  const month = Number(iso[2]);
+  const day = Number(iso[3]);
+  if (!year || !month || !day) return '';
+
+  let date: Date | null = null;
+  if (year >= 1900 && year < 2100) {
+    date = new Date(year, month - 1, day, 12, 0, 0, 0);
+  } else if (year >= 1300 && year < 1900) {
+    try {
+      const converted = moment(`${year}/${month}/${day}`, 'iYYYY/iM/iD').toDate();
+      if (converted instanceof Date && Number.isFinite(converted.getTime())) date = converted;
+    } catch {
+      date = null;
+    }
+  }
+
+  if (!date || !Number.isFinite(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function isWithinSchedule(card: SpecialCard) {
   const today = localTodayKey();
   const start = String(card.start_date || '').trim();
@@ -64,6 +99,13 @@ function isWithinSchedule(card: SpecialCard) {
 
   if (start && isGregorianDateKey(start) && today < start) return false;
   if (end && isGregorianDateKey(end) && today > end) return false;
+
+  // بدون تاريخ نهاية: البطاقة تختفي بعد انتهاء يوم المناسبة
+  if (!end) {
+    const eventEnd = eventDateToGregorianKey(card.event_date);
+    if (eventEnd && today > eventEnd) return false;
+  }
+
   return true;
 }
 
@@ -104,4 +146,17 @@ export async function fetchPendingSpecialCards() {
 export async function fetchActiveSpecialCard() {
   const cards = await fetchPendingSpecialCards();
   return cards[0] ?? null;
+}
+
+/** Active special cards for the home ticker (schedule only; ignore once-per-day modal seen flag). */
+export async function fetchActiveSpecialCardsForTicker() {
+  const rows = await selectPublicRows<SpecialCard>(
+    'special_cards?select=*&is_active=eq.true&order=priority.desc,sequence_order.asc,created_at.desc&limit=20',
+  );
+  return rows.filter(isWithinSchedule);
+}
+
+export function formatSpecialCardTickerItem(card: SpecialCard) {
+  const parts = [card.title, card.person_name, card.subtitle].map((v) => String(v || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  return parts.join(' — ');
 }

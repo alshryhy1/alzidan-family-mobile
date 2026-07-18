@@ -8,6 +8,7 @@ import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { colors, spacing, typography } from '../theme';
 import type { FamilyEvent, MemberRequest, PublicAffinityStats } from '../types';
+import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
 
 
 const countdownTypes = new Set([
@@ -124,6 +125,7 @@ type HomeScreenProps = {
   latestEvents?: FamilyEvent[];
   upcomingEvents?: FamilyEvent[];
   bannerMessages?: string[];
+  specialCardTickerItems?: string[];
   tickerSpeedSeconds?: number;
   loading: boolean;
   membersCount: number;
@@ -233,6 +235,7 @@ export function HomeScreen({
   latestEvents = latestEvent ? [latestEvent] : [],
   upcomingEvents = [],
   bannerMessages = [],
+  specialCardTickerItems = [],
   tickerSpeedSeconds = 3,
   loading,
   membersCount,
@@ -252,10 +255,19 @@ export function HomeScreen({
     'الحمد لله الذي بنعمته تتم الصالحات — تم بحمد الله اكتمال تطبيق عائلة الزيدان وسيكون في هذا الشريط أخبار العائلة';
   const eventTickerItems = latestEvents
     .slice(0, 6)
-    .map((event) => `${event.title}: ${event.person}${event.date ? ` — ${event.date}` : ''}`);
-  const tickerItems = [...bannerMessages, ...eventTickerItems].map(normalizeTickerText).filter(Boolean);
+    .map((event) => {
+      const detail = String(event.details || '').replace(/\s+/g, ' ').trim();
+      const shortDetail = detail.length > 80 ? detail.slice(0, 79) + '…' : detail;
+      return [event.title, event.person, shortDetail, event.date ? `— ${event.date}` : '']
+        .filter(Boolean)
+        .join(' — ');
+    });
+  // Order: أخبار عامة → مناسبات → بطاقات خاصة (وضوح الشريط + توافق مع الويب)
+  const tickerItems = [...bannerMessages, ...eventTickerItems, ...specialCardTickerItems]
+    .map(normalizeTickerText)
+    .filter(Boolean);
   const tickerText = tickerItems.length ? tickerItems.join('     •     ') : fallbackTickerText;
-  const tickerStep = tickerWidth + spacing.lg;
+  const tickerStep = tickerWidth;
   const sortedUpcomingEvents = sortUpcomingEvents(upcomingEvents);
   const nearestUpcomingEvent = sortedUpcomingEvents[0] ?? null;
   const upcomingIds = new Set(sortedUpcomingEvents.map((event) => event.id));
@@ -325,17 +337,30 @@ export function HomeScreen({
 
   useEffect(() => {
     if (!tickerStep) return;
-    tickerX.setValue(-tickerStep);
-    const animation = Animated.loop(
-      Animated.timing(tickerX, {
-        duration: Math.max(1000, Math.min(120000, Number(tickerSpeedSeconds || 30) * 1000)),
+    let alive = true;
+    let anim: Animated.CompositeAnimation | null = null;
+    const duration = Math.max(1000, Math.min(120000, Number(tickerSpeedSeconds || 30) * 1000));
+    const run = () => {
+      if (!alive) return;
+      tickerX.setValue(0);
+      anim = Animated.timing(tickerX, {
+        duration,
         easing: Easing.linear,
-        toValue: 0,
+        toValue: -tickerStep,
         useNativeDriver: true,
-      }),
-    );
-    animation.start();
-    return () => animation.stop();
+      });
+      anim.start(({ finished }) => {
+        if (!alive || !finished) return;
+        // Pixel-perfect seam: snap to 0 (identical next copy) without hitch
+        tickerX.setValue(0);
+        run();
+      });
+    };
+    run();
+    return () => {
+      alive = false;
+      anim?.stop();
+    };
   }, [tickerText, tickerStep, tickerX, tickerSpeedSeconds]);
 
   useEffect(() => {
@@ -380,25 +405,25 @@ export function HomeScreen({
         <Text style={styles.tickerLabel}>آخر خبر:</Text>
         <View style={styles.tickerViewport}>
           <Animated.View style={[styles.tickerTrack, { transform: [{ translateX: tickerX }] }]}>
-            <Text
-              ellipsizeMode="clip"
-              numberOfLines={1}
+            <View
               onLayout={(event) => {
-                const measuredWidth = Math.ceil(event.nativeEvent.layout.width);
+                // مسافة الحلقة = عرض نسخة واحدة + gap بين النسختين
+                const measuredWidth = Math.round(event.nativeEvent.layout.width + spacing.lg);
                 setTickerWidth((currentWidth) =>
-                  Math.abs(currentWidth - measuredWidth) > 1 ? measuredWidth : currentWidth,
+                  Math.abs(currentWidth - measuredWidth) > 0.5 ? measuredWidth : currentWidth,
                 );
               }}
-              style={styles.tickerText}
+              style={styles.tickerSegment}
             >
-              {tickerText}
-            </Text>
-            <Text ellipsizeMode="clip" numberOfLines={1} style={styles.tickerText}>
-              {tickerText}
-            </Text>
-            <Text ellipsizeMode="clip" numberOfLines={1} style={styles.tickerText}>
-              {tickerText}
-            </Text>
+              <Text ellipsizeMode="clip" numberOfLines={1} style={styles.tickerText}>
+                {tickerText}
+              </Text>
+            </View>
+            <View style={styles.tickerSegment} importantForAccessibility="no-hide-descendants">
+              <Text ellipsizeMode="clip" numberOfLines={1} style={styles.tickerText}>
+                {tickerText}
+              </Text>
+            </View>
           </Animated.View>
         </View>
       </View>
@@ -566,6 +591,33 @@ export function HomeScreen({
                 <Text style={styles.latestEventPerson}>{visibleNewsEvents[0].person}</Text>
                 {visibleNewsEvents[0].details ? (
                   <Text numberOfLines={3} style={styles.latestEventDetails}>{visibleNewsEvents[0].details}</Text>
+                ) : null}
+                {visibleNewsEvents[0].category === 'health' && visibleNewsEvents[0].hospitalName ? (
+                  <Text style={styles.latestEventDetails}>المستشفى: {visibleNewsEvents[0].hospitalName}</Text>
+                ) : null}
+                {visibleNewsEvents[0].category === 'health' && visibleNewsEvents[0].hospitalDepartment ? (
+                  <Text style={styles.latestEventDetails}>القسم: {visibleNewsEvents[0].hospitalDepartment}</Text>
+                ) : null}
+                {visibleNewsEvents[0].category === 'health' &&
+                visibleNewsEvents[0].contactMethod === 'visit' &&
+                (visibleNewsEvents[0].visitDateFrom ||
+                  visibleNewsEvents[0].visitDateTo ||
+                  visibleNewsEvents[0].visitTimeFrom ||
+                  visibleNewsEvents[0].visitTimeTo) ? (
+                  <Text style={styles.latestEventDetails}>
+                    الزيارة:{' '}
+                    {[
+                      visibleNewsEvents[0].visitDateFrom && visibleNewsEvents[0].visitDateTo
+                        ? `من ${visibleNewsEvents[0].visitDateFrom} إلى ${visibleNewsEvents[0].visitDateTo}`
+                        : visibleNewsEvents[0].visitDateFrom || visibleNewsEvents[0].visitDateTo || '',
+                      formatVisitTimeRangeAr(
+                        visibleNewsEvents[0].visitTimeFrom,
+                        visibleNewsEvents[0].visitTimeTo,
+                      ),
+                    ]
+                      .filter(Boolean)
+                      .join(' – ')}
+                  </Text>
                 ) : null}
               </>
             ) : (
@@ -767,9 +819,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row-reverse',
     gap: spacing.sm,
+    minHeight: 52,
     overflow: 'hidden',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: 8,
   },
   tickerLabel: {
     color: colors.primaryDark,
@@ -779,24 +832,39 @@ const styles = StyleSheet.create({
   },
   tickerViewport: {
     flex: 1,
-    height: 20,
+    height: 44,
+    justifyContent: 'center',
     overflow: 'hidden',
+  },
+  tickerSegment: {
+    alignItems: 'center',
+    flexShrink: 0,
+    height: 44,
+    justifyContent: 'center',
   },
   tickerTrack: {
     alignItems: 'center',
     direction: 'ltr',
     flexDirection: 'row',
     gap: spacing.lg,
+    height: 44,
+    justifyContent: 'flex-start',
     left: 0,
     position: 'absolute',
+    top: 0,
   },
   tickerText: {
     color: colors.text,
     flexShrink: 0,
-    fontSize: typography.caption,
+    fontSize: 14,
     fontWeight: '700',
-    textAlign: 'right',
-    writingDirection: 'rtl',
+    includeFontPadding: false,
+    lineHeight: 20,
+    paddingVertical: 0,
+    textAlignVertical: 'center',
+    /* LTR base so newest event sits at the loop seam (left); Arabic glyphs still render correctly */
+    textAlign: 'left',
+    writingDirection: 'ltr',
   },
   hero: {
     backgroundColor: colors.primaryDark,
