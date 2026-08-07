@@ -10,3 +10,7 @@
 | التقرير | الموضوع |
 |---------|---------|
 | [`PATCH-MOBILE-36-REPORT.md`](./PATCH-MOBILE-36-REPORT.md) | Bug 36 — إزالة تكرار الجد صالح/صالح لاحم في عرض الشجرة |
+| [`PATCH-NEWS-EXPIRY-REPORT.md`](./PATCH-NEWS-EXPIRY-REPORT.md) | انتهاء الأخبار + سياسة الكاش (مسار C) |
+
+إصلاح البيانات / Integrity على مستودع الويب:  
+`../alzidan-family/docs/PATCH-REPAIR-REPORT.md`
