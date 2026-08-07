@@ -161,6 +161,15 @@ function buildAffinityStats(rows: SpouseSummaryRow[]): PublicAffinityStats {
   };
 }
 
+function extractShowDays(details: string | ParsedEventDetails | null | undefined): number | null {
+  const parsed = parseEventDetails(details);
+  if (!parsed || typeof parsed !== 'object') return null;
+  const raw = (parsed as { showDays?: unknown }).showDays;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
 function mapEvent(row: EventRow): FamilyEvent {
   const category = eventCategory(row.type);
   const parsed = parseEventDetails(row.details);
@@ -188,6 +197,7 @@ function mapEvent(row: EventRow): FamilyEvent {
     visitTimeFrom: row.visit_time_from ?? undefined,
     visitTimeTo: row.visit_time_to ?? undefined,
     createdAt: row.created_at,
+    showDays: extractShowDays(row.details),
   };
 }
 

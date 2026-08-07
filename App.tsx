@@ -34,9 +34,9 @@ import {
 } from './src/services/specialCards';
 import { selectPublicRows } from './src/services/supabase';
 import { trackAppView } from './src/services/viewTracking';
-import moment from 'moment-hijri';
 import { colors, spacing, typography } from './src/theme';
 import type { MemberRequest, PublicScreen } from './src/types';
+import { isFamilyEventPubliclyVisible } from './src/utils/eventVisibility';
 
 I18nManager.allowRTL(true);
 
@@ -147,113 +147,10 @@ const tabs: Array<{ key: PublicScreen; label: string; icon: string }> = [
   { key: 'profile', label: 'ملفي', icon: 'i' },
 ];
 
-function getEventVisibilityDays(event: import('./src/types').FamilyEvent) {
-  const n = Number(event.showDays);
-  if (!Number.isFinite(n)) return 7;
-  if (n < 1) return 1;
-  if (n > 7) return 7;
-  return n;
-}
-
-function isHappyFamilyEventType(event: import('./src/types').FamilyEvent) {
-  const type = String(event.type || '').trim().toLowerCase();
-  if (!type) return event.category === 'happy';
-  return !['death', 'sick', 'operation', 'discharge'].includes(type);
-}
-
-function parseFamilyEventDayMs(event: import('./src/types').FamilyEvent) {
-  const normalize = (value: string) =>
-    String(value || '')
-      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
-      .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
-      .replace(/[\\\-.]/g, '/')
-      .trim();
-
-  const eventDate = normalize(event.eventDate || '');
-  const ymd = eventDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-  if (ymd) {
-    const year = Number(ymd[1]);
-    const month = Number(ymd[2]);
-    const day = Number(ymd[3]);
-    if (year >= 1900) {
-      return new Date(year, month - 1, day).getTime();
-    }
-  }
-
-  const label = normalize(event.date || event.eventDate || '');
-  const parts = label.match(/^(\d{1,4})\/(\d{1,2})\/(\d{1,4})$/);
-  if (!parts) return null;
-  const a = Number(parts[1]);
-  const month = Number(parts[2]);
-  const c = Number(parts[3]);
-  const year = a >= 1300 ? a : c;
-  const day = a >= 1300 ? c : a;
-  if (!year || !month || !day) return null;
-
-  try {
-    const converted = moment(`${year}/${month}/${day}`, 'iYYYY/iM/iD').toDate();
-    if (converted instanceof Date && Number.isFinite(converted.getTime())) {
-      return new Date(converted.getFullYear(), converted.getMonth(), converted.getDate()).getTime();
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-function daysFromEventDay(event: import('./src/types').FamilyEvent) {
-  const day = parseFamilyEventDayMs(event);
-  if (day == null) return null;
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  return Math.round((day - start) / (24 * 60 * 60 * 1000));
-}
-
-function isWithinDaysFromEventDay(event: import('./src/types').FamilyEvent, keepDays: number) {
-  const days = Math.max(1, keepDays);
-  const diff = daysFromEventDay(event);
-  if (diff !== null) return diff >= -(days - 1);
-
-  if (!event.createdAt) return true;
-  const createdAt = Date.parse(event.createdAt);
-  if (!Number.isFinite(createdAt)) return true;
-  const created = new Date(createdAt);
-  const createdStart = new Date(created.getFullYear(), created.getMonth(), created.getDate()).getTime();
-  const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const ageDays = Math.round((todayStart - createdStart) / (24 * 60 * 60 * 1000));
-  return ageDays >= 0 && ageDays <= days - 1;
-}
-
-function isActiveFamilyEvent(event: import('./src/types').FamilyEvent) {
-  const type = String(event.type || '').trim().toLowerCase();
-
-  // الوفيات: تختفي بنهاية اليوم الثالث من تاريخ الوفاة
-  if (type === 'death' || event.category === 'condolence') {
-    return isWithinDaysFromEventDay(event, 3);
-  }
-
-  if (event.createdAt) {
-    const createdAt = Date.parse(event.createdAt);
-    if (Number.isFinite(createdAt)) {
-      const maxAgeMs = getEventVisibilityDays(event) * 24 * 60 * 60 * 1000;
-      if (createdAt < Date.now() - maxAgeMs) return false;
-    }
-  }
-
-  // الأفراح المؤرخة تختفي بعد انتهاء يوم المناسبة
-  if (isHappyFamilyEventType(event)) {
-    const diff = daysFromEventDay(event);
-    if (diff !== null && diff < 0) return false;
-  }
-
-  return true;
-}
-
 export default function App() {
   const [screen, setScreen] = useState<PublicScreen>('home');
   const publicData = usePublicData();
-  const activeEvents = publicData.events.filter(isActiveFamilyEvent);
+  const activeEvents = publicData.events.filter((event) => isFamilyEventPubliclyVisible(event));
   const [bannerMessages, setBannerMessages] = useState<BannerMessage[]>([]);
   const [tickerSpeedSeconds, setTickerSpeedSeconds] = useState(30);
   const [selectedBranchKey, setSelectedBranchKey] = useState<string | null>(null);

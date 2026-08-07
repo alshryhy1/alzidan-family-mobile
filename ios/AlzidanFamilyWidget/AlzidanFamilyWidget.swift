@@ -13,13 +13,17 @@ struct FamilyEvent: Identifiable {
     let sortDate: Date?
     let hijriDisplay: String
     let gregorianDisplay: String
+    let createdAt: Date?
+    let showDays: Int
 
-    init(rawType: String, name: String, dateLabel: String?, eventDateISO: String?, daysLeft: Int?) {
+    init(rawType: String, name: String, dateLabel: String?, eventDateISO: String?, daysLeft: Int?, createdAt: Date? = nil, showDays: Int = 7) {
         let cleanType = rawType.trimmingCharacters(in: .whitespacesAndNewlines)
         self.rawType = cleanType
         self.typeLabel = EventArabic.typeLabel(cleanType)
         self.icon = EventArabic.icon(for: cleanType)
         self.name = name
+        self.createdAt = createdAt
+        self.showDays = EventVisibility.clampShowDays(showDays)
 
         let parsed = EventDateFormatter.resolve(dateLabel: dateLabel, eventDateISO: eventDateISO)
         self.sortDate = parsed.sortDate
@@ -208,6 +212,96 @@ struct WidgetRoot<Content: View>: View {
     }
 }
 
+
+/// مصدر ظهور موحّد مع التطبيق/الويب (مسار C / NEWS-001).
+/// - وفاة: 3 أيام من يوم الحدث (أو created_at)
+/// - غير الوفاة: نافذة showDays من created_at (1…7)
+/// - الأفراح المؤرخة: تختفي بعد يوم المناسبة
+/// - event_date null: لا ظهور أبدي — يعتمد على created_at/showDays
+enum EventVisibility {
+    static let deathKeepDays = 3
+    static let defaultShowDays = 7
+
+    static func clampShowDays(_ value: Int?) -> Int {
+        guard let value else { return defaultShowDays }
+        if value < 1 { return 1 }
+        if value > 7 { return 7 }
+        return value
+    }
+
+    static func showDays(fromDetails details: String?) -> Int {
+        guard let details, let data = details.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return defaultShowDays
+        }
+        let kind = String(describing: obj["kind"] ?? "")
+        let version = obj["v"] as? Int ?? Int("\(obj["v"] ?? "")") ?? 0
+        guard version == 1, ["happy_notice", "health_notice", "death_notice"].contains(kind) else {
+            return defaultShowDays
+        }
+        if let n = obj["showDays"] as? Int { return clampShowDays(n) }
+        if let s = obj["showDays"] as? String, let n = Int(s.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return clampShowDays(n)
+        }
+        return defaultShowDays
+    }
+
+    static func isDeath(_ type: String) -> Bool {
+        type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "death"
+    }
+
+    static func isHappy(_ type: String) -> Bool {
+        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if key.isEmpty { return true }
+        return !["death", "sick", "operation", "discharge"].contains(key)
+    }
+
+    static func daysFromEventDay(_ event: FamilyEvent, now: Date = Date()) -> Int? {
+        guard let sortDate = event.sortDate else { return nil }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: now)
+        let day = cal.startOfDay(for: sortDate)
+        return cal.dateComponents([.day], from: today, to: day).day
+    }
+
+    static func isWithinDaysFromEventDay(_ event: FamilyEvent, keepDays: Int, now: Date = Date()) -> Bool {
+        let days = max(1, keepDays)
+        if let diff = daysFromEventDay(event, now: now) {
+            return diff >= -(days - 1)
+        }
+        guard let createdAt = event.createdAt else { return true }
+        let cal = Calendar.current
+        let createdStart = cal.startOfDay(for: createdAt)
+        let todayStart = cal.startOfDay(for: now)
+        let age = cal.dateComponents([.day], from: createdStart, to: todayStart).day ?? 0
+        return age >= 0 && age <= days - 1
+    }
+
+    static func isCreatedWithinShowWindow(_ event: FamilyEvent, now: Date = Date()) -> Bool {
+        guard let createdAt = event.createdAt else { return true }
+        let maxAge = TimeInterval(clampShowDays(event.showDays) * 24 * 60 * 60)
+        return createdAt.timeIntervalSince1970 >= now.timeIntervalSince1970 - maxAge
+    }
+
+    static func isPubliclyVisible(_ event: FamilyEvent, now: Date = Date()) -> Bool {
+        if isDeath(event.rawType) {
+            return isWithinDaysFromEventDay(event, keepDays: deathKeepDays, now: now)
+        }
+        if !isCreatedWithinShowWindow(event, now: now) { return false }
+        if isHappy(event.rawType) {
+            if let diff = daysFromEventDay(event, now: now), diff < 0 { return false }
+        }
+        return true
+    }
+
+    /// Cache Policy: أعد بناء Timeline عند منتصف الليل التالي (انتهاء نوافذ يومية).
+    static func nextRefreshDate(from now: Date = Date()) -> Date {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: now)
+        return cal.date(byAdding: .second, value: 24 * 60 * 60 + 5, to: start) ?? now.addingTimeInterval(3600)
+    }
+}
+
 struct PrayerEntry: TimelineEntry {
     let date: Date
     let events: [FamilyEvent]
@@ -215,8 +309,8 @@ struct PrayerEntry: TimelineEntry {
 
 struct Provider: TimelineProvider {
     private static let sampleEvents: [FamilyEvent] = [
-        FamilyEvent(rawType: "birth", name: "سلمان عيد عبدالمحسن", dateLabel: "٢/٢/١٤٤٨", eventDateISO: nil, daysLeft: nil),
-        FamilyEvent(rawType: "marriage", name: "عبدالرحمن هليل محمد", dateLabel: "١٦/٢/١٤٤٨", eventDateISO: nil, daysLeft: nil),
+        FamilyEvent(rawType: "birth", name: "سلمان عيد عبدالمحسن", dateLabel: "٢/٢/١٤٤٨", eventDateISO: nil, daysLeft: nil, createdAt: Date(), showDays: 7),
+        FamilyEvent(rawType: "marriage", name: "عبدالرحمن هليل محمد", dateLabel: "١٦/٢/١٤٤٨", eventDateISO: nil, daysLeft: nil, createdAt: Date(), showDays: 7),
     ]
 
     func placeholder(in context: Context) -> PrayerEntry {
@@ -235,27 +329,13 @@ struct Provider: TimelineProvider {
         }
     }
 
-    private static let timelineEntryCount = 120
-
     func getTimeline(in context: Context, completion: @escaping (Timeline<PrayerEntry>) -> Void) {
         let now = Date()
         fetchEvents { events in
-            var entries: [PrayerEntry] = []
-            entries.reserveCapacity(Self.timelineEntryCount)
-
-            for minuteOffset in 0..<Self.timelineEntryCount {
-                guard let entryDate = Calendar.current.date(byAdding: .minute, value: minuteOffset, to: now) else {
-                    continue
-                }
-                entries.append(PrayerEntry(date: entryDate, events: events))
-            }
-
-            if entries.isEmpty {
-                entries.append(PrayerEntry(date: now, events: events))
-            }
-
+            let entry = PrayerEntry(date: now, events: events)
+            let refresh = EventVisibility.nextRefreshDate(from: now)
             DispatchQueue.main.async {
-                completion(Timeline(entries: entries, policy: .atEnd))
+                completion(Timeline(entries: [entry], policy: .after(refresh)))
             }
         }
     }
@@ -264,8 +344,8 @@ struct Provider: TimelineProvider {
         let baseUrl = "https://wbskjfdqpugnwvrykqcn.supabase.co"
         let anonKey = "sb_publishable_JhgwBIXhs6z4yBZOoE2EqA_UlzjzW9c"
 
-        let today = Self.isoDate(Date())
-        let query = "/rest/v1/family_events?select=id,type,person,date_label,event_date,created_at&or=(event_date.gte.\(today),event_date.is.null)&order=event_date.asc.nullslast,created_at.desc&limit=10"
+        // عيّنة حديثة + فلتر محلي موحّد (لا تعتمد على event_date.gte وحده)
+        let query = "/rest/v1/family_events?select=id,type,person,date_label,event_date,created_at,details&order=created_at.desc&limit=40"
 
         guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let requestUrl = URL(string: baseUrl + encoded) else {
@@ -279,28 +359,45 @@ struct Provider: TimelineProvider {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         URLSession.shared.dataTask(with: request) { data, _, _ in
-            guard let data else {
+            guard let data,
+                  let raw = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
                 completion([])
                 return
             }
 
-            let rows = (try? JSONDecoder().decode([SupabaseEventRow].self, from: data)) ?? []
-            let events = rows.compactMap { row -> FamilyEvent? in
-                let cleanType = row.type.trimmingCharacters(in: .whitespacesAndNewlines)
-                let cleanName = row.person.trimmingCharacters(in: .whitespacesAndNewlines)
-                let cleanDate = (row.event_date ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                let cleanLabel = (row.date_label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let now = Date()
+            let events = raw.compactMap { row -> FamilyEvent? in
+                let cleanType = (row["type"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanName = (row["person"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanDate = (row["event_date"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanLabel = (row["date_label"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
                 guard !cleanType.isEmpty || !cleanName.isEmpty else { return nil }
 
                 let days = cleanDate.isEmpty ? nil : Self.daysLeft(cleanDate)
-                return FamilyEvent(
+                let createdAt = Self.parseCreatedAt(row["created_at"] as? String)
+                let detailsString: String?
+                if let s = row["details"] as? String {
+                    detailsString = s
+                } else if let obj = row["details"], JSONSerialization.isValidJSONObject(obj),
+                          let d = try? JSONSerialization.data(withJSONObject: obj),
+                          let s = String(data: d, encoding: .utf8) {
+                    detailsString = s
+                } else {
+                    detailsString = nil
+                }
+                let showDays = EventVisibility.showDays(fromDetails: detailsString)
+                let event = FamilyEvent(
                     rawType: cleanType,
                     name: cleanName.isEmpty ? "بدون اسم" : cleanName,
                     dateLabel: cleanLabel.isEmpty ? nil : cleanLabel,
                     eventDateISO: cleanDate.isEmpty ? nil : cleanDate,
-                    daysLeft: days
+                    daysLeft: days,
+                    createdAt: createdAt,
+                    showDays: showDays
                 )
+                guard EventVisibility.isPubliclyVisible(event, now: now) else { return nil }
+                return event
             }
             .sorted(by: Self.sortEvents)
 
@@ -330,6 +427,17 @@ struct Provider: TimelineProvider {
         return formatter.string(from: date)
     }
 
+    private static func parseCreatedAt(_ raw: String?) -> Date? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFrac.date(from: raw) { return d }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: raw) { return d }
+        return nil
+    }
+
     private static func daysLeft(_ iso: String) -> Int? {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -344,14 +452,6 @@ struct Provider: TimelineProvider {
     }
 }
 
-struct SupabaseEventRow: Codable {
-    let id: Int?
-    let type: String
-    let person: String
-    let date_label: String?
-    let event_date: String?
-    let created_at: String?
-}
 
 enum ArabicRelativeDays {
     static func untilEvent(_ days: Int) -> String {
