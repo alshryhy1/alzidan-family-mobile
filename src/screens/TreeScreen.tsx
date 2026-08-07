@@ -5,6 +5,11 @@ import { DataState } from '../components/DataState';
 import { Screen } from '../components/Screen';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, TreeChild, TreeParent, TreePerson } from '../types';
+import {
+  getBranchRootName,
+  groupChildrenRows,
+  normalizePersonName,
+} from '../utils/groupChildrenRows';
 
 type TreeScreenProps = {
   branchKey: string | null;
@@ -179,32 +184,36 @@ function buildBranchTree(
 
   const branchParents = parents.filter((parent) => parent.branchKey === branch.id);
   const branchChildren = childrenRows.filter((child) => child.branchKey === branch.id);
-  const byParent = new Map<string, TreeChild[]>();
+  const byParent = groupChildrenRows(branchChildren, branch.id);
 
-  branchChildren.forEach((child) => {
-    const current = byParent.get(child.parentName) ?? [];
-    current.push(child);
-    byParent.set(child.parentName, current);
-  });
+  const branchRoot = getBranchRootName(branch.id);
+  const knownChildren = new Set(
+    Array.from(byParent.values())
+      .flat()
+      .map((child) => normalizePersonName(child.name)),
+  );
 
-  const knownChildren = new Set(branchChildren.map((child) => child.name));
-  const rootCandidates = branchParents.length
-    ? branchParents.map((parent) => parent.name)
-    : Array.from(byParent.keys()).filter((name) => !knownChildren.has(name));
+  const rootCandidates = [
+    ...(branchRoot ? [branchRoot] : []),
+    ...branchParents.map((parent) => normalizePersonName(parent.name)),
+    ...Array.from(byParent.keys()).filter((name) => !knownChildren.has(name)),
+  ].filter(Boolean);
 
-  const rootName = rootCandidates
+  const uniqueRoots = Array.from(new Set(rootCandidates.map((name) => normalizePersonName(name))));
+
+  const rootName = uniqueRoots
     .map((name) => ({
       name,
-      score: branchChildren.filter(
-        (child) => child.parentName === name || child.name.startsWith(`${name}/`),
-      ).length,
+      score: (byParent.get(name) ?? []).length,
     }))
     .sort((left, right) => right.score - left.score)[0]?.name;
 
   const buildChildren = (parentName: string, visited: Set<string>): TreePerson[] => {
-    if (visited.has(parentName)) return [];
-    const nextVisited = new Set(visited).add(parentName);
-    return sortChildren(parentName, byParent.get(parentName) ?? []).map((child) => ({
+    const parentKey = normalizePersonName(parentName);
+    if (!parentKey || visited.has(parentKey)) return [];
+    const nextVisited = new Set(visited).add(parentKey);
+
+    return sortChildren(parentKey, byParent.get(parentKey) ?? []).map((child) => ({
       id: String(child.id),
       name: displayPersonName(child.name),
       fullName: child.name,

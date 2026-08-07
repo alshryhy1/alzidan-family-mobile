@@ -33,11 +33,12 @@
     "ios": "expo run:ios",
     "sync:ios-icon": "node scripts/sync-ios-icon.mjs",
     "web": "expo start --web",
+    "verify:bug36": "node scripts/verify-bug36-tree-merge.mjs",
     "verify:tree-card": "node scripts/verify-tree-card-compat.mjs",
     "verify:push": "node scripts/verify-push-readiness.mjs",
     "verify:event-card": "node scripts/verify-event-card-compat.mjs",
     "verify:notifications": "node scripts/verify-notification-format.mjs",
-    "verify:handover": "npm run verify:tree-card && npm run verify:event-card && npm run verify:notifications && npm run verify:push && npx tsc --noEmit"
+    "verify:handover": "npm run verify:bug36 && npm run verify:tree-card && npm run verify:event-card && npm run verify:notifications && npm run verify:push && npx tsc --noEmit"
   },
   "private": true
 }
