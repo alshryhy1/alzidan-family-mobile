@@ -5,6 +5,14 @@
 `../alzidan-family/docs/ENGINEERING-ROADMAP.md`  
 `../alzidan-family/docs/ADR.md`
 
+## ترتيب التنفيذ الحالي (لا UX موبايل بعد)
+
+حسب الخارطة الرسمية (§17 ثم §18):
+
+1. ✅ الأساس: Patch 0–4 / Mobile 36 / News / Repair / Integrity / Health Center  
+2. ← التالي على الويب: **Admin Redesign** (موديولات) → Delegates v2 → Admin UX  
+3. لاحقًا فقط: UX الموبايل (بحث · صفحة عضو · إشعارات · …)
+
 ## تقارير الـ Patch على الموبايل
 
 | التقرير | الموضوع |
@@ -13,4 +21,4 @@
 | [`PATCH-NEWS-EXPIRY-REPORT.md`](./PATCH-NEWS-EXPIRY-REPORT.md) | انتهاء الأخبار + سياسة الكاش (مسار C) |
 
 إصلاح البيانات / Integrity على مستودع الويب:  
-`../alzidan-family/docs/PATCH-REPAIR-REPORT.md`
+`../alzidan-family/docs/PATCH-REPAIR-REPORT.md` · `../alzidan-family/docs/PATCH-INTEGRITY-REPORT.md`
