@@ -9,6 +9,7 @@ import { SectionCard } from '../components/SectionCard';
 import { colors, spacing, typography } from '../theme';
 import type { FamilyEvent, MemberRequest, PublicAffinityStats } from '../types';
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
+import { buildHomeTickerItems, logHomeTickerCandidates } from '../utils/homeTicker';
 
 
 const countdownTypes = new Set([
@@ -109,10 +110,6 @@ function sortUpcomingEvents(events: FamilyEvent[]) {
   return [...events]
     .filter(isCountdownEvent)
     .sort((a, b) => (parseEventDay(a) ?? 0) - (parseEventDay(b) ?? 0));
-}
-
-function normalizeTickerText(value: string) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
 type HomeScreenProps = {
@@ -253,19 +250,17 @@ export function HomeScreen({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const fallbackTickerText =
     'الحمد لله الذي بنعمته تتم الصالحات — تم بحمد الله اكتمال تطبيق عائلة الزيدان وسيكون في هذا الشريط أخبار العائلة';
-  const eventTickerItems = latestEvents
-    .slice(0, 6)
-    .map((event) => {
-      const detail = String(event.details || '').replace(/\s+/g, ' ').trim();
-      const shortDetail = detail.length > 80 ? detail.slice(0, 79) + '…' : detail;
-      return [event.title, event.person, shortDetail, event.date ? `— ${event.date}` : '']
-        .filter(Boolean)
-        .join(' — ');
-    });
-  // Order: أخبار عامة → مناسبات → بطاقات خاصة (وضوح الشريط + توافق مع الويب)
-  const tickerItems = [...bannerMessages, ...eventTickerItems, ...specialCardTickerItems]
-    .map(normalizeTickerText)
-    .filter(Boolean);
+  // أولوية موحّدة: وفاة → مناسبات عائلية → أخبار عامة → بطاقات خاصة
+  const tickerBuild = buildHomeTickerItems({
+    events: latestEvents,
+    bannerMessages,
+    specialCardTickerItems,
+    maxFamilyEvents: 6,
+  });
+  logHomeTickerCandidates('HomeScreen', tickerBuild, {
+    latestEventsCount: latestEvents.length,
+  });
+  const tickerItems = tickerBuild.items;
   const tickerText = tickerItems.length ? tickerItems.join('     •     ') : fallbackTickerText;
   const tickerStep = tickerWidth;
   const sortedUpcomingEvents = sortUpcomingEvents(upcomingEvents);
@@ -844,7 +839,8 @@ const styles = StyleSheet.create({
   },
   tickerTrack: {
     alignItems: 'center',
-    direction: 'ltr',
+    // RTL: أول عنصر بالأولوية (وفاة) يظهر بجانب عنوان «آخر خبر» على اليمين
+    direction: 'rtl',
     flexDirection: 'row',
     gap: spacing.lg,
     height: 44,
@@ -862,9 +858,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingVertical: 0,
     textAlignVertical: 'center',
-    /* LTR base so newest event sits at the loop seam (left); Arabic glyphs still render correctly */
-    textAlign: 'left',
-    writingDirection: 'ltr',
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   hero: {
     backgroundColor: colors.primaryDark,

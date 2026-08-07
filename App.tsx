@@ -163,6 +163,20 @@ export default function App() {
   const [specialCardVisible, setSpecialCardVisible] = useState(false);
   const [specialCardTickerItems, setSpecialCardTickerItems] = useState<string[]>([]);
 
+  useEffect(() => {
+    if (!__DEV__) return;
+    const deaths = activeEvents.filter(
+      (event) => String(event.type || '').toLowerCase() === 'death' || event.category === 'condolence',
+    );
+    console.log('[homeTicker:activeEvents]', {
+      total: activeEvents.length,
+      deaths: deaths.length,
+      deathPreview: deaths.slice(0, 3).map((event) => ({ id: event.id, person: event.person })),
+      specialCardTickerItems: specialCardTickerItems.length,
+      bannerMessages: bannerMessages.length,
+    });
+  }, [activeEvents, specialCardTickerItems.length, bannerMessages.length]);
+
   useEffect(() => setupPushRegistration(), []);
 
   useEffect(() => {
@@ -395,9 +409,15 @@ export default function App() {
     fetchActiveSpecialCardsForTicker()
       .then((cards: SpecialCard[]) => {
         if (!alive) return;
-        setSpecialCardTickerItems(
-          cards.map(formatSpecialCardTickerItem).map((item) => item.trim()).filter(Boolean),
-        );
+        const items = cards.map(formatSpecialCardTickerItem).map((item) => item.trim()).filter(Boolean);
+        if (__DEV__) {
+          console.log('[homeTicker:specialCards]', {
+            fetched: cards.length,
+            tickerItems: items.length,
+            preview: items.slice(0, 3),
+          });
+        }
+        setSpecialCardTickerItems(items);
       })
       .catch((error: unknown) => {
         console.warn('تعذر تحميل عناوين البطاقة الخاصة للشريط:', error);
