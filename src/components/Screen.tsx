@@ -39,10 +39,12 @@ export function Screen({
       }
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.heading}>
-        <Text style={styles.title}>{title}</Text>
-        {description ? <Text style={styles.description}>{description}</Text> : null}
-      </View>
+      {title || description ? (
+        <View style={styles.heading}>
+          {title ? <Text style={styles.title}>{title}</Text> : null}
+          {description ? <Text style={styles.description}>{description}</Text> : null}
+        </View>
+      ) : null}
       {children}
     </ScrollView>
   );
@@ -50,7 +52,7 @@ export function Screen({
 
 const styles = StyleSheet.create({
   content: {
-    gap: spacing.md,
+    gap: spacing.lg,
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
   },

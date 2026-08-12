@@ -237,7 +237,7 @@ function buildBranchTree(
     id: `root-${branch.id}`,
     name: displayPersonName(rootName),
     fullName: rootName,
-    meta: `${branch.membersCount} سجلًا`,
+    meta: `${branch.membersCount} في الشجرة`,
     children: buildChildren(rootName, new Set()),
   };
 }
@@ -470,21 +470,16 @@ export function TreeScreen({
             </Pressable>
           ) : null}
 
-          <View style={styles.currentPerson}>
-            <Text style={styles.currentEyebrow}>{canGoBack ? 'الجيل الحالي' : 'الفرع الحالي'}</Text>
-            <Text style={styles.currentName}>{personDisplayName(currentPerson)}</Text>
-            {currentPerson.meta ? <Text style={styles.currentMeta}>{currentPerson.meta}</Text> : null}
+          <View style={styles.personCard}>
+            <Text style={styles.personEyebrow}>{canGoBack ? 'بطاقة الشخص' : 'أصل الفرع'}</Text>
+            <Text style={styles.personName}>{personDisplayName(currentPerson)}</Text>
+            {lineageDisplay ? <Text style={styles.personLineage}>{lineageDisplay}</Text> : null}
+            {currentPerson.meta ? <Text style={styles.personMeta}>{currentPerson.meta}</Text> : null}
             <Text style={styles.childrenCount}>
               {directChildren.length ? `${directChildren.length} من الأبناء` : 'لا يوجد أبناء مسجلون'}
             </Text>
-          </View>
 
-          {canGoBack ? (
-            <View style={styles.detailsCard}>
-              <Text style={styles.detailsEyebrow}>تفاصيل الشخص</Text>
-              <Text style={styles.lineageLabel}>مسار النسب</Text>
-              <Text style={styles.lineageText}>{lineageDisplay}</Text>
-
+            {detailRows.length ? (
               <View style={styles.detailRows}>
                 {detailRows.map((row) => (
                   <View key={row.label} style={styles.detailRow}>
@@ -493,20 +488,17 @@ export function TreeScreen({
                   </View>
                 ))}
               </View>
+            ) : null}
 
-              {parentPerson ? (
-                <Pressable
-                  onPress={goBack}
-                  style={({ pressed }) => [
-                    styles.parentButton,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.parentButtonText}>العودة إلى الأب: {personDisplayName(parentPerson)}</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
+            {parentPerson ? (
+              <Pressable
+                onPress={goBack}
+                style={({ pressed }) => [styles.parentButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.parentButtonText}>الأب: {personDisplayName(parentPerson)}</Text>
+              </Pressable>
+            ) : null}
+          </View>
 
           {directChildren.length ? (
             <View style={styles.directChildren}>
@@ -639,28 +631,36 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
   },
-  currentPerson: {
+  personCard: {
     backgroundColor: colors.primaryDark,
-    borderRadius: 24,
-    gap: spacing.xs,
+    borderRadius: 28,
+    gap: spacing.sm,
     padding: spacing.lg,
   },
-  currentEyebrow: {
+  personEyebrow: {
     color: '#DABF8A',
     fontSize: typography.caption,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-  currentName: {
+  personName: {
     color: colors.white,
-    fontSize: typography.heading,
+    fontSize: typography.display,
     fontWeight: '900',
-    lineHeight: 32,
+    lineHeight: 38,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-  currentMeta: {
+  personLineage: {
+    color: '#E8D7B0',
+    fontSize: typography.body,
+    fontWeight: '700',
+    lineHeight: 24,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  personMeta: {
     color: '#DCE8E3',
     fontSize: typography.caption,
     textAlign: 'right',
@@ -670,61 +670,31 @@ const styles = StyleSheet.create({
     color: '#DABF8A',
     fontSize: typography.caption,
     fontWeight: '800',
-    marginTop: spacing.xs,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  detailsCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 22,
-    borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  detailsEyebrow: {
-    color: colors.accent,
-    fontSize: typography.caption,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  lineageLabel: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  lineageText: {
-    color: colors.primaryDark,
-    fontSize: typography.body,
-    fontWeight: '800',
-    lineHeight: 24,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   detailRows: {
-    borderTopColor: colors.border,
+    borderTopColor: 'rgba(255,255,255,0.16)',
     borderTopWidth: 1,
+    marginTop: spacing.xs,
   },
   detailRow: {
     alignItems: 'center',
-    borderBottomColor: colors.border,
+    borderBottomColor: 'rgba(255,255,255,0.10)',
     borderBottomWidth: 1,
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    minHeight: 42,
+    minHeight: 40,
     paddingVertical: spacing.xs,
   },
   detailLabel: {
-    color: colors.textMuted,
+    color: '#DABF8A',
     fontSize: typography.caption,
     fontWeight: '700',
     writingDirection: 'rtl',
   },
   detailValue: {
-    color: colors.text,
+    color: colors.white,
     flex: 1,
     fontSize: typography.body,
     fontWeight: '700',

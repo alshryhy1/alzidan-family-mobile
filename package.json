@@ -40,7 +40,8 @@
     "verify:notifications": "node scripts/verify-notification-format.mjs",
     "verify:news-expiry": "node scripts/verify-news-expiry.mjs",
     "verify:home-ticker": "node scripts/verify-home-ticker.mjs",
-    "verify:handover": "npm run verify:bug36 && npm run verify:news-expiry && npm run verify:home-ticker && npm run verify:tree-card && npm run verify:event-card && npm run verify:notifications && npm run verify:push && npx tsc --noEmit"
+    "verify:tree-stats": "node scripts/verify-tree-stats.mjs",
+    "verify:handover": "npm run verify:bug36 && npm run verify:news-expiry && npm run verify:home-ticker && npm run verify:tree-card && npm run verify:event-card && npm run verify:notifications && npm run verify:push && npm run verify:tree-stats && npx tsc --noEmit"
   },
   "private": true
 }

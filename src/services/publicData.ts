@@ -1,5 +1,6 @@
 import type { Branch, FamilyEvent, PublicAffinityStats, TreeChild, TreeParent } from '../types';
 import { eventTypeArabicLabel } from '../utils/eventTypeLabels';
+import { collectBranchTreeStats, isTreePersonDeceased } from '../utils/treeStats';
 import { selectPublicRows } from './supabase';
 
 type BranchRow = {
@@ -232,19 +233,6 @@ export async function loadPublicData() {
     ),
   ]);
 
-  const branches: Branch[] = branchRows.map((row) => {
-    const branchParents = parentRows.filter((parent) => parent.branch_key === row.key);
-    const branchChildren = childRows.filter((child) => child.branch_key === row.key);
-    return {
-      id: row.key,
-      name: row.key,
-      fullName: row.title,
-      summary: 'فرع عائلي موثق ضمن ذرية مطلق بن زيدان.',
-      familiesCount: branchParents.length || rootParentCount(branchChildren),
-      membersCount: branchChildren.length,
-    };
-  });
-
   const parents: TreeParent[] = parentRows.map((row) => ({
     id: row.id,
     branchKey: row.branch_key,
@@ -264,8 +252,22 @@ export async function loadPublicData() {
     deathDateHijri: row.death_date_h ?? null,
     city: row.city,
     area: row.area,
-    isDeceased: row.is_deceased ?? row.deceased ?? null,
+    isDeceased: isTreePersonDeceased(row.is_deceased, row.deceased) ? true : row.is_deceased ?? row.deceased ?? null,
   }));
+
+  const branches: Branch[] = branchRows.map((row) => {
+    const branchParents = parentRows.filter((parent) => parent.branch_key === row.key);
+    const branchChildren = children.filter((child) => child.branchKey === row.key);
+    const rawBranchChildren = childRows.filter((child) => child.branch_key === row.key);
+    return {
+      id: row.key,
+      name: row.key,
+      fullName: row.title,
+      summary: 'فرع عائلي موثق ضمن ذرية مطلق بن زيدان.',
+      familiesCount: branchParents.length || rootParentCount(rawBranchChildren),
+      membersCount: collectBranchTreeStats(branchChildren, row.key).living,
+    };
+  });
 
   return {
     branches,

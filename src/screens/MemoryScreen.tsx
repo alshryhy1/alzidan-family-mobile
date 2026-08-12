@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { DataState } from '../components/DataState';
@@ -320,6 +320,13 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
 
   useEffect(() => {
     load();
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') load();
+    });
+    return () => sub.remove();
   }, []);
 
   const branches = useMemo(() => {

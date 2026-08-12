@@ -44,7 +44,7 @@ export function BranchesScreen({
               <View style={styles.metrics}>
                 <Text style={styles.metric}>{branch.familiesCount} بيوت</Text>
                 <Text style={styles.dot}>•</Text>
-                <Text style={styles.metric}>{branch.membersCount} اسمًا</Text>
+                <Text style={styles.metric}>{branch.membersCount} في الشجرة</Text>
               </View>
               <ActionButton
                 label={`عرض شجرة فرع ${branch.name}`}

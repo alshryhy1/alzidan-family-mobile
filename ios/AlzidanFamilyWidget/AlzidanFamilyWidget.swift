@@ -294,11 +294,13 @@ enum EventVisibility {
         return true
     }
 
-    /// Cache Policy: أعد بناء Timeline عند منتصف الليل التالي (انتهاء نوافذ يومية).
+    /// أعد الجلب خلال 15 دقيقة حتى يختفي المحذوف، ومع منتصف الليل لنوافذ الظهور.
     static func nextRefreshDate(from now: Date = Date()) -> Date {
         let cal = Calendar.current
         let start = cal.startOfDay(for: now)
-        return cal.date(byAdding: .second, value: 24 * 60 * 60 + 5, to: start) ?? now.addingTimeInterval(3600)
+        let midnight = cal.date(byAdding: .second, value: 24 * 60 * 60 + 5, to: start) ?? now.addingTimeInterval(3600)
+        let soon = now.addingTimeInterval(15 * 60)
+        return min(soon, midnight)
     }
 }
 
@@ -493,6 +495,8 @@ struct HailPrayerCalculator {
     static let latitude = 27.5114
     static let longitude = 41.7208
     static let timezone = 3.0
+    /// أوقات الحساب كانت متأخرة 2–3 دقائق عن الأذان المحلي؛ نقدم الساعة بهذا المقدار.
+    static let clockCorrectionMinutes = -2.5
 
     static func prayerInfo(now: Date = Date()) -> PrayerInfo {
         let today = prayerTimes(for: now)
@@ -584,7 +588,8 @@ struct HailPrayerCalculator {
 
     static func dateFromHour(_ hour: Double, base: Date) -> Date {
         let day = Calendar.current.startOfDay(for: base)
-        return Calendar.current.date(byAdding: .second, value: Int((hour * 3600).rounded()), to: day) ?? base
+        let correctedHour = hour + (clockCorrectionMinutes / 60.0)
+        return Calendar.current.date(byAdding: .second, value: Int((correctedHour * 3600).rounded()), to: day) ?? base
     }
 
     static func remaining(from now: Date, to next: Date) -> String {
@@ -716,10 +721,19 @@ struct AlzidanFamilyWidgetEntryView: View {
         Array(entry.events.prefix(maxEvents))
     }
 
-    private var compactTodayLine: String {
-        let gregorian = compactGregorianDate(entry.date)
+    private var weekdayName: String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "ar_SA")
+        f.dateFormat = "EEEE"
+        return f.string(from: entry.date)
+    }
+
+    private var compactDatePair: String {
         let hijri = compactHijriDate(entry.date)
-        return "\(gregorian) · \(hijri)"
+        let gregorian = compactGregorianDate(entry.date)
+        let miladi = gregorian.contains("م") ? gregorian : "\(gregorian) م"
+        return "\(hijri) · \(miladi)"
     }
 
     @ViewBuilder
@@ -795,11 +809,15 @@ struct AlzidanFamilyWidgetEntryView: View {
                 .fontWeight(.bold)
                 .lineLimit(1)
 
-            Text(compactTodayLine)
+            Text(weekdayName)
+                .font(.system(size: 11, weight: .bold))
+                .lineLimit(1)
+
+            Text(compactDatePair)
                 .font(.system(size: 8))
                 .opacity(0.78)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.7)
 
             nextPrayerSection(info: info, alignment: .trailing, compact: true)
 
@@ -838,7 +856,11 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .fontWeight(.bold)
                     .lineLimit(1)
 
-                Text(compactTodayLine)
+                Text(weekdayName)
+                    .font(.system(size: 13, weight: .bold))
+                    .lineLimit(1)
+
+                Text(compactDatePair)
                     .font(.system(size: 9))
                     .opacity(0.78)
                     .lineLimit(1)
@@ -898,14 +920,13 @@ struct AlzidanFamilyWidgetEntryView: View {
                     Text("حائل")
                         .font(.caption)
                         .fontWeight(.bold)
-                    Text(miladiDate(entry.date))
+                    Text(weekdayName)
+                        .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
+                    Text(compactDatePair)
                         .font(.system(size: 10))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Text(hijriDate(entry.date))
-                        .font(.system(size: 10))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.75)
                 }
 
                 Spacer(minLength: 0)
@@ -991,28 +1012,12 @@ struct AlzidanFamilyWidgetEntryView: View {
             .replacingOccurrences(of: "PM", with: "م")
     }
 
-    func miladiDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        f.locale = Locale(identifier: "ar_SA")
-        f.dateFormat = "EEEE d MMMM yyyy"
-        return f.string(from: date)
-    }
-
     func compactGregorianDate(_ date: Date) -> String {
         EventDateFormatter.gregorianText(from: date)
     }
 
     func compactHijriDate(_ date: Date) -> String {
         EventDateFormatter.hijriText(from: date)
-    }
-
-    func hijriDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .islamicUmmAlQura)
-        f.locale = Locale(identifier: "ar_SA")
-        f.dateFormat = "d MMMM yyyy هـ"
-        return f.string(from: date)
     }
 }
 

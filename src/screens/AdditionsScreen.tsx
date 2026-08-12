@@ -2,16 +2,26 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
-import { MemorySubmitPanel } from '../components/MemorySubmitPanel';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
+import { appendTrackedRequest } from '../services/myRequestsTrack';
+import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
 import { insertPublicRow } from '../services/supabase';
+import {
+  MOBILE_EVENT_TYPES,
+  buildMobileEventRequestMessage,
+  findMobileEventType,
+  validateEventFacts,
+} from '../utils/eventRequestMessage';
 import { buildTreeCardMessage, treeCardRequestId } from '../utils/treeCardMessage';
 import { colors, spacing, typography } from '../theme';
 import type { Branch } from '../types';
 
+export type AdditionsIntent = 'person' | 'correction';
+
 type AdditionsScreenProps = {
   branches: Branch[];
+  intent?: AdditionsIntent;
 };
 
 type RequestStatus = {
@@ -19,15 +29,7 @@ type RequestStatus = {
   text: string;
 };
 
-const eventTypes = [
-  { key: 'birth', label: 'مولود' },
-  { key: 'marriage', label: 'زواج' },
-  { key: 'graduation', label: 'تخرج' },
-  { key: 'promotion', label: 'ترقية' },
-  { key: 'gathering', label: 'اجتماع' },
-  { key: 'sick', label: 'مريض' },
-  { key: 'death', label: 'وفاة' },
-];
+const eventTypes = MOBILE_EVENT_TYPES;
 
 function requestId(prefix: string) {
   const stamp = Date.now().toString(36).toUpperCase();
@@ -42,49 +44,62 @@ function cleanPhone(value: string) {
     .replace(/[^\d+]/g, '');
 }
 
-function buildEventMessage(payload: {
-  branch: string;
-  dateLabel: string;
-  person: string;
-  submitterName: string;
-  text: string;
-  type: string;
-  typeLabel: string;
-}) {
-  return [
-    'طلب إضافة مناسبة من تطبيق عائلة الزيدان',
-    `الفرع: ${payload.branch}`,
-    `النوع: ${payload.typeLabel}`,
-    `صاحب المناسبة: ${payload.person}`,
-    payload.dateLabel ? `التاريخ: ${payload.dateLabel}` : '',
-    `النص: ${payload.text}`,
-    `المرسل: ${payload.submitterName}`,
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
-
 function buildCorrectionMessage(payload: {
+  requestId: string;
   branch: string;
   correction: string;
   person: string;
   submitterName: string;
+  submitterPhone: string;
+  createdAt: string;
 }) {
   return [
-    'طلب تصحيح بيانات من تطبيق عائلة الزيدان',
+    'طلب: صحح بيانات شخص',
+    '',
+    `رقم الطلب: ${payload.requestId}`,
     `الفرع: ${payload.branch}`,
-    `الاسم/المسار: ${payload.person}`,
-    `التصحيح المطلوب: ${payload.correction}`,
-    `المرسل: ${payload.submitterName}`,
+    `الشخص: ${payload.person}`,
+    'الحقول المطلوب تصحيحها:',
+    `  - توضيح: ${payload.correction}`,
+    '',
+    'ملاحظات:',
+    payload.correction,
+    '',
+    'بيانات المرسل:',
+    `الاسم: ${payload.submitterName}`,
+    `الجوال: ${payload.submitterPhone}`,
+    `التاريخ: ${new Date(payload.createdAt).toLocaleString('ar-SA')}`,
+    '',
+    '__JSON__:',
+    JSON.stringify({
+      v: 1,
+      kind: 'tree_edit',
+      branch_key: payload.branch,
+      person_id: '',
+      person_name: payload.person,
+      fields: [{ key: 'notes', label: 'التصحيح المطلوب', value: payload.correction }],
+      notes: payload.correction,
+      submitter: {
+        name: payload.submitterName,
+        phone: payload.submitterPhone,
+      },
+      created_at: payload.createdAt,
+    }),
   ].join('\n');
 }
 
-export function AdditionsScreen({ branches }: AdditionsScreenProps) {
+export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreenProps) {
   const defaultBranch = branches[0]?.id ?? 'زيدان';
   const [branch, setBranch] = useState(defaultBranch);
   const [eventType, setEventType] = useState(eventTypes[0].key);
   const [eventPerson, setEventPerson] = useState('');
   const [eventDate, setEventDate] = useState('');
+  const [eventPlace, setEventPlace] = useState('');
+  const [eventHospitalDept, setEventHospitalDept] = useState('');
+  const [eventContactPhone, setEventContactPhone] = useState('');
+  const [eventPrayerPlace, setEventPrayerPlace] = useState('');
+  const [eventPrayerTime, setEventPrayerTime] = useState('');
+  const [eventBurialPlace, setEventBurialPlace] = useState('');
   const [eventText, setEventText] = useState('');
   const [correctionPerson, setCorrectionPerson] = useState('');
   const [correctionText, setCorrectionText] = useState('');
@@ -103,12 +118,10 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
   const [status, setStatus] = useState<RequestStatus>({ kind: 'idle', text: '' });
   const [submitting, setSubmitting] = useState(false);
 
-  const selectedEventType = useMemo(
-    () => eventTypes.find((item) => item.key === eventType) ?? eventTypes[0],
-    [eventType],
-  );
+  const selectedEventType = useMemo(() => findMobileEventType(eventType), [eventType]);
 
   const validateSubmitter = () => {
+    if (!branch.trim()) return 'اختر الفرع حتى يصل الطلب لمندوب الفرع الصحيح.';
     if (!submitterName.trim()) return 'اكتب اسم المرسل.';
     if (cleanPhone(phone).length < 9) return 'اكتب رقم جوال صحيح.';
     if (email.trim() && (!email.includes('@') || !email.includes('.'))) {
@@ -123,26 +136,48 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
       setStatus({ kind: 'error', text: submitterError });
       return;
     }
-    if (!eventPerson.trim() || !eventText.trim()) {
-      setStatus({ kind: 'error', text: 'اكتب صاحب المناسبة ونص المناسبة.' });
+    const factsError = validateEventFacts({
+      type: selectedEventType.key,
+      person: eventPerson,
+      dateLabel: eventDate,
+      text: eventText,
+    });
+    if (factsError) {
+      setStatus({ kind: 'error', text: factsError });
       return;
     }
 
     setSubmitting(true);
     try {
       const createdAt = new Date().toISOString();
-      const message = buildEventMessage({
+      const reqId = requestId('EVAPP');
+      const message = buildMobileEventRequestMessage({
         branch,
-        dateLabel: eventDate.trim(),
-        person: eventPerson.trim(),
-        submitterName: submitterName.trim(),
-        text: eventText.trim(),
         type: selectedEventType.key,
-        typeLabel: selectedEventType.label,
+        typeLabel: selectedEventType.adminTypeLabel,
+        person: eventPerson.trim(),
+        dateLabel: eventDate.trim(),
+        place: eventPlace.trim(),
+        hospitalName: eventPlace.trim(),
+        hospitalDept: eventHospitalDept.trim(),
+        contactPhone: eventContactPhone.trim(),
+        prayerPlace: eventPrayerPlace.trim(),
+        prayerTime: eventPrayerTime.trim(),
+        burialPlace: eventBurialPlace.trim(),
+        condolencePlace: eventPlace.trim(),
+        text: eventText.trim(),
+        imageUrl: '',
+        videoUrl: '',
+        pickedImageName: '',
+        pickedVideoName: '',
+        submitterName: submitterName.trim(),
+        submitterPhone: cleanPhone(phone),
+        requestId: reqId,
+        createdAt,
       });
 
       await insertPublicRow('approval_requests', {
-        request_id: requestId('EVAPP'),
+        request_id: reqId,
         kind: 'event_card',
         branch_key: branch,
         name: submitterName.trim(),
@@ -152,9 +187,23 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
         status: 'pending',
         created_at: createdAt,
       });
+      await notifyBranchDelegatesOfRequest({
+        request_id: reqId,
+        kind: 'event_card',
+        branch_key: branch,
+        status: 'pending',
+        name: submitterName.trim(),
+        phone: cleanPhone(phone),
+      });
 
       setEventPerson('');
       setEventDate('');
+      setEventPlace('');
+      setEventHospitalDept('');
+      setEventContactPhone('');
+      setEventPrayerPlace('');
+      setEventPrayerTime('');
+      setEventBurialPlace('');
       setEventText('');
       setStatus({ kind: 'success', text: 'تم إرسال المناسبة للمراجعة.' });
     } catch (error) {
@@ -226,6 +275,21 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
         status: 'pending',
         created_at: createdAt,
       });
+      await notifyBranchDelegatesOfRequest({
+        request_id: reqId,
+        kind: 'tree_card',
+        branch_key: branch,
+        status: 'pending',
+        name: submitterName.trim(),
+        phone: cleanPhone(phone),
+      });
+      await appendTrackedRequest({
+        requestId: reqId,
+        kind: 'tree_card',
+        status: 'pending',
+        createdAt,
+        person: name,
+      });
 
       setGrandfather('');
       setGrandfather2('');
@@ -236,7 +300,7 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
       setPersonDob('');
       setPersonCity('');
       setPersonArea('');
-      setStatus({ kind: 'success', text: 'تم إرسال طلب إضافة الفرد للمراجعة.' });
+      setStatus({ kind: 'success', text: `تم إرسال طلب الإضافة لمندوب فرع ${branch}.` });
     } catch (error) {
       setStatus({
         kind: 'error',
@@ -261,28 +325,48 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
     setSubmitting(true);
     try {
       const createdAt = new Date().toISOString();
+      const reqId = requestId('TED');
+      const submitterPhone = cleanPhone(phone);
       const message = buildCorrectionMessage({
+        requestId: reqId,
         branch,
         correction: correctionText.trim(),
         person: correctionPerson.trim(),
         submitterName: submitterName.trim(),
+        submitterPhone,
+        createdAt,
       });
 
       await insertPublicRow('approval_requests', {
-        request_id: requestId('CRAPP'),
-        kind: 'tree_card',
+        request_id: reqId,
+        kind: 'tree_edit',
         branch_key: branch,
         name: submitterName.trim(),
-        phone: cleanPhone(phone),
+        phone: submitterPhone,
         email: email.trim() || null,
         message,
         status: 'pending',
         created_at: createdAt,
       });
+      await notifyBranchDelegatesOfRequest({
+        request_id: reqId,
+        kind: 'tree_edit',
+        branch_key: branch,
+        status: 'pending',
+        name: submitterName.trim(),
+        phone: submitterPhone,
+      });
+      await appendTrackedRequest({
+        requestId: reqId,
+        kind: 'tree_edit',
+        status: 'pending',
+        createdAt,
+        person: correctionPerson.trim(),
+      });
 
       setCorrectionPerson('');
       setCorrectionText('');
-      setStatus({ kind: 'success', text: 'تم إرسال التصحيح للمراجعة.' });
+      setStatus({ kind: 'success', text: `تم إرسال التصحيح لمندوب فرع ${branch}.` });
     } catch (error) {
       setStatus({
         kind: 'error',
@@ -295,10 +379,18 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
 
   return (
     <Screen
-      title="الإضافات"
-      description="أرسل طلب إضافة فرد أو مناسبة أو ذكرى أو تصحيحًا — تُراجع قبل النشر."
+      title={intent === 'correction' ? 'تصحيح بيانات' : 'إضافة فرد'}
+      description={
+        intent === 'correction'
+          ? 'أرسل تصحيحًا لبيانات شخص في الشجرة. يُراجع قبل التعديل.'
+          : 'أرسل طلب إضافة فرد إلى الشجرة. المناسبات من أيقونة المناسبات، والذكرى من «من الذاكرة».'
+      }
     >
       <SectionCard eyebrow="بيانات المرسل" title="من يرسل الطلب؟">
+        <Text style={styles.fieldLabel}>الفرع</Text>
+        <Text style={styles.fieldHint}>
+          الطلب يصل لمندوب الفرع المختار. لا يُختار المندوب بالاسم.
+        </Text>
         <View style={styles.branchPicker}>
           {branches.map((item) => {
             const active = item.id === branch;
@@ -342,6 +434,7 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
         />
       </SectionCard>
 
+      {intent === 'person' ? (
       <SectionCard eyebrow="شجرة" title="إضافة فرد">
         <TextInput
           onChangeText={setGrandfather}
@@ -420,8 +513,25 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
           onPress={submitAddPerson}
         />
       </SectionCard>
+      ) : null}
 
-      <SectionCard eyebrow="مناسبة" title="إضافة مناسبة">
+      {false ? (
+      <SectionCard
+        eyebrow={
+          selectedEventType.family === 'death'
+            ? 'وفاة'
+            : selectedEventType.family === 'health'
+              ? 'صحة'
+              : 'مناسبة'
+        }
+        title={
+          selectedEventType.family === 'death'
+            ? 'إعلان وفاة'
+            : selectedEventType.family === 'health'
+              ? 'حالة صحية'
+              : 'إضافة مناسبة'
+        }
+      >
         <View style={styles.branchPicker}>
           {eventTypes.map((item) => {
             const active = item.key === eventType;
@@ -438,7 +548,7 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
         </View>
         <TextInput
           onChangeText={setEventPerson}
-          placeholder="اسم صاحب المناسبة"
+          placeholder={selectedEventType.personLabel}
           placeholderTextColor={colors.textMuted}
           style={styles.input}
           textAlign="right"
@@ -446,24 +556,118 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
         />
         <TextInput
           onChangeText={setEventDate}
-          placeholder="التاريخ اختياري"
+          placeholder={
+            selectedEventType.family === 'death'
+              ? 'تاريخ الوفاة — مثال: 2026-08-12'
+              : selectedEventType.family === 'health'
+                ? 'تاريخ الحالة — مثال: 2026-08-12'
+                : 'تاريخ المناسبة — مثال: 2026-08-12'
+          }
           placeholderTextColor={colors.textMuted}
           style={styles.input}
           textAlign="right"
           value={eventDate}
         />
+        {selectedEventType.family === 'health' ? (
+          <>
+            <TextInput
+              onChangeText={setEventPlace}
+              placeholder="المستشفى / المكان اختياري"
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={eventPlace}
+            />
+            <TextInput
+              onChangeText={setEventHospitalDept}
+              placeholder="القسم اختياري"
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={eventHospitalDept}
+            />
+            <TextInput
+              keyboardType="phone-pad"
+              onChangeText={setEventContactPhone}
+              placeholder="جوال للتواصل اختياري"
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={eventContactPhone}
+            />
+          </>
+        ) : null}
+        {selectedEventType.family === 'death' ? (
+          <>
+            <TextInput
+              onChangeText={setEventPlace}
+              placeholder="موقع العزاء اختياري"
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={eventPlace}
+            />
+            <TextInput
+              onChangeText={setEventPrayerPlace}
+              placeholder="مكان الصلاة اختياري"
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={eventPrayerPlace}
+            />
+            <TextInput
+              onChangeText={setEventPrayerTime}
+              placeholder="وقت الصلاة اختياري"
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={eventPrayerTime}
+            />
+            <TextInput
+              onChangeText={setEventBurialPlace}
+              placeholder="مكان الدفن اختياري"
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={eventBurialPlace}
+            />
+          </>
+        ) : null}
+        {selectedEventType.family === 'happy' ? (
+          <TextInput
+            onChangeText={setEventPlace}
+            placeholder="المكان اختياري (قاعة أو مدينة)"
+            placeholderTextColor={colors.textMuted}
+            style={styles.input}
+            textAlign="right"
+            value={eventPlace}
+          />
+        ) : null}
         <TextInput
           multiline
           onChangeText={setEventText}
-          placeholder="نص المناسبة"
+          placeholder={selectedEventType.family === 'happy' ? 'نص المناسبة' : 'ملاحظات اختياري'}
           placeholderTextColor={colors.textMuted}
           style={[styles.input, styles.textArea]}
           textAlign="right"
           value={eventText}
         />
-        <ActionButton label={submitting ? 'جاري الإرسال...' : 'إرسال المناسبة'} onPress={submitEvent} />
+        <ActionButton
+          label={
+            submitting
+              ? 'جاري الإرسال...'
+              : selectedEventType.family === 'death'
+                ? 'إرسال إعلان الوفاة'
+                : selectedEventType.family === 'health'
+                  ? 'إرسال الحالة الصحية'
+                  : 'إرسال المناسبة'
+          }
+          onPress={submitEvent}
+        />
       </SectionCard>
+      ) : null}
 
+      {intent === 'correction' ? (
       <SectionCard eyebrow="تصحيح" title="طلب تصحيح بيانات">
         <TextInput
           onChangeText={setCorrectionPerson}
@@ -484,8 +688,7 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
         />
         <ActionButton label={submitting ? 'جاري الإرسال...' : 'إرسال التصحيح'} onPress={submitCorrection} />
       </SectionCard>
-
-      <MemorySubmitPanel branches={branches} defaultBranch={branch} />
+      ) : null}
 
       {status.text ? (
         <View style={[styles.status, status.kind === 'error' ? styles.errorStatus : styles.successStatus]}>
@@ -497,6 +700,20 @@ export function AdditionsScreen({ branches }: AdditionsScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  fieldLabel: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  fieldHint: {
+    color: colors.textMuted,
+    fontSize: typography.caption,
+    lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
   branchPicker: {
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',

@@ -268,3 +268,37 @@ export async function uploadPublicFileUri(
     throw new Error(`فشل رفع الملف. المحاولة الأولى: ${firstError || 'غير معروف'}. المحاولة الثانية: ${second}`);
   }
 }
+
+export async function invokePublicEdgeFunction(
+  functionName: string,
+  body: Record<string, unknown>,
+) {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${supabaseAnonKey}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!response.ok) {
+    throw new Error(`تعذر إرسال الإشعار (${response.status}).`);
+  }
+
+  return data;
+}

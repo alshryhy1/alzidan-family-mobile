@@ -4,15 +4,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { Alert, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
 import { DataState } from '../components/DataState';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
+import { appendTrackedRequest } from '../services/myRequestsTrack';
+import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
 import { insertPublicRow, selectPublicRows, uploadPublicFileUri } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, FamilyEvent } from '../types';
+import {
+  MOBILE_EVENT_TYPES,
+  buildMobileEventRequestMessage,
+  findMobileEventType,
+  validateEventFacts,
+} from '../utils/eventRequestMessage';
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
 
 type Filter = 'all' | FamilyEvent['category'];
@@ -38,7 +46,7 @@ type MemberProfileRow = {
 const filters: Array<{ key: Filter; label: string }> = [
   { key: 'all', label: 'الكل' },
   { key: 'happy', label: 'الأفراح' },
-  { key: 'health', label: 'المرضى' },
+  { key: 'health', label: 'المرضى والخروج' },
   { key: 'condolence', label: 'التعازي' },
 ];
 
@@ -48,15 +56,7 @@ const categoryColor: Record<FamilyEvent['category'], string> = {
   condolence: colors.condolence,
 };
 
-const eventTypes = [
-  { key: 'birth', label: 'عقيقة مولود', adminTypeLabel: 'مولود' },
-  { key: 'marriage', label: 'زواج', adminTypeLabel: 'زواج' },
-  { key: 'graduation', label: 'حفل تخرج', adminTypeLabel: 'تخرج' },
-  { key: 'promotion', label: 'حفل ترقية', adminTypeLabel: 'ترقية' },
-  { key: 'new_house', label: 'منزل جديد', adminTypeLabel: 'اجتماع' },
-  { key: 'gathering', label: 'اجتماع عائلي', adminTypeLabel: 'اجتماع' },
-  { key: 'general', label: 'مناسبة عامة', adminTypeLabel: 'اجتماع' },
-];
+const eventTypes = MOBILE_EVENT_TYPES;
 
 function requestId() {
   return `EVAPP-${Date.now().toString(36).toUpperCase()}-${Math.random()
@@ -116,37 +116,6 @@ function compactNameFromPath(value: string) {
     .reverse();
   const uniqueOrdered = parts.filter((part, index) => (index === 0 ? true : part !== parts[index - 1]));
   return uniqueOrdered.join(' بن ');
-}
-
-function buildEventRequestMessage(payload: {
-  branch: string;
-  dateLabel: string;
-  imageUrl: string;
-  pickedImageName: string;
-  pickedVideoName: string;
-  person: string;
-  phone: string;
-  submitterName: string;
-  text: string;
-  typeLabel: string;
-  videoUrl: string;
-}) {
-  return [
-    'طلب إضافة مناسبة من تطبيق عائلة الزيدان',
-    `الفرع: ${payload.branch}`,
-    `النوع: ${payload.typeLabel}`,
-    `صاحب المناسبة: ${payload.person}`,
-    payload.dateLabel ? `التاريخ: ${payload.dateLabel}` : '',
-    payload.imageUrl ? `رابط الصورة: ${payload.imageUrl}` : '',
-    payload.videoUrl ? `رابط الفيديو: ${payload.videoUrl}` : '',
-    payload.pickedImageName ? `صورة مختارة من التطبيق: ${payload.pickedImageName}` : '',
-    payload.pickedVideoName ? `فيديو مختار من التطبيق: ${payload.pickedVideoName}` : '',
-    `النص: ${payload.text}`,
-    `المرسل: ${payload.submitterName}`,
-    `الجوال: ${payload.phone}`,
-  ]
-    .filter(Boolean)
-    .join('\n');
 }
 
 function normalizeSaudiPhone(phone: string) {
@@ -224,6 +193,12 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const [addType, setAddType] = useState(eventTypes[0].key);
   const [addPerson, setAddPerson] = useState('');
   const [addDate, setAddDate] = useState('');
+  const [addPlace, setAddPlace] = useState('');
+  const [addHospitalDept, setAddHospitalDept] = useState('');
+  const [addContactPhone, setAddContactPhone] = useState('');
+  const [addPrayerPlace, setAddPrayerPlace] = useState('');
+  const [addPrayerTime, setAddPrayerTime] = useState('');
+  const [addBurialPlace, setAddBurialPlace] = useState('');
   const [addImageUrl, setAddImageUrl] = useState('');
   const [addVideoUrl, setAddVideoUrl] = useState('');
   const [pickedImage, setPickedImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
@@ -241,7 +216,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const happyCount = events.filter((event) => event.category === 'happy').length;
   const healthCount = events.filter((event) => event.category === 'health').length;
   const condolenceCount = events.filter((event) => event.category === 'condolence').length;
-  const selectedType = eventTypes.find((item) => item.key === addType) ?? eventTypes[0];
+  const selectedType = findMobileEventType(addType);
 
   useEffect(() => {
     let alive = true;
@@ -260,6 +235,11 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
         );
         const found = rows[0];
         if (!found) return;
+
+        const profileBranch = String(found.branch_key || '').trim();
+        if (alive && profileBranch) {
+          setAddBranch(profileBranch);
+        }
 
         let resolvedName = String(found.display_name || '').trim();
         if (!resolvedName && found.tree_child_id) {
@@ -329,19 +309,29 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
 
   const submitEventRequest = async () => {
     const phone = cleanPhone(submitterPhone);
+    if (!addBranch.trim()) {
+      setSubmitStatus({ kind: 'error', text: 'اختر الفرع حتى يصل الطلب لمندوب الفرع الصحيح.' });
+      return;
+    }
     if (!submitterName.trim() || phone.length < 9) {
       setSubmitStatus({ kind: 'error', text: 'اكتب اسم المرسل ورقم جوال صحيح.' });
       return;
     }
-    if (!addPerson.trim() || !addText.trim()) {
-      setSubmitStatus({ kind: 'error', text: 'اكتب صاحب المناسبة ونص المناسبة.' });
+    const factsError = validateEventFacts({
+      type: selectedType.key,
+      person: addPerson,
+      dateLabel: addDate,
+      text: addText,
+    });
+    if (factsError) {
+      setSubmitStatus({ kind: 'error', text: factsError });
       return;
     }
-    if (addImageUrl.trim() && !/^https?:\/\//i.test(addImageUrl.trim())) {
+    if (selectedType.family === 'happy' && addImageUrl.trim() && !/^https?:\/\//i.test(addImageUrl.trim())) {
       setSubmitStatus({ kind: 'error', text: 'رابط الصورة يجب أن يبدأ بـ http أو https.' });
       return;
     }
-    if (addVideoUrl.trim() && !/^https?:\/\//i.test(addVideoUrl.trim())) {
+    if (selectedType.family === 'happy' && addVideoUrl.trim() && !/^https?:\/\//i.test(addVideoUrl.trim())) {
       setSubmitStatus({ kind: 'error', text: 'رابط الفيديو يجب أن يبدأ بـ http أو https.' });
       return;
     }
@@ -350,26 +340,39 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
     try {
       const createdAt = new Date().toISOString();
       const requestIdValue = requestId();
-      const uploadedImageUrl = pickedImage
-        ? await uploadPickedAsset(pickedImage, requestIdValue, 'image')
-        : '';
-      const uploadedVideoUrl = pickedVideo
-        ? await uploadPickedAsset(pickedVideo, requestIdValue, 'video')
-        : '';
-      const finalImageUrl = uploadedImageUrl || addImageUrl.trim();
-      const finalVideoUrl = uploadedVideoUrl || addVideoUrl.trim();
-      const message = buildEventRequestMessage({
+      const uploadedImageUrl =
+        selectedType.family === 'happy' && pickedImage
+          ? await uploadPickedAsset(pickedImage, requestIdValue, 'image')
+          : '';
+      const uploadedVideoUrl =
+        selectedType.family === 'happy' && pickedVideo
+          ? await uploadPickedAsset(pickedVideo, requestIdValue, 'video')
+          : '';
+      const finalImageUrl = selectedType.family === 'happy' ? uploadedImageUrl || addImageUrl.trim() : '';
+      const finalVideoUrl = selectedType.family === 'happy' ? uploadedVideoUrl || addVideoUrl.trim() : '';
+      const message = buildMobileEventRequestMessage({
         branch: addBranch,
+        type: selectedType.key,
+        typeLabel: selectedType.adminTypeLabel,
+        person: addPerson.trim(),
         dateLabel: addDate.trim(),
+        place: addPlace.trim(),
+        hospitalName: addPlace.trim(),
+        hospitalDept: addHospitalDept.trim(),
+        contactPhone: addContactPhone.trim(),
+        prayerPlace: addPrayerPlace.trim(),
+        prayerTime: addPrayerTime.trim(),
+        burialPlace: addBurialPlace.trim(),
+        condolencePlace: addPlace.trim(),
+        text: addText.trim(),
         imageUrl: finalImageUrl,
+        videoUrl: finalVideoUrl,
         pickedImageName: pickedImage?.fileName || pickedImage?.uri.split('/').pop() || '',
         pickedVideoName: pickedVideo?.fileName || pickedVideo?.uri.split('/').pop() || '',
-        person: addPerson.trim(),
-        phone,
         submitterName: submitterName.trim(),
-        text: addText.trim(),
-        typeLabel: selectedType.adminTypeLabel,
-        videoUrl: finalVideoUrl,
+        submitterPhone: phone,
+        requestId: requestIdValue,
+        createdAt,
       });
 
       await insertPublicRow('approval_requests', {
@@ -383,16 +386,39 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
         status: 'pending',
         created_at: createdAt,
       });
+      await notifyBranchDelegatesOfRequest({
+        request_id: requestIdValue,
+        kind: 'event_card',
+        branch_key: addBranch,
+        status: 'pending',
+        name: submitterName.trim(),
+        phone,
+      });
+      await appendTrackedRequest({
+        requestId: requestIdValue,
+        kind: 'event_card',
+        status: 'pending',
+        createdAt,
+        person: addPerson.trim(),
+      });
 
       setAddPerson('');
       setAddDate('');
+      setAddPlace('');
+      setAddHospitalDept('');
+      setAddContactPhone('');
+      setAddPrayerPlace('');
+      setAddPrayerTime('');
+      setAddBurialPlace('');
       setAddImageUrl('');
       setAddVideoUrl('');
       setPickedImage(null);
       setPickedVideo(null);
       setAddText('');
-      setSubmitStatus({ kind: 'success', text: 'تم إرسال المناسبة وبانتظار موافقة الإدارة أو المندوب.' });
-      Alert.alert('تم الإرسال', 'تم إرسال المناسبة بنجاح وهي الآن بانتظار موافقة الإدارة أو المندوب.');
+      setSubmitStatus({
+        kind: 'success',
+        text: `تم إرسال المناسبة لمندوب فرع ${addBranch}، وبانتظار المراجعة.`,
+      });
     } catch (error) {
       setSubmitStatus({
         kind: 'error',
@@ -406,7 +432,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   return (
     <Screen
       title="المناسبات"
-      description="أخبار العائلة المسجلة، للقراءة فقط."
+      description="ما يظهر الآن في العائلة. أرسل مناسبة جديدة من أسفل الصفحة."
       onRefresh={onRetry}
       refreshing={loading}
     >
@@ -439,7 +465,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
           </View>
           <View style={styles.summaryItem}>
             <Text style={styles.summaryNumber}>{healthCount}</Text>
-            <Text style={styles.summaryLabel}>مرضى</Text>
+            <Text style={styles.summaryLabel}>مرضى وخروج</Text>
           </View>
           <View style={styles.summaryItem}>
             <Text style={styles.summaryNumber}>{condolenceCount}</Text>
@@ -447,184 +473,6 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
           </View>
         </View>
       ) : null}
-
-      <SectionCard eyebrow="إضافة" title="إضافة مناسبة">
-        <Pressable
-          onPress={() => setAddOpen((current) => !current)}
-          style={({ pressed }) => [styles.addToggle, pressed && styles.pressed]}
-        >
-          <Text style={styles.addToggleText}>
-            {addOpen ? 'إغلاق نموذج الإضافة' : 'فتح نموذج إضافة مناسبة'}
-          </Text>
-          <Text style={styles.addToggleIcon}>{addOpen ? '−' : '+'}</Text>
-        </Pressable>
-
-        {addOpen ? (
-          <>
-            <View style={styles.branchPicker}>
-              {branches.map((item) => {
-                const active = item.id === addBranch;
-                return (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => setAddBranch(item.id)}
-                    style={[styles.formChip, active && styles.activeFormChip]}
-                  >
-                    <Text style={[styles.formChipText, active && styles.activeFormChipText]}>
-                      {item.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <View style={styles.branchPicker}>
-              {eventTypes.map((item) => {
-                const active = item.key === addType;
-                return (
-                  <Pressable
-                    key={item.key}
-                    onPress={() => setAddType(item.key)}
-                    style={[styles.formChip, active && styles.activeFormChip]}
-                  >
-                    <Text style={[styles.formChipText, active && styles.activeFormChipText]}>
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <TextInput
-              onChangeText={setAddPerson}
-              placeholder="اسم صاحب المناسبة"
-              placeholderTextColor={colors.textMuted}
-              style={styles.input}
-              textAlign="right"
-              value={addPerson}
-            />
-            <TextInput
-              onChangeText={setAddDate}
-              placeholder="التاريخ اختياري"
-              placeholderTextColor={colors.textMuted}
-              style={styles.input}
-              textAlign="right"
-              value={addDate}
-            />
-            <TextInput
-              onChangeText={setAddImageUrl}
-              placeholder="رابط صورة اختياري أو اختر من الجهاز"
-              placeholderTextColor={colors.textMuted}
-              style={styles.input}
-              textAlign="right"
-              value={addImageUrl}
-            />
-            <View style={styles.mediaActions}>
-              <Pressable
-                onPress={() => pickMedia('image')}
-                disabled={Boolean(pickingMedia)}
-                style={({ pressed }) => [
-                  styles.mediaButton,
-                  pickingMedia && styles.disabledButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.mediaButtonText}>
-                  {pickingMedia === 'image' ? 'جاري الفتح...' : 'اختيار صورة'}
-                </Text>
-              </Pressable>
-              {pickedImage ? (
-                <>
-                  <Text numberOfLines={1} style={styles.mediaName}>
-                    {pickedImage.fileName || 'تم اختيار صورة'}
-                  </Text>
-                  <Pressable onPress={() => setPickedImage(null)} style={styles.removeMediaButton}>
-                    <Text style={styles.removeMediaText}>إزالة</Text>
-                  </Pressable>
-                </>
-              ) : null}
-            </View>
-            <TextInput
-              onChangeText={setAddVideoUrl}
-              placeholder="رابط فيديو اختياري أو اختر من الجهاز"
-              placeholderTextColor={colors.textMuted}
-              style={styles.input}
-              textAlign="right"
-              value={addVideoUrl}
-            />
-            <View style={styles.mediaActions}>
-              <Pressable
-                onPress={() => pickMedia('video')}
-                disabled={Boolean(pickingMedia)}
-                style={({ pressed }) => [
-                  styles.mediaButton,
-                  pickingMedia && styles.disabledButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.mediaButtonText}>
-                  {pickingMedia === 'video' ? 'جاري الفتح...' : 'اختيار فيديو'}
-                </Text>
-              </Pressable>
-              {pickedVideo ? (
-                <>
-                  <Text numberOfLines={1} style={styles.mediaName}>
-                    {pickedVideo.fileName || 'تم اختيار فيديو'}
-                  </Text>
-                  <Pressable onPress={() => setPickedVideo(null)} style={styles.removeMediaButton}>
-                    <Text style={styles.removeMediaText}>إزالة</Text>
-                  </Pressable>
-                </>
-              ) : null}
-            </View>
-            <TextInput
-              multiline
-              onChangeText={setAddText}
-              placeholder="نص المناسبة"
-              placeholderTextColor={colors.textMuted}
-              style={[styles.input, styles.textArea]}
-              textAlign="right"
-              value={addText}
-            />
-            <View style={styles.submitterRow}>
-              <TextInput
-                onChangeText={setSubmitterName}
-                placeholder="اسم المرسل"
-                placeholderTextColor={colors.textMuted}
-                style={[styles.input, styles.submitterInput]}
-                textAlign="right"
-                value={submitterName}
-              />
-              <TextInput
-                keyboardType="phone-pad"
-                onChangeText={setSubmitterPhone}
-                placeholder="الجوال"
-                placeholderTextColor={colors.textMuted}
-                style={[styles.input, styles.submitterInput]}
-                textAlign="right"
-                value={submitterPhone}
-              />
-            </View>
-            <ActionButton
-              label={submitting ? 'جاري الإرسال...' : 'إرسال المناسبة'}
-              onPress={submitEventRequest}
-            />
-          </>
-        ) : (
-          <Text style={styles.addHint}>
-            أرسل مناسبة جديدة للإدارة والمناديب، ويمكنك إرفاق رابط صورة أو فيديو اختياري.
-          </Text>
-        )}
-
-        {submitStatus.text ? (
-          <View
-            style={[
-              styles.submitStatus,
-              submitStatus.kind === 'error' ? styles.errorStatus : styles.successStatus,
-            ]}
-          >
-            <Text style={styles.submitStatusText}>{submitStatus.text}</Text>
-          </View>
-        ) : null}
-      </SectionCard>
 
       <DataState
         empty={!visibleEvents.length}
@@ -636,7 +484,20 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
 
       {!loading && !error
         ? visibleEvents.map((event) => (
-            <SectionCard key={event.id} title={event.title}>
+            <View
+              key={event.id}
+              style={[
+                styles.eventCard,
+                event.category === 'condolence' && styles.eventCardQuiet,
+                event.category === 'happy' && styles.eventCardHappy,
+                event.category === 'health' && styles.eventCardHealth,
+              ]}
+            >
+              <View
+                style={[styles.eventAccent, { backgroundColor: categoryColor[event.category] }]}
+              />
+              <View style={styles.eventBody}>
+              <Text style={styles.eventTitle}>{event.title}</Text>
               <View style={styles.eventHeader}>
                 <View
                   style={[
@@ -650,7 +511,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 </View>
                 <Text style={styles.date}>{event.date || 'دون تاريخ'}</Text>
               </View>
-              <Text style={styles.person}>{event.person}</Text>
+              {event.person ? <Text style={styles.person}>{event.person}</Text> : null}
               {event.imageUrl ? (
                 <Image
                   resizeMode="cover"
@@ -658,7 +519,11 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                   style={styles.eventImage}
                 />
               ) : null}
-              {event.details ? <Text style={styles.details}>{event.details}</Text> : null}
+              {event.details ? (
+                <Text numberOfLines={4} style={styles.details}>
+                  {event.details}
+                </Text>
+              ) : null}
               {event.videoUrl ? <EventVideo uri={event.videoUrl} /> : null}
               {eventDetailRows(event).length ? (
                 <View style={styles.detailGrid}>
@@ -690,10 +555,301 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                   </Pressable>
                 </View>
               ) : null}
-              <Text style={styles.branch}>{event.branch}</Text>
-            </SectionCard>
+              {event.branch ? <Text style={styles.branch}>{event.branch}</Text> : null}
+              </View>
+            </View>
           ))
         : null}
+      <SectionCard
+        eyebrow="إضافة"
+        title={
+          selectedType.family === 'death'
+            ? 'إعلان وفاة'
+            : selectedType.family === 'health'
+              ? 'حالة صحية'
+              : 'إضافة مناسبة'
+        }
+      >
+        <Pressable
+          onPress={() => setAddOpen((current) => !current)}
+          style={({ pressed }) => [styles.addToggle, pressed && styles.pressed]}
+        >
+          <Text style={styles.addToggleText}>
+            {addOpen ? 'إغلاق النموذج' : 'فتح نموذج الإضافة حسب النوع'}
+          </Text>
+          <Text style={styles.addToggleIcon}>{addOpen ? '−' : '+'}</Text>
+        </Pressable>
+
+        {addOpen ? (
+          <>
+            <Text style={styles.fieldLabel}>الفرع</Text>
+            <Text style={styles.addHint}>
+              اختر فرع صاحب المناسبة. الطلب يصل لمندوب هذا الفرع، وليس لمندوب باسمه.
+            </Text>
+            <View style={styles.branchPicker}>
+              {branches.map((item) => {
+                const active = item.id === addBranch;
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => setAddBranch(item.id)}
+                    style={[styles.formChip, active && styles.activeFormChip]}
+                  >
+                    <Text style={[styles.formChipText, active && styles.activeFormChipText]}>
+                      {item.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.fieldLabel}>نوع المناسبة</Text>
+            <View style={styles.branchPicker}>
+              {eventTypes.map((item) => {
+                const active = item.key === addType;
+                return (
+                  <Pressable
+                    key={item.key}
+                    onPress={() => setAddType(item.key)}
+                    style={[styles.formChip, active && styles.activeFormChip]}
+                  >
+                    <Text style={[styles.formChipText, active && styles.activeFormChipText]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <TextInput
+              onChangeText={setAddPerson}
+              placeholder={selectedType.personLabel}
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={addPerson}
+            />
+            <TextInput
+              onChangeText={setAddDate}
+              placeholder={
+                selectedType.family === 'death'
+                  ? 'تاريخ الوفاة — مثال: 2026-08-12'
+                  : selectedType.family === 'health'
+                    ? 'تاريخ الحالة — مثال: 2026-08-12'
+                    : 'تاريخ المناسبة — مثال: 2026-08-12'
+              }
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={addDate}
+            />
+            {selectedType.family === 'health' ? (
+              <>
+                <TextInput
+                  onChangeText={setAddPlace}
+                  placeholder="المستشفى / المكان اختياري"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addPlace}
+                />
+                <TextInput
+                  onChangeText={setAddHospitalDept}
+                  placeholder="القسم اختياري"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addHospitalDept}
+                />
+                <TextInput
+                  keyboardType="phone-pad"
+                  onChangeText={setAddContactPhone}
+                  placeholder="جوال للتواصل اختياري"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addContactPhone}
+                />
+              </>
+            ) : null}
+            {selectedType.family === 'death' ? (
+              <>
+                <TextInput
+                  onChangeText={setAddPlace}
+                  placeholder="موقع العزاء اختياري"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addPlace}
+                />
+                <TextInput
+                  onChangeText={setAddPrayerPlace}
+                  placeholder="مكان الصلاة اختياري"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addPrayerPlace}
+                />
+                <TextInput
+                  onChangeText={setAddPrayerTime}
+                  placeholder="وقت الصلاة اختياري"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addPrayerTime}
+                />
+                <TextInput
+                  onChangeText={setAddBurialPlace}
+                  placeholder="مكان الدفن اختياري"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addBurialPlace}
+                />
+              </>
+            ) : null}
+            {selectedType.family === 'happy' ? (
+              <>
+                <TextInput
+                  onChangeText={setAddPlace}
+                  placeholder="المكان اختياري (قاعة أو مدينة)"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addPlace}
+                />
+                <TextInput
+                  onChangeText={setAddImageUrl}
+                  placeholder="رابط صورة اختياري أو اختر من الجهاز"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addImageUrl}
+                />
+                <View style={styles.mediaActions}>
+                  <Pressable
+                    onPress={() => pickMedia('image')}
+                    disabled={Boolean(pickingMedia)}
+                    style={({ pressed }) => [
+                      styles.mediaButton,
+                      pickingMedia && styles.disabledButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={styles.mediaButtonText}>
+                      {pickingMedia === 'image' ? 'جاري الفتح...' : 'اختيار صورة'}
+                    </Text>
+                  </Pressable>
+                  {pickedImage ? (
+                    <>
+                      <Text numberOfLines={1} style={styles.mediaName}>
+                        {pickedImage.fileName || 'تم اختيار صورة'}
+                      </Text>
+                      <Pressable onPress={() => setPickedImage(null)} style={styles.removeMediaButton}>
+                        <Text style={styles.removeMediaText}>إزالة</Text>
+                      </Pressable>
+                    </>
+                  ) : null}
+                </View>
+                <TextInput
+                  onChangeText={setAddVideoUrl}
+                  placeholder="رابط فيديو اختياري أو اختر من الجهاز"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  textAlign="right"
+                  value={addVideoUrl}
+                />
+                <View style={styles.mediaActions}>
+                  <Pressable
+                    onPress={() => pickMedia('video')}
+                    disabled={Boolean(pickingMedia)}
+                    style={({ pressed }) => [
+                      styles.mediaButton,
+                      pickingMedia && styles.disabledButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={styles.mediaButtonText}>
+                      {pickingMedia === 'video' ? 'جاري الفتح...' : 'اختيار فيديو'}
+                    </Text>
+                  </Pressable>
+                  {pickedVideo ? (
+                    <>
+                      <Text numberOfLines={1} style={styles.mediaName}>
+                        {pickedVideo.fileName || 'تم اختيار فيديو'}
+                      </Text>
+                      <Pressable onPress={() => setPickedVideo(null)} style={styles.removeMediaButton}>
+                        <Text style={styles.removeMediaText}>إزالة</Text>
+                      </Pressable>
+                    </>
+                  ) : null}
+                </View>
+              </>
+            ) : null}
+            <TextInput
+              multiline
+              onChangeText={setAddText}
+              placeholder={
+                selectedType.family === 'happy' ? 'نص المناسبة' : 'ملاحظات اختياري'
+              }
+              placeholderTextColor={colors.textMuted}
+              style={[styles.input, styles.textArea]}
+              textAlign="right"
+              value={addText}
+            />
+            <Text style={styles.addHint}>
+              {addBranch
+                ? `سيراجع الطلب مندوب فرع ${addBranch}.`
+                : 'اختر الفرع قبل الإرسال.'}
+            </Text>
+            <View style={styles.submitterRow}>
+              <TextInput
+                onChangeText={setSubmitterName}
+                placeholder="اسم المرسل"
+                placeholderTextColor={colors.textMuted}
+                style={[styles.input, styles.submitterInput]}
+                textAlign="right"
+                value={submitterName}
+              />
+              <TextInput
+                keyboardType="phone-pad"
+                onChangeText={setSubmitterPhone}
+                placeholder="الجوال"
+                placeholderTextColor={colors.textMuted}
+                style={[styles.input, styles.submitterInput]}
+                textAlign="right"
+                value={submitterPhone}
+              />
+            </View>
+            <ActionButton
+              label={
+                submitting
+                  ? 'جاري الإرسال...'
+                  : selectedType.family === 'death'
+                    ? 'إرسال إعلان الوفاة'
+                    : selectedType.family === 'health'
+                      ? 'إرسال الحالة الصحية'
+                      : 'إرسال المناسبة'
+              }
+              onPress={submitEventRequest}
+            />
+          </>
+        ) : (
+          <Text style={styles.addHint}>
+            اختر النوع أولًا: فرح، مريض، أو وفاة. الحقول تتغير حسب الاختصاص.
+          </Text>
+        )}
+
+        {submitStatus.text ? (
+          <View
+            style={[
+              styles.submitStatus,
+              submitStatus.kind === 'error' ? styles.errorStatus : styles.successStatus,
+            ]}
+          >
+            <Text style={styles.submitStatusText}>{submitStatus.text}</Text>
+          </View>
+        ) : null}
+      </SectionCard>
+
     </Screen>
   );
 }
@@ -784,6 +940,13 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.caption,
     lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  fieldLabel: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: '900',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
@@ -890,6 +1053,38 @@ const styles = StyleSheet.create({
   submitStatusText: {
     color: colors.text,
     fontSize: typography.caption,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  eventCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 22,
+    borderWidth: 1,
+    flexDirection: 'row-reverse',
+    overflow: 'hidden',
+  },
+  eventCardHappy: {
+    backgroundColor: '#FFFBF4',
+  },
+  eventCardHealth: {
+    backgroundColor: '#F6FAFC',
+  },
+  eventCardQuiet: {
+    backgroundColor: '#F7F7F8',
+  },
+  eventAccent: {
+    width: 5,
+  },
+  eventBody: {
+    flex: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  eventTitle: {
+    color: colors.text,
+    fontSize: typography.title,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
