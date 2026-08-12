@@ -8,10 +8,13 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.alzidan.family",
-      "buildNumber": "51",
+      "buildNumber": "53",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية أو ذكرى.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       },
       "supportsTablet": true
     },

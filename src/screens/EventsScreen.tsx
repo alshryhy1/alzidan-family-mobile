@@ -12,6 +12,7 @@ import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
 import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
+import { rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { insertPublicRow, selectPublicRows, uploadPublicFileUri } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, FamilyEvent } from '../types';
@@ -394,12 +395,15 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
         name: submitterName.trim(),
         phone,
       });
+      await rememberPushPhone(phone);
+      registerPushToken('event_submit').catch(() => {});
       await appendTrackedRequest({
         requestId: requestIdValue,
         kind: 'event_card',
         status: 'pending',
         createdAt,
         person: addPerson.trim(),
+        phone,
       });
 
       setAddPerson('');

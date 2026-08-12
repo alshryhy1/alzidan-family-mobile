@@ -24,6 +24,8 @@ import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
 import {
   formatFormalNotificationFromPayload,
+  rememberPushPhone,
+  registerPushToken,
   setupPushRegistration,
 } from './src/services/pushNotifications';
 import {
@@ -152,7 +154,25 @@ const tabs: Array<{ key: PublicScreen; label: string; icon: string }> = [
 export default function App() {
   const [screen, setScreen] = useState<PublicScreen>('home');
   const publicData = usePublicData();
-  const activeEvents = publicData.events.filter((event) => isFamilyEventPubliclyVisible(event));
+  const activeEvents = publicData.events.filter((event) =>
+    isFamilyEventPubliclyVisible({
+      type: event.type,
+      category: event.category,
+      eventDate: event.eventDate,
+      date: event.date,
+      dateLabel: event.date,
+      createdAt: event.createdAt,
+      details: event.rawDetails ?? event.details,
+      showAt: event.showAt,
+      show_at: event.showAt,
+      endAt: event.endAt,
+      end_at: event.endAt,
+      showBeforeDays: event.showBeforeDays,
+      show_before_days: event.showBeforeDays,
+      manualHidden: event.manualHidden,
+      manual_hidden: event.manualHidden,
+    }),
+  );
   const [bannerMessages, setBannerMessages] = useState<BannerMessage[]>([]);
   const [tickerSpeedSeconds, setTickerSpeedSeconds] = useState(30);
   const [selectedBranchKey, setSelectedBranchKey] = useState<string | null>(null);
@@ -260,6 +280,9 @@ export default function App() {
           setMemberGreeting(name);
           setMemberPhoneForRequests(phone);
         }
+        rememberPushPhone(phone)
+          .then(() => registerPushToken('member_phone'))
+          .catch(() => {});
       })
       .catch(() => {
         if (alive) {
@@ -453,6 +476,14 @@ export default function App() {
             branches={publicData.branches}
             childrenRows={publicData.children}
             onOpenMemberCard={(branchKey, treeChildId) => openTree(branchKey, treeChildId)}
+            onMemberSessionChange={(phone) => {
+              const cleaned = cleanStoredPhone(phone || '');
+              setMemberPhoneForRequests(cleaned);
+              if (!cleaned) {
+                setMemberGreeting(null);
+                setMemberRequests([]);
+              }
+            }}
           />
         );
       case 'memory':

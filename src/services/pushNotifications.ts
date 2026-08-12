@@ -10,6 +10,8 @@ import { callPublicRpc, isSupabaseConfigured, upsertPublicRow } from './supabase
 const EAS_PROJECT_ID = '8a6659eb-ef85-49b5-a8db-7b7be96b8c1f';
 
 export const PUSH_DEBUG_STORAGE_KEY = 'push_debug_v1';
+const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
+const PUSH_PHONE_KEY = 'alzidan_push_phone_v1';
 
 export type PushDebugTrace = {
   timestamp: string;
@@ -60,6 +62,52 @@ export function getPushRegistrationUserMessage(input: {
     return PUSH_REGISTRATION_USER_MESSAGES[key];
   }
   return 'تعذر تسجيل الإشعارات. حاول مرة أخرى لاحقاً.';
+}
+
+function normalizeSaudiPhone(value: string) {
+  const arabicZero = '٠'.charCodeAt(0);
+  const persianZero = '۰'.charCodeAt(0);
+  const mapped = String(value || '').replace(/[٠-٩۰-۹]/g, (digit) => {
+    const code = digit.charCodeAt(0);
+    const n = code >= persianZero ? code - persianZero : code - arabicZero;
+    return String(n);
+  });
+  let digits = mapped.replace(/[^\d]/g, '');
+  if (digits.startsWith('00966') && digits.length === 14 && digits.charAt(5) === '5') {
+    digits = `0${digits.slice(5)}`;
+  } else if (digits.startsWith('966') && digits.length === 12 && digits.charAt(3) === '5') {
+    digits = `0${digits.slice(3)}`;
+  } else if (digits.length === 9 && digits.charAt(0) === '5') {
+    digits = `0${digits}`;
+  }
+  return digits;
+}
+
+export async function rememberPushPhone(phone: string) {
+  const normalized = normalizeSaudiPhone(phone);
+  if (normalized.length < 9) return;
+  await AsyncStorage.setItem(PUSH_PHONE_KEY, normalized);
+}
+
+export async function clearPushPhone() {
+  try {
+    await AsyncStorage.removeItem(PUSH_PHONE_KEY);
+  } catch {
+    // ignore
+  }
+  lastBoundPhone = null;
+}
+
+async function getStoredPushPhone() {
+  try {
+    const [member, push] = await Promise.all([
+      AsyncStorage.getItem(MEMBER_PHONE_KEY),
+      AsyncStorage.getItem(PUSH_PHONE_KEY),
+    ]);
+    return normalizeSaudiPhone(member || '') || normalizeSaudiPhone(push || '') || '';
+  } catch {
+    return '';
+  }
 }
 
 function tokenPrefix(token: string | null | undefined) {
@@ -318,8 +366,9 @@ async function persistPushToken(token: string, projectId: string): Promise<Regis
     return { ok: false, reason: 'supabase_not_configured', error: message };
   }
 
+  const phone = await getStoredPushPhone();
   const now = new Date().toISOString();
-  const tokenRow = {
+  const tokenRow: Record<string, unknown> = {
     token,
     platform: Platform.OS,
     device_name: Device.deviceName || null,
@@ -327,35 +376,49 @@ async function persistPushToken(token: string, projectId: string): Promise<Regis
     enabled: true,
     updated_at: now,
   };
+  if (phone) tokenRow.phone = phone;
 
-  const rpcArgs = {
+  const rpcArgs: Record<string, unknown> = {
     p_token: tokenRow.token,
     p_platform: tokenRow.platform,
     p_device_name: tokenRow.device_name,
     p_app_version: tokenRow.app_version,
   };
+  if (phone) rpcArgs.p_phone = phone;
 
   console.log('[PUSH] RPC called? yes — register_push_token_v1', {
     ...rpcArgs,
-    p_token: tokenPrefix(tokenRow.token),
+    p_token: tokenPrefix(token),
+    p_phone: phone ? `${phone.slice(0, 4)}…` : null,
   });
 
-  try {
+  const tryRpc = async (args: Record<string, unknown>) => {
     const rpcResult = await callPublicRpc<{ ok?: boolean; error?: string }>(
       'register_push_token_v1',
-      rpcArgs,
+      args,
     );
-    console.log('[PUSH] RPC result:', rpcResult);
-
     if (rpcResult?.ok === false) {
       throw new Error(rpcResult.error || 'register_push_token_v1_failed');
     }
+  };
 
+  try {
+    try {
+      await tryRpc(rpcArgs);
+    } catch (firstRpcError) {
+      if (!phone) throw firstRpcError;
+      const msg = errorMessage(firstRpcError);
+      if (!/could not find the function|PGRST202|p_phone/i.test(msg)) throw firstRpcError;
+      const { p_phone: _ignored, ...withoutPhone } = rpcArgs;
+      await tryRpc(withoutPhone);
+    }
+
+    lastBoundPhone = phone || null;
     await tracePush('rpc_success', {
       ok: true,
       projectId,
       tokenPrefix: tokenPrefix(token),
-      detail: 'register_push_token_v1',
+      detail: phone ? 'register_push_token_v1+phone' : 'register_push_token_v1',
     });
     return { ok: true, token, via: 'rpc' };
   } catch (rpcError) {
@@ -371,17 +434,24 @@ async function persistPushToken(token: string, projectId: string): Promise<Regis
 
     console.log('[PUSH] Fallback upsert executed? attempting push_tokens upsert', {
       ...tokenRow,
-      token: tokenPrefix(tokenRow.token),
+      token: tokenPrefix(token),
     });
 
     try {
-      await upsertPublicRow('push_tokens', tokenRow, 'token');
+      try {
+        await upsertPublicRow('push_tokens', tokenRow, 'token');
+      } catch (firstUpsertError) {
+        if (!phone) throw firstUpsertError;
+        const { phone: _ignored, ...withoutPhone } = tokenRow;
+        await upsertPublicRow('push_tokens', withoutPhone, 'token');
+      }
+      lastBoundPhone = phone || null;
       console.log('[PUSH] Fallback upsert push_tokens: success');
       await tracePush('fallback_upsert_success', {
         ok: true,
         projectId,
         tokenPrefix: tokenPrefix(token),
-        detail: 'push_tokens',
+        detail: phone ? 'push_tokens+phone' : 'push_tokens',
       });
       return { ok: true, token, via: 'fallback_upsert' };
     } catch (upsertError) {
@@ -406,6 +476,7 @@ async function persistPushToken(token: string, projectId: string): Promise<Regis
 
 let registrationInFlight: Promise<RegisterPushTokenResult> | null = null;
 let lastRegisteredToken: string | null = null;
+let lastBoundPhone: string | null = null;
 
 export async function registerPushToken(source = 'direct'): Promise<RegisterPushTokenResult> {
   if (registrationInFlight) {
@@ -480,7 +551,8 @@ export async function registerPushToken(source = 'direct'): Promise<RegisterPush
       return { ok: false, reason: 'token_empty' };
     }
 
-    if (token === lastRegisteredToken) {
+    const phone = await getStoredPushPhone();
+    if (token === lastRegisteredToken && phone === (lastBoundPhone || '')) {
       console.log('[PUSH] token unchanged, skipping Supabase write', { token: tokenPrefix(token) });
       await tracePush('token_unchanged', {
         ok: true,

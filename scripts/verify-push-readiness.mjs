@@ -30,6 +30,7 @@ check('EAS projectId fallback constant', pushSource.includes('8a6659eb-ef85-49b5
 check('push token listener hook', pushSource.includes('addPushTokenListener'));
 check('physical device guard', pushSource.includes('Device.isDevice'));
 check('push_tokens upsert', pushSource.includes("'push_tokens'"));
+check('binds phone to push token', pushSource.includes('p_phone') && pushSource.includes('rememberPushPhone'));
 check('Android channel family-events', pushSource.includes("'family-events'"));
 check('notification handler configured', pushSource.includes('setNotificationHandler'));
 
@@ -38,6 +39,8 @@ check('push sender edge function exists', existsSync(pushNotifyFn));
 
 const requestActions = readFileSync(join(root, '../alzidan-family/assets/js/modules/request-actions.js'), 'utf8');
 check('admin invokes alzidan-push-notify', requestActions.includes('alzidan-push-notify'));
+const delegateJs = readFileSync(join(root, '../alzidan-family/assets/js/delegate.js'), 'utf8');
+check('delegate publishes family push', /alzidan-push-notify[\s\S]{0,220}type:\s*row\.type/.test(delegateJs));
 
 const appTsx = readFileSync(join(root, 'App.tsx'), 'utf8');
 check('App registers push on mount', appTsx.includes('setupPushRegistration'));

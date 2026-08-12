@@ -1,9 +1,9 @@
 /**
- * مصدر ظهور الأخبار الواحد (مسار C / NEWS-001).
+ * مصدر ظهور الأخبار الواحد (مسار C / NEWS-001 + جدولة).
  * القواعد مطابقة لـ web `isFamilyEventPubliclyVisible`:
  * - وفاة: 3 أيام تقويمية من يوم الحدث (أو created_at إن لم يوجد event_date)
- * - غير الوفاة: ضمن نافذة showDays من created_at (1–7، افتراضي 7)
- * - الأفراح المؤرخة: تختفي بعد انتهاء يوم المناسبة
+ * - صحة: ضمن نافذة showDays من created_at (1–7، افتراضي 7)
+ * - الأفراح المؤرخة: لا تظهر قبل show_at (افتراضي 3 أيام قبل التاريخ)
  * - event_date = null: يعتمد على created_at / showDays فقط (لا ظهور أبدي)
  */
 import moment from 'moment-hijri';
@@ -12,15 +12,26 @@ export type EventVisibilityInput = {
   type?: string | null;
   category?: string | null;
   eventDate?: string | null;
+  event_date?: string | null;
   date?: string | null;
   dateLabel?: string | null;
   createdAt?: string | null;
+  created_at?: string | null;
   showDays?: number | null;
+  showAt?: string | null;
+  show_at?: string | null;
+  endAt?: string | null;
+  end_at?: string | null;
+  showBeforeDays?: number | null;
+  show_before_days?: number | null;
+  manualHidden?: boolean | null;
+  manual_hidden?: boolean | null;
   details?: string | Record<string, unknown> | null;
 };
 
 const DEATH_KEEP_DAYS = 3;
 const DEFAULT_SHOW_DAYS = 7;
+const DEFAULT_SHOW_BEFORE_DAYS = 3;
 
 function normalizeArabicDigits(value: string) {
   return String(value || '')
@@ -83,6 +94,72 @@ export function isHappyEventType(event: EventVisibilityInput) {
   return !['death', 'sick', 'operation', 'discharge'].includes(type);
 }
 
+export function isHealthEventType(event: EventVisibilityInput) {
+  const type = String(event.type || '').trim().toLowerCase();
+  return type === 'sick' || type === 'operation' || type === 'discharge';
+}
+
+function readScheduleValue(event: EventVisibilityInput, snake: string, camel: string) {
+  const direct = (event as Record<string, unknown>)[snake] ?? (event as Record<string, unknown>)[camel];
+  if (direct != null && direct !== '') return direct;
+  const env = parseEventEnvelope(event.details);
+  if (!env) return null;
+  const nested = env.event && typeof env.event === 'object' ? (env.event as Record<string, unknown>) : null;
+  const fromEnv = env[snake] ?? env[camel] ?? nested?.[snake] ?? nested?.[camel];
+  if (fromEnv != null && fromEnv !== '') return fromEnv;
+  return null;
+}
+
+export function getShowBeforeDays(event: EventVisibilityInput) {
+  const raw = readScheduleValue(event, 'show_before_days', 'showBeforeDays');
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_SHOW_BEFORE_DAYS;
+  if (n < 1) return 1;
+  if (n > 7) return 7;
+  return Math.trunc(n);
+}
+
+export function isManualHidden(event: EventVisibilityInput) {
+  const raw = readScheduleValue(event, 'manual_hidden', 'manualHidden');
+  return raw === true || raw === 1 || raw === '1' || raw === 'true';
+}
+
+function parseTimestampMs(raw: unknown) {
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  const ms = Date.parse(String(raw));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function endOfLocalDayMs(dayMs: number) {
+  const d = new Date(dayMs);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+}
+
+function resolveScheduleWindow(event: EventVisibilityInput, now: Date = new Date()) {
+  const dayMs = parseFamilyEventDayMs({
+    ...event,
+    eventDate: event.eventDate || event.event_date || event.date || event.dateLabel,
+  });
+  const showAtMs = parseTimestampMs(readScheduleValue(event, 'show_at', 'showAt') ?? event.showAt ?? event.show_at);
+  const endAtMs = parseTimestampMs(readScheduleValue(event, 'end_at', 'endAt') ?? event.endAt ?? event.end_at);
+  const beforeDays = getShowBeforeDays(event);
+  let resolvedShowAt = showAtMs;
+  let resolvedEndAt = endAtMs;
+  if (resolvedShowAt == null && dayMs != null) {
+    resolvedShowAt = dayMs - beforeDays * 24 * 60 * 60 * 1000;
+  }
+  if (resolvedEndAt == null && dayMs != null) {
+    resolvedEndAt = endOfLocalDayMs(dayMs);
+  }
+  return {
+    showAtMs: resolvedShowAt,
+    endAtMs: resolvedEndAt,
+    eventDayMs: dayMs,
+    nowMs: now.getTime(),
+  };
+}
+
 /** فرق الأيام: موجب = مستقبل، 0 = اليوم، سالب = ماضٍ. null إن تعذّر الحل. */
 export function daysFromEventDay(event: EventVisibilityInput, now: Date = new Date()) {
   const dayMs = parseFamilyEventDayMs(event);
@@ -92,7 +169,7 @@ export function daysFromEventDay(event: EventVisibilityInput, now: Date = new Da
 }
 
 export function parseFamilyEventDayMs(event: EventVisibilityInput) {
-  const eventDate = normalizeArabicDigits(event.eventDate || '');
+  const eventDate = normalizeArabicDigits(event.eventDate || event.event_date || '');
   const ymd = eventDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
   if (ymd) {
     const year = Number(ymd[1]);
@@ -143,8 +220,9 @@ export function isWithinDaysFromEventDay(
   const diff = daysFromEventDay(event, now);
   if (diff !== null) return diff >= -(days - 1);
 
-  if (!event.createdAt) return true;
-  const createdAt = Date.parse(String(event.createdAt));
+  const createdRaw = event.createdAt || event.created_at;
+  if (!createdRaw) return true;
+  const createdAt = Date.parse(String(createdRaw));
   if (!Number.isFinite(createdAt)) return true;
   const created = new Date(createdAt);
   const createdStart = startOfLocalDayMs(created);
@@ -154,8 +232,9 @@ export function isWithinDaysFromEventDay(
 }
 
 export function isCreatedWithinShowWindow(event: EventVisibilityInput, now: Date = new Date()) {
-  if (!event.createdAt) return true;
-  const createdAt = Date.parse(String(event.createdAt));
+  const createdRaw = event.createdAt || event.created_at;
+  if (!createdRaw) return true;
+  const createdAt = Date.parse(String(createdRaw));
   if (!Number.isFinite(createdAt)) return true;
   const maxAgeMs = getEventVisibilityDays(event) * 24 * 60 * 60 * 1000;
   return createdAt >= now.getTime() - maxAgeMs;
@@ -166,18 +245,35 @@ export function isFamilyEventPubliclyVisible(
   event: EventVisibilityInput,
   now: Date = new Date(),
 ) {
+  if (isManualHidden(event)) return false;
+
   if (isDeathEventType(event)) {
     return isWithinDaysFromEventDay(event, DEATH_KEEP_DAYS, now);
   }
 
-  if (!isCreatedWithinShowWindow(event, now)) return false;
-
-  if (isHappyEventType(event)) {
-    const diff = daysFromEventDay(event, now);
-    if (diff !== null && diff < 0) return false;
+  if (isHealthEventType(event)) {
+    return isCreatedWithinShowWindow(event, now);
   }
 
-  return true;
+  const win = resolveScheduleWindow(event, now);
+  if (win.eventDayMs != null || win.showAtMs != null || win.endAtMs != null) {
+    if (win.endAtMs != null && win.nowMs > win.endAtMs) return false;
+    if (win.showAtMs != null && win.nowMs < win.showAtMs) return false;
+    if (win.endAtMs == null) {
+      const diff = daysFromEventDay(event, now);
+      if (diff !== null && diff < 0) return false;
+    }
+    return true;
+  }
+
+  // Dated happy/travel events must not fall back to "created recently → show".
+  // If a date label exists but could not be parsed, keep it hidden.
+  const hasDatedHint = Boolean(
+    String(event.eventDate || event.event_date || event.date || event.dateLabel || '').trim(),
+  );
+  if (hasDatedHint) return false;
+
+  return isCreatedWithinShowWindow(event, now);
 }
 
 /** أقرب لحظة يُفترض بعدها إعادة تقييم الظهور (منتصف الليل التالي محليًا). */

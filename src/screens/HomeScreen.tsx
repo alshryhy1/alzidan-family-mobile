@@ -8,6 +8,7 @@ import { Screen } from '../components/Screen';
 import { colors, spacing, typography } from '../theme';
 import type { FamilyEvent, MemberRequest } from '../types';
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
+import { isFamilyEventPubliclyVisible } from '../utils/eventVisibility';
 import { buildHomeTickerItems, logHomeTickerCandidates } from '../utils/homeTicker';
 
 const countdownTypes = new Set([
@@ -210,26 +211,48 @@ export function HomeScreen({
   onRetry,
 }: HomeScreenProps) {
   const tickerX = useRef(new Animated.Value(0)).current;
-  const [tickerWidth, setTickerWidth] = useState(0);
+  const [segmentWidth, setSegmentWidth] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const [requestsOpen, setRequestsOpen] = useState(false);
   const fallbackTickerText =
     'الحمد لله الذي بنعمته تتم الصالحات — تم بحمد الله اكتمال تطبيق عائلة الزيدان وسيكون في هذا الشريط أخبار العائلة';
+  const tickerGap = spacing.lg;
+  const publicLatestEvents = latestEvents.filter((event) =>
+    isFamilyEventPubliclyVisible({
+      type: event.type,
+      category: event.category,
+      eventDate: event.eventDate,
+      date: event.date,
+      dateLabel: event.date,
+      createdAt: event.createdAt,
+      details: event.rawDetails ?? event.details,
+      showAt: event.showAt,
+      show_at: event.showAt,
+      endAt: event.endAt,
+      end_at: event.endAt,
+      showBeforeDays: event.showBeforeDays,
+      show_before_days: event.showBeforeDays,
+      manualHidden: event.manualHidden,
+      manual_hidden: event.manualHidden,
+    }),
+  );
   const tickerBuild = buildHomeTickerItems({
-    events: latestEvents,
+    events: publicLatestEvents,
     bannerMessages,
     specialCardTickerItems,
     maxFamilyEvents: 6,
   });
   logHomeTickerCandidates('HomeScreen', tickerBuild, {
-    latestEventsCount: latestEvents.length,
+    latestEventsCount: publicLatestEvents.length,
   });
   const tickerItems = tickerBuild.items;
   const tickerText = tickerItems.length ? tickerItems.join('     •     ') : fallbackTickerText;
-  const tickerStep = tickerWidth;
-  const sortedUpcomingEvents = sortUpcomingEvents(upcomingEvents);
+  const needsScroll = segmentWidth > viewportWidth + 8;
+  const tickerStep = segmentWidth + tickerGap;
+  const sortedUpcomingEvents = sortUpcomingEvents(publicLatestEvents);
   const nearestUpcomingEvent = sortedUpcomingEvents[0] ?? null;
   const upcomingIds = new Set(sortedUpcomingEvents.map((event) => event.id));
-  const visibleNewsEvents = latestEvents.filter((event) => !upcomingIds.has(event.id));
+  const visibleNewsEvents = publicLatestEvents.filter((event) => !upcomingIds.has(event.id));
   const livingEvent = nearestUpcomingEvent ?? visibleNewsEvents[0] ?? null;
   const sortedMemberRequests = [...memberRequests].sort(
     (a, b) => timestampOf(b.createdAt) - timestampOf(a.createdAt),
@@ -239,14 +262,25 @@ export function HomeScreen({
   const rejectedRequestsCount = memberRequests.filter((item) => item.status === 'rejected').length;
 
   useEffect(() => {
-    setTickerWidth(0);
-  }, [tickerText]);
+    setSegmentWidth(0);
+    tickerX.setValue(0);
+  }, [tickerText, tickerX]);
 
   useEffect(() => {
-    if (!tickerStep) return;
+    if (!needsScroll || !tickerStep || !viewportWidth) {
+      tickerX.setValue(0);
+      return;
+    }
     let alive = true;
     let anim: Animated.CompositeAnimation | null = null;
-    const duration = Math.max(1000, Math.min(120000, Number(tickerSpeedSeconds || 30) * 1000));
+    // Speed scales with content length (closer to web marquee behavior).
+    // tickerSpeedSeconds remains an optional global scale (default 30 ≈ baseline).
+    const speedScale = Math.max(0.5, Math.min(2.5, 30 / Math.max(Number(tickerSpeedSeconds) || 30, 1)));
+    const pxPerSecond = 42 * speedScale;
+    const duration = Math.max(
+      6000,
+      Math.min(180000, Math.round((tickerStep / pxPerSecond) * 1000)),
+    );
     const run = () => {
       if (!alive) return;
       tickerX.setValue(0);
@@ -267,7 +301,7 @@ export function HomeScreen({
       alive = false;
       anim?.stop();
     };
-  }, [tickerText, tickerStep, tickerX, tickerSpeedSeconds]);
+  }, [needsScroll, tickerStep, tickerText, tickerX, viewportWidth, tickerSpeedSeconds]);
 
   const greetingName = String(memberGreeting || '').trim();
   const placeLine = livingEvent ? momentPlaceLine(livingEvent) : '';
@@ -287,27 +321,56 @@ export function HomeScreen({
       refreshing={loading}
     >
       <View style={styles.ticker}>
-        <View style={styles.tickerViewport}>
-          <Animated.View style={[styles.tickerTrack, { transform: [{ translateX: tickerX }] }]}>
-            <View
-              onLayout={(event) => {
-                const measuredWidth = Math.round(event.nativeEvent.layout.width + spacing.lg);
-                setTickerWidth((currentWidth) =>
-                  Math.abs(currentWidth - measuredWidth) > 0.5 ? measuredWidth : currentWidth,
-                );
-              }}
-              style={styles.tickerSegment}
-            >
-              <Text ellipsizeMode="clip" numberOfLines={1} style={styles.tickerText}>
-                {tickerText}
-              </Text>
-            </View>
-            <View style={styles.tickerSegment} importantForAccessibility="no-hide-descendants">
-              <Text ellipsizeMode="clip" numberOfLines={1} style={styles.tickerText}>
-                {tickerText}
-              </Text>
-            </View>
-          </Animated.View>
+        <View
+          pointerEvents="none"
+          style={styles.tickerMeasureHost}
+        >
+          <Text
+            onLayout={(event) => {
+              const measuredWidth = Math.ceil(event.nativeEvent.layout.width);
+              setSegmentWidth((currentWidth) =>
+                Math.abs(currentWidth - measuredWidth) > 0.5 ? measuredWidth : currentWidth,
+              );
+            }}
+            style={styles.tickerText}
+          >
+            {tickerText}
+          </Text>
+        </View>
+        <View
+          onLayout={(event) => {
+            const width = Math.round(event.nativeEvent.layout.width);
+            setViewportWidth((current) => (Math.abs(current - width) > 0.5 ? width : current));
+          }}
+          style={styles.tickerViewport}
+        >
+          {needsScroll ? (
+            <Animated.View style={[styles.tickerTrack, { transform: [{ translateX: tickerX }] }]}>
+              <View style={styles.tickerSegment}>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.tickerText, segmentWidth ? { width: segmentWidth } : null]}
+                >
+                  {tickerText}
+                </Text>
+              </View>
+              <View
+                importantForAccessibility="no-hide-descendants"
+                style={[styles.tickerSegment, { marginLeft: tickerGap }]}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[styles.tickerText, segmentWidth ? { width: segmentWidth } : null]}
+                >
+                  {tickerText}
+                </Text>
+              </View>
+            </Animated.View>
+          ) : (
+            <Text numberOfLines={1} style={[styles.tickerText, styles.tickerTextStatic]}>
+              {tickerText}
+            </Text>
+          )}
         </View>
       </View>
 
@@ -416,7 +479,7 @@ export function HomeScreen({
           <Text style={styles.statLabel}>في الشجرة</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statNumber}>{latestEvents.length}</Text>
+          <Text style={styles.statNumber}>{publicLatestEvents.length}</Text>
           <Text style={styles.statLabel}>مناسبات ظاهرة</Text>
         </View>
       </View>
@@ -435,14 +498,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 8,
   },
+  tickerMeasureHost: {
+    left: 0,
+    opacity: 0,
+    position: 'absolute',
+    top: 0,
+    zIndex: -1,
+  },
   tickerViewport: {
-    flex: 1,
     height: 32,
     justifyContent: 'center',
     overflow: 'hidden',
+    width: '100%',
   },
   tickerSegment: {
     alignItems: 'center',
+    flexGrow: 0,
     flexShrink: 0,
     height: 32,
     justifyContent: 'center',
@@ -450,21 +521,26 @@ const styles = StyleSheet.create({
   tickerTrack: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.lg,
+    flexWrap: 'nowrap',
     height: 32,
-    justifyContent: 'flex-start',
     left: 0,
     position: 'absolute',
     top: 0,
   },
   tickerText: {
     color: colors.text,
+    flexGrow: 0,
     flexShrink: 0,
     fontSize: 14,
     fontWeight: '700',
     includeFontPadding: false,
     lineHeight: 20,
     textAlign: 'left',
+    writingDirection: 'rtl',
+  },
+  tickerTextStatic: {
+    maxWidth: '100%',
+    textAlign: 'right',
     writingDirection: 'rtl',
   },
   momentCard: {

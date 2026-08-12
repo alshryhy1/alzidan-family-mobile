@@ -32,9 +32,9 @@ function normalizeTickerText(value: string) {
 }
 
 export function formatEventTickerItem(event: FamilyEvent) {
+  // Keep full wording for the marquee; do not soft-truncate mid-word.
   const detail = String(event.details || '').replace(/\s+/g, ' ').trim();
-  const shortDetail = detail.length > 80 ? detail.slice(0, 79) + '…' : detail;
-  return [event.title, event.person, shortDetail, event.date ? `— ${event.date}` : '']
+  return [event.title, event.person, detail, event.date ? `— ${event.date}` : '']
     .filter(Boolean)
     .join(' — ');
 }

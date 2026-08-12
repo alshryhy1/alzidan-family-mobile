@@ -125,6 +125,24 @@ const cases = [
     },
     expect: false,
   },
+  {
+    name: 'happy far-future gathering stays scheduled/hidden',
+    row: {
+      type: 'gathering',
+      event_date: '2027-01-17',
+      created_at: createdDaysAgo(0),
+      show_before_days: 3,
+      show_at: '2027-01-17T00:00:00.000Z',
+      details: JSON.stringify({
+        v: 1,
+        kind: 'happy_notice',
+        showDays: 7,
+        show_before_days: 3,
+        show_at: '2027-01-17T00:00:00.000Z',
+      }),
+    },
+    expect: false,
+  },
 ];
 
 let failed = 0;

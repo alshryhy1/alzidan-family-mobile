@@ -71,6 +71,11 @@ export type FamilyEvent = {
   visitTimeTo?: string;
   createdAt?: string;
   showDays?: number | null;
+  showAt?: string;
+  endAt?: string;
+  showBeforeDays?: number | null;
+  manualHidden?: boolean;
+  rawDetails?: string | Record<string, unknown> | null;
 };
 
 export type PublicAffinityStats = {

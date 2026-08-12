@@ -6,6 +6,7 @@ import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
 import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
+import { rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { insertPublicRow } from '../services/supabase';
 import {
   MOBILE_EVENT_TYPES,
@@ -195,6 +196,8 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         name: submitterName.trim(),
         phone: cleanPhone(phone),
       });
+      await rememberPushPhone(cleanPhone(phone));
+      registerPushToken('event_submit').catch(() => {});
 
       setEventPerson('');
       setEventDate('');
@@ -283,12 +286,15 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         name: submitterName.trim(),
         phone: cleanPhone(phone),
       });
+      await rememberPushPhone(cleanPhone(phone));
+      registerPushToken('request_submit').catch(() => {});
       await appendTrackedRequest({
         requestId: reqId,
         kind: 'tree_card',
         status: 'pending',
         createdAt,
         person: name,
+        phone: cleanPhone(phone),
       });
 
       setGrandfather('');
@@ -356,12 +362,15 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         name: submitterName.trim(),
         phone: submitterPhone,
       });
+      await rememberPushPhone(submitterPhone);
+      registerPushToken('request_submit').catch(() => {});
       await appendTrackedRequest({
         requestId: reqId,
         kind: 'tree_edit',
         status: 'pending',
         createdAt,
         person: correctionPerson.trim(),
+        phone: submitterPhone,
       });
 
       setCorrectionPerson('');

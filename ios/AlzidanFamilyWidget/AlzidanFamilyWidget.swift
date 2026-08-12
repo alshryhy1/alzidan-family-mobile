@@ -15,8 +15,24 @@ struct FamilyEvent: Identifiable {
     let gregorianDisplay: String
     let createdAt: Date?
     let showDays: Int
+    let showAt: Date?
+    let endAt: Date?
+    let showBeforeDays: Int
+    let manualHidden: Bool
 
-    init(rawType: String, name: String, dateLabel: String?, eventDateISO: String?, daysLeft: Int?, createdAt: Date? = nil, showDays: Int = 7) {
+    init(
+        rawType: String,
+        name: String,
+        dateLabel: String?,
+        eventDateISO: String?,
+        daysLeft: Int?,
+        createdAt: Date? = nil,
+        showDays: Int = 7,
+        showAt: Date? = nil,
+        endAt: Date? = nil,
+        showBeforeDays: Int = 3,
+        manualHidden: Bool = false
+    ) {
         let cleanType = rawType.trimmingCharacters(in: .whitespacesAndNewlines)
         self.rawType = cleanType
         self.typeLabel = EventArabic.typeLabel(cleanType)
@@ -24,6 +40,10 @@ struct FamilyEvent: Identifiable {
         self.name = name
         self.createdAt = createdAt
         self.showDays = EventVisibility.clampShowDays(showDays)
+        self.showAt = showAt
+        self.endAt = endAt
+        self.showBeforeDays = EventVisibility.clampShowBeforeDays(showBeforeDays)
+        self.manualHidden = manualHidden
 
         let parsed = EventDateFormatter.resolve(dateLabel: dateLabel, eventDateISO: eventDateISO)
         self.sortDate = parsed.sortDate
@@ -213,20 +233,87 @@ struct WidgetRoot<Content: View>: View {
 }
 
 
-/// مصدر ظهور موحّد مع التطبيق/الويب (مسار C / NEWS-001).
+/// مصدر ظهور موحّد مع التطبيق/الويب (مسار C / NEWS-001 + جدولة).
 /// - وفاة: 3 أيام من يوم الحدث (أو created_at)
-/// - غير الوفاة: نافذة showDays من created_at (1…7)
-/// - الأفراح المؤرخة: تختفي بعد يوم المناسبة
+/// - صحة: نافذة showDays من created_at
+/// - أفراح مؤرخة: لا تظهر قبل show_at (افتراضي 3 أيام قبل التاريخ)
 /// - event_date null: لا ظهور أبدي — يعتمد على created_at/showDays
 enum EventVisibility {
     static let deathKeepDays = 3
     static let defaultShowDays = 7
+    static let defaultShowBeforeDays = 3
 
     static func clampShowDays(_ value: Int?) -> Int {
         guard let value else { return defaultShowDays }
         if value < 1 { return 1 }
         if value > 7 { return 7 }
         return value
+    }
+
+    static func clampShowBeforeDays(_ value: Int?) -> Int {
+        guard let value else { return defaultShowBeforeDays }
+        if value < 1 { return 1 }
+        if value > 7 { return 7 }
+        return value
+    }
+
+    static func parseTimestamp(_ raw: String?) -> Date? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFrac.date(from: raw) { return d }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: raw) { return d }
+        return EventDateFormatter.parseGregorianISO(raw)
+    }
+
+    static func detailsObject(_ raw: String?) -> [String: Any]? {
+        guard let raw, let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        guard let nested = obj["event"] as? [String: Any] else { return obj }
+        var merged = obj
+        for (key, value) in nested where merged[key] == nil {
+            merged[key] = value
+        }
+        return merged
+    }
+
+    static func readScheduleString(row: [String: Any], details: [String: Any]?, snake: String, camel: String) -> String? {
+        if let s = row[snake] as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return s }
+        if let s = row[camel] as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return s }
+        if let s = details?[snake] as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return s }
+        if let s = details?[camel] as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return s }
+        return nil
+    }
+
+    static func readShowBeforeDays(row: [String: Any], details: [String: Any]?) -> Int {
+        if let n = row["show_before_days"] as? Int { return clampShowBeforeDays(n) }
+        if let n = row["showBeforeDays"] as? Int { return clampShowBeforeDays(n) }
+        if let n = details?["show_before_days"] as? Int { return clampShowBeforeDays(n) }
+        if let n = details?["showBeforeDays"] as? Int { return clampShowBeforeDays(n) }
+        return defaultShowBeforeDays
+    }
+
+    static func isManualHidden(row: [String: Any], details: [String: Any]?) -> Bool {
+        func truthy(_ value: Any?) -> Bool {
+            if let b = value as? Bool { return b }
+            if let n = value as? Int { return n == 1 }
+            if let s = value as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return t == "1" || t == "true"
+            }
+            return false
+        }
+        return truthy(row["manual_hidden"]) || truthy(row["manualHidden"])
+            || truthy(details?["manual_hidden"]) || truthy(details?["manualHidden"])
+            || truthy(row["is_hidden"])
+    }
+
+    static func endOfLocalDay(_ date: Date) -> Date {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: date)
+        return cal.date(byAdding: DateComponents(day: 1, second: -1), to: start) ?? date
     }
 
     static func showDays(fromDetails details: String?) -> Int {
@@ -254,6 +341,11 @@ enum EventVisibility {
         let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if key.isEmpty { return true }
         return !["death", "sick", "operation", "discharge"].contains(key)
+    }
+
+    static func isHealth(_ type: String) -> Bool {
+        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ["sick", "operation", "discharge"].contains(key)
     }
 
     static func daysFromEventDay(_ event: FamilyEvent, now: Date = Date()) -> Int? {
@@ -284,14 +376,26 @@ enum EventVisibility {
     }
 
     static func isPubliclyVisible(_ event: FamilyEvent, now: Date = Date()) -> Bool {
+        if event.manualHidden { return false }
         if isDeath(event.rawType) {
             return isWithinDaysFromEventDay(event, keepDays: deathKeepDays, now: now)
         }
-        if !isCreatedWithinShowWindow(event, now: now) { return false }
-        if isHappy(event.rawType) {
-            if let diff = daysFromEventDay(event, now: now), diff < 0 { return false }
+        if isHealth(event.rawType) {
+            return isCreatedWithinShowWindow(event, now: now)
         }
-        return true
+
+        let showAt = event.showAt ?? event.sortDate.map { $0.addingTimeInterval(TimeInterval(-event.showBeforeDays * 24 * 60 * 60)) }
+        let endAt = event.endAt ?? event.sortDate.map { endOfLocalDay($0) }
+        if event.sortDate != nil || showAt != nil || endAt != nil {
+            if let endAt, now > endAt { return false }
+            if let showAt, now < showAt { return false }
+            if event.endAt == nil, let diff = daysFromEventDay(event, now: now), diff < 0 {
+                return false
+            }
+            return true
+        }
+
+        return isCreatedWithinShowWindow(event, now: now)
     }
 
     /// أعد الجلب خلال 15 دقيقة حتى يختفي المحذوف، ومع منتصف الليل لنوافذ الظهور.
@@ -347,7 +451,7 @@ struct Provider: TimelineProvider {
         let anonKey = "sb_publishable_JhgwBIXhs6z4yBZOoE2EqA_UlzjzW9c"
 
         // عيّنة حديثة + فلتر محلي موحّد (لا تعتمد على event_date.gte وحده)
-        let query = "/rest/v1/family_events?select=id,type,person,date_label,event_date,created_at,details&order=created_at.desc&limit=40"
+        let query = "/rest/v1/family_events?select=id,type,person,date_label,event_date,created_at,details,show_at,show_before_days,end_at,manual_hidden&order=created_at.desc&limit=40"
 
         guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let requestUrl = URL(string: baseUrl + encoded) else {
@@ -389,6 +493,13 @@ struct Provider: TimelineProvider {
                     detailsString = nil
                 }
                 let showDays = EventVisibility.showDays(fromDetails: detailsString)
+                let detailsObj = EventVisibility.detailsObject(detailsString)
+                let showAt = EventVisibility.parseTimestamp(
+                    EventVisibility.readScheduleString(row: row, details: detailsObj, snake: "show_at", camel: "showAt")
+                )
+                let endAt = EventVisibility.parseTimestamp(
+                    EventVisibility.readScheduleString(row: row, details: detailsObj, snake: "end_at", camel: "endAt")
+                )
                 let event = FamilyEvent(
                     rawType: cleanType,
                     name: cleanName.isEmpty ? "بدون اسم" : cleanName,
@@ -396,7 +507,11 @@ struct Provider: TimelineProvider {
                     eventDateISO: cleanDate.isEmpty ? nil : cleanDate,
                     daysLeft: days,
                     createdAt: createdAt,
-                    showDays: showDays
+                    showDays: showDays,
+                    showAt: showAt,
+                    endAt: endAt,
+                    showBeforeDays: EventVisibility.readShowBeforeDays(row: row, details: detailsObj),
+                    manualHidden: EventVisibility.isManualHidden(row: row, details: detailsObj)
                 )
                 guard EventVisibility.isPubliclyVisible(event, now: now) else { return nil }
                 return event
@@ -721,6 +836,44 @@ struct AlzidanFamilyWidgetEntryView: View {
         Array(entry.events.prefix(maxEvents))
     }
 
+    /// Short daily adhkar shown only when there is no family event/news to display.
+    private static let dailyAdhkarList: [String] = [
+        "سبحان الله وبحمده",
+        "اللهم صلِّ وسلِّم على نبينا محمد",
+        "لا إله إلا الله وحده لا شريك له",
+        "الحمد لله رب العالمين",
+        "أستغفر الله وأتوب إليه",
+        "حسبي الله لا إله إلا هو عليه توكلت",
+        "سبحان الله والحمد لله ولا إله إلا الله والله أكبر",
+    ]
+
+    private var dailyAdhkarText: String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Riyadh") ?? .current
+        let day = cal.ordinality(of: .day, in: .year, for: entry.date) ?? 1
+        let list = Self.dailyAdhkarList
+        return list[day % list.count]
+    }
+
+    @ViewBuilder
+    private func emptyFamilyContentFallback(compact: Bool) -> some View {
+        VStack(alignment: .trailing, spacing: compact ? 1 : 3) {
+            Text("ذكر اليوم")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .opacity(0.7)
+                .lineLimit(1)
+            Text(dailyAdhkarText)
+                .font(compact ? .caption2 : .caption)
+                .fontWeight(.bold)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(compact ? 3 : 4)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityLabel("ذكر اليوم: \(dailyAdhkarText)")
+    }
+
     private var weekdayName: String {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
@@ -824,11 +977,7 @@ struct AlzidanFamilyWidgetEntryView: View {
             Divider().opacity(0.25)
 
             if visibleEvents.isEmpty {
-                Text("لا توجد مناسبات")
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                    .opacity(0.75)
-                    .lineLimit(1)
+                emptyFamilyContentFallback(compact: true)
             } else {
                 ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
                     if index > 0 {
@@ -886,12 +1035,7 @@ struct AlzidanFamilyWidgetEntryView: View {
 
             VStack(alignment: .trailing, spacing: 4) {
                 if visibleEvents.isEmpty {
-                    Text("🌿 لا توجد")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                    Text("مناسبات قريبة")
-                        .font(.caption2)
-                        .opacity(0.75)
+                    emptyFamilyContentFallback(compact: true)
                 } else {
                     ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
                         if index > 0 {
@@ -974,12 +1118,7 @@ struct AlzidanFamilyWidgetEntryView: View {
 
                 VStack(alignment: .trailing, spacing: 4) {
                     if visibleEvents.isEmpty {
-                        Text("🌿 لا توجد مناسبات")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .opacity(0.8)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.trailing)
+                        emptyFamilyContentFallback(compact: false)
                     } else {
                         ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
                             if index > 0 {

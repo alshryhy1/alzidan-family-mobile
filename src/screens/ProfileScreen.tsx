@@ -5,14 +5,17 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
-import { selectPublicRows } from '../services/supabase';
+import { clearPushPhone, rememberPushPhone, registerPushToken } from '../services/pushNotifications';
+import { callPublicRpc, selectPublicRows } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, TreeChild } from '../types';
+import { cleanMemberPhone, memberProfilePhoneQuery } from '../utils/memberPhone';
 
 type ProfileScreenProps = {
   branches: Branch[];
   childrenRows: TreeChild[];
   onOpenMemberCard: (branchKey: string, treeChildId: number) => void;
+  onMemberSessionChange?: (phone: string | null) => void;
 };
 
 const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
@@ -25,20 +28,25 @@ type MemberProfileRow = {
   person_id: string | null;
   display_name: string | null;
   status: string | null;
+  role?: 'member' | 'delegate' | 'both';
 };
 
-function normalizeArabicDigits(value: string) {
-  const arabicZero = '٠'.charCodeAt(0);
-  const persianZero = '۰'.charCodeAt(0);
-  return value.replace(/[٠-٩۰-۹]/g, (digit) => {
-    const code = digit.charCodeAt(0);
-    const normalized = code >= persianZero ? code - persianZero : code - arabicZero;
-    return String(normalized);
-  });
-}
+type AppLoginByPhoneResult = {
+  ok?: boolean;
+  error?: string;
+  role?: 'member' | 'delegate' | 'both' | 'none';
+  phone?: string;
+  member_id?: number | null;
+  tree_child_id?: number | null;
+  person_id?: string | null;
+  branch_key?: string | null;
+  display_name?: string | null;
+  is_delegate?: boolean;
+  is_member?: boolean;
+};
 
 function cleanPhone(value: string) {
-  return normalizeArabicDigits(value).replace(/[^\d]/g, '');
+  return cleanMemberPhone(value);
 }
 
 function displayPersonName(value: string) {
@@ -65,7 +73,7 @@ function tripleNameFromPath(value: string) {
   return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : displayPersonName(value);
 }
 
-export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: ProfileScreenProps) {
+export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemberSessionChange }: ProfileScreenProps) {
   const [phone, setPhone] = useState('');
   const [savedPhone, setSavedPhone] = useState('');
   const [member, setMember] = useState<MemberProfileRow | null>(null);
@@ -85,10 +93,27 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
     [branches, member?.branch_key],
   );
 
+  const isDelegateSession = member?.role === 'delegate' || member?.role === 'both';
+  const canOpenCard = Boolean(member?.tree_child_id && member?.branch_key);
+
   const memberName = useMemo(() => {
     if (memberTreeRow?.name) return tripleNameFromPath(memberTreeRow.name);
-    return member?.display_name || 'عضو العائلة';
-  }, [member?.display_name, memberTreeRow?.name]);
+    if (member?.display_name) return member.display_name;
+    if (isDelegateSession) return 'مندوب الفرع';
+    return 'عضو العائلة';
+  }, [isDelegateSession, member?.display_name, memberTreeRow?.name]);
+
+  const activateSession = async (found: MemberProfileRow, cleanedFallback: string, successText: string) => {
+    const storedPhone = cleanPhone(found.phone || cleanedFallback);
+    setMember(found);
+    setSavedPhone(storedPhone);
+    setPhone(storedPhone);
+    await AsyncStorage.setItem(MEMBER_PHONE_KEY, storedPhone);
+    await rememberPushPhone(storedPhone);
+    registerPushToken('profile_login').catch(() => {});
+    onMemberSessionChange?.(storedPhone);
+    setStatus({ kind: 'success', text: successText });
+  };
 
   const loadMember = async (targetPhone: string) => {
     const cleaned = cleanPhone(targetPhone);
@@ -101,30 +126,70 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
     setStatus({ kind: 'idle', text: '' });
 
     try {
-      const rows = await selectPublicRows<MemberProfileRow>(
-        `member_profiles?select=id,phone,branch_key,tree_child_id,person_id,display_name,status&phone=eq.${encodeURIComponent(cleaned)}&status=eq.active&limit=1`,
-      );
-
+      const query = memberProfilePhoneQuery(cleaned);
+      const rows = query ? await selectPublicRows<MemberProfileRow>(query) : [];
       const found = rows[0] ?? null;
-      if (!found) {
-        setMember(null);
-        setSavedPhone('');
-        setStatus({
-          kind: 'error',
-          text: 'هذا الرقم غير مسجل لدى إدارة العائلة أو مندوب الفرع.',
-        });
+
+      if (found) {
+        let role: MemberProfileRow['role'] = 'member';
+        try {
+          const login = await callPublicRpc<AppLoginByPhoneResult>('public_app_login_by_phone_v1', {
+            p_phone: cleaned,
+          });
+          if (login?.ok && (login.role === 'delegate' || login.role === 'both')) {
+            role = login.role;
+          }
+        } catch {
+          // RPC may not be deployed yet; member path still binds push.
+        }
+
+        await activateSession(
+          { ...found, role },
+          cleaned,
+          role === 'delegate' || role === 'both'
+            ? 'تم تسجيل الدخول وتفعيل إشعارات المندوب على هذا الجهاز.'
+            : 'تم تسجيل الدخول.',
+        );
         return;
       }
 
-      setMember(found);
-      setSavedPhone(cleaned);
-      setPhone(cleaned);
-      await AsyncStorage.setItem(MEMBER_PHONE_KEY, cleaned);
-      setStatus({ kind: 'success', text: 'تم تسجيل الدخول.' });
-    } catch (error) {
+      try {
+        const login = await callPublicRpc<AppLoginByPhoneResult>('public_app_login_by_phone_v1', {
+          p_phone: cleaned,
+        });
+
+        if (login?.ok && (login.is_delegate || login.role === 'delegate' || login.role === 'both')) {
+          const synthetic: MemberProfileRow = {
+            id: Number(login.member_id || 0),
+            phone: login.phone || cleaned,
+            branch_key: String(login.branch_key || ''),
+            tree_child_id: Number(login.tree_child_id || 0),
+            person_id: login.person_id || null,
+            display_name: login.display_name || 'مندوب الفرع',
+            status: 'active',
+            role: login.role === 'both' ? 'both' : 'delegate',
+          };
+          await activateSession(
+            synthetic,
+            cleaned,
+            'تم تفعيل إشعارات المندوب على هذا الجهاز. ستصلك طلبات الفرع الجديدة.',
+          );
+          return;
+        }
+      } catch {
+        // Fall through to not-found message.
+      }
+
+      setMember(null);
+      setSavedPhone('');
       setStatus({
         kind: 'error',
-        text: error instanceof Error ? error.message : 'تعذر تسجيل الدخول.',
+        text: 'هذا الرقم غير مسجل كعضو أو مندوب فرع لدى إدارة العائلة.',
+      });
+    } catch {
+      setStatus({
+        kind: 'error',
+        text: 'تعذر تسجيل الدخول حالياً، حاول لاحقاً.',
       });
     } finally {
       setLoading(false);
@@ -143,45 +208,57 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
 
   const logout = () => {
     AsyncStorage.removeItem(MEMBER_PHONE_KEY).catch(() => {});
+    clearPushPhone().catch(() => {});
     setMember(null);
     setSavedPhone('');
     setPhone('');
+    onMemberSessionChange?.(null);
     setStatus({ kind: 'idle', text: '' });
   };
 
   return (
     <Screen
       title="ملفي"
-      description="دخول العضو برقم الجوال لعرض اسمه وفتح بطاقته في الشجرة فقط."
+      description="ادخل برقم الجوال المسجل لتفعيل البطاقة أو إشعارات المندوب على هذا الجهاز."
     >
       {member ? (
-        <SectionCard eyebrow="عضو مسجل" title="مرحباً بك">
+        <SectionCard
+          eyebrow={isDelegateSession ? 'مندوب مسجل' : 'عضو مسجل'}
+          title="مرحباً بك"
+        >
           <View style={styles.profileHeader}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{memberName.slice(0, 1)}</Text>
             </View>
             <View style={styles.profileText}>
               <Text style={styles.profileName}>{memberName}</Text>
-              <Text style={styles.profileMeta}>فرع {branchName}</Text>
-              <Text style={styles.profileMeta}>الجوال: {member.phone}</Text>
+              {branchName ? <Text style={styles.profileMeta}>فرع {branchName}</Text> : null}
+              <Text style={styles.profileMeta}>الجوال: {member.phone || savedPhone}</Text>
+              {isDelegateSession ? (
+                <Text style={styles.profileMeta}>إشعارات طلبات الفرع مفعّلة على هذا الجهاز</Text>
+              ) : null}
             </View>
           </View>
 
-          <ActionButton
-            label="فتح بطاقتي في الشجرة"
-            onPress={() => onOpenMemberCard(member.branch_key, member.tree_child_id)}
-          />
+          {canOpenCard ? (
+            <ActionButton
+              label="فتح بطاقتي في الشجرة"
+              onPress={() => onOpenMemberCard(member.branch_key, member.tree_child_id)}
+            />
+          ) : null}
 
           <Pressable onPress={logout} style={styles.logoutButton}>
             <Text style={styles.logoutText}>تسجيل خروج</Text>
           </Pressable>
 
           <Text style={styles.note}>
-            هذا الدخول للتعريف وفتح البطاقة فقط، ولا يمنح صلاحيات تعديل أو حذف.
+            {isDelegateSession
+              ? 'بعد هذا التسجيل ستصلك إشعارات طلبات فرعك الجديدة على الجهاز.'
+              : 'هذا الدخول للتعريف وفتح البطاقة فقط، ولا يمنح صلاحيات تعديل أو حذف.'}
           </Text>
         </SectionCard>
       ) : (
-        <SectionCard eyebrow="دخول العضو" title="ادخل برقم الجوال المسجل">
+        <SectionCard eyebrow="دخول" title="ادخل برقم الجوال المسجل">
           <TextInput
             keyboardType="phone-pad"
             onChangeText={setPhone}
@@ -196,7 +273,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard }: Prof
             onPress={() => loadMember(phone)}
           />
           <Text style={styles.note}>
-            إذا لم يقبل الرقم، اطلب من الإدارة أو مندوب الفرع إضافة رقمك في بطاقة الشجرة.
+            الأعضاء والمناديب: بعد الدخول يُربط الجهاز بإشعارات طلبات الفرع تلقائياً.
           </Text>
         </SectionCard>
       )}
@@ -264,29 +341,31 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     color: colors.text,
-    fontWeight: '900',
+    fontSize: 15,
+    fontWeight: '700',
   },
   note: {
     color: colors.textMuted,
     fontSize: 13,
-    lineHeight: 21,
+    lineHeight: 20,
     marginTop: spacing.md,
     textAlign: 'right',
   },
   status: {
-    borderRadius: 16,
+    borderRadius: 14,
     marginTop: spacing.md,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   errorStatus: {
     backgroundColor: '#FEE2E2',
   },
   successStatus: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: '#D1FAE5',
   },
   statusText: {
     color: colors.text,
-    fontWeight: '800',
+    fontSize: typography.caption,
     textAlign: 'right',
   },
 });

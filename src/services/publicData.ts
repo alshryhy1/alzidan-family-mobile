@@ -49,6 +49,10 @@ type EventRow = {
   visit_time_from: string | null;
   visit_time_to: string | null;
   created_at: string;
+  show_at?: string | null;
+  end_at?: string | null;
+  show_before_days?: number | null;
+  manual_hidden?: boolean | null;
 };
 
 type SpouseSummaryRow = {
@@ -88,6 +92,15 @@ type ParsedEventDetails = {
   photo_url?: string;
   videoUrl?: string;
   video_url?: string;
+  show_at?: string;
+  showAt?: string;
+  end_at?: string;
+  endAt?: string;
+  show_before_days?: number;
+  showBeforeDays?: number;
+  manual_hidden?: boolean;
+  manualHidden?: boolean;
+  event?: Record<string, unknown>;
 };
 
 function parseEventDetails(details: string | ParsedEventDetails | null | undefined) {
@@ -199,6 +212,11 @@ function mapEvent(row: EventRow): FamilyEvent {
     visitTimeTo: row.visit_time_to ?? undefined,
     createdAt: row.created_at,
     showDays: extractShowDays(row.details),
+    showAt: row.show_at || parsed?.show_at || parsed?.showAt || undefined,
+    endAt: row.end_at || parsed?.end_at || parsed?.endAt || undefined,
+    showBeforeDays: row.show_before_days ?? parsed?.show_before_days ?? parsed?.showBeforeDays ?? undefined,
+    manualHidden: row.manual_hidden === true || parsed?.manual_hidden === true || parsed?.manualHidden === true,
+    rawDetails: row.details ?? null,
   };
 }
 
@@ -226,7 +244,7 @@ export async function loadPublicData() {
     selectPublicRows<ParentRow>('tree_parents?select=id,branch_key,name&order=id.asc'),
     loadTreeChildren(),
     selectPublicRows<EventRow>(
-      'family_events?select=id,branch_key,type,person,date_label,event_date,details,hospital_name,hospital_dept,contact_method,contact_phone,visit_date_from,visit_date_to,visit_time_from,visit_time_to,created_at&order=created_at.desc&limit=100',
+      'family_events?select=id,branch_key,type,person,date_label,event_date,details,hospital_name,hospital_dept,contact_method,contact_phone,visit_date_from,visit_date_to,visit_time_from,visit_time_to,created_at,show_at,show_before_days,end_at,manual_hidden&order=created_at.desc&limit=100',
     ),
     selectPublicRows<SpouseSummaryRow>(
       'tree_spouse_summary?select=wife_is_family_member,wife_branch_key,status&limit=5000',

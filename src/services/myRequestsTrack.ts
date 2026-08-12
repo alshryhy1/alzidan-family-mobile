@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { MemberRequest } from '../types';
 import { callPublicRpc } from './supabase';
 
-const TRACK_KEY = 'alzidan_rx_my_requests_v1';
+const TRACK_KEY_PREFIX = 'alzidan_rx_my_requests_v1';
+const LEGACY_TRACK_KEY = 'alzidan_rx_my_requests_v1';
 const MAX_ENTRIES = 20;
 
 export type TrackedRequest = {
@@ -13,19 +14,29 @@ export type TrackedRequest = {
   createdAt: string;
   rejectionReason?: string;
   person?: string;
+  phone?: string;
 };
 
 function text(value: unknown) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
+function cleanPhone(value: unknown) {
+  return text(value).replace(/[^\d]/g, '');
+}
+
 function trackIdKey(value: string) {
   return text(value).toUpperCase();
 }
 
-export async function readTrackedRequests(): Promise<TrackedRequest[]> {
+function trackKeyForPhone(phone?: string) {
+  const cleaned = cleanPhone(phone || '');
+  return cleaned.length >= 9 ? `${TRACK_KEY_PREFIX}:${cleaned}` : LEGACY_TRACK_KEY;
+}
+
+export async function readTrackedRequests(phone?: string): Promise<TrackedRequest[]> {
   try {
-    const raw = await AsyncStorage.getItem(TRACK_KEY);
+    const raw = await AsyncStorage.getItem(trackKeyForPhone(phone));
     const list = raw ? (JSON.parse(raw) as TrackedRequest[]) : [];
     return Array.isArray(list) ? list.filter((row) => text(row?.requestId)) : [];
   } catch {
@@ -33,19 +44,26 @@ export async function readTrackedRequests(): Promise<TrackedRequest[]> {
   }
 }
 
-async function writeTrackedRequests(list: TrackedRequest[]) {
-  await AsyncStorage.setItem(TRACK_KEY, JSON.stringify(list.slice(0, MAX_ENTRIES)));
+async function writeTrackedRequests(list: TrackedRequest[], phone?: string) {
+  await AsyncStorage.setItem(trackKeyForPhone(phone), JSON.stringify(list.slice(0, MAX_ENTRIES)));
 }
 
 export async function appendTrackedRequest(entry: TrackedRequest) {
   const requestId = text(entry.requestId);
   if (!requestId) return;
-  const current = await readTrackedRequests();
+  const phone = cleanPhone(entry.phone || '');
+  const current = await readTrackedRequests(phone);
   const next = [
-    { ...entry, requestId, status: text(entry.status) || 'pending', createdAt: text(entry.createdAt) || new Date().toISOString() },
+    {
+      ...entry,
+      requestId,
+      phone: phone || undefined,
+      status: text(entry.status) || 'pending',
+      createdAt: text(entry.createdAt) || new Date().toISOString(),
+    },
     ...current.filter((row) => trackIdKey(row.requestId) !== trackIdKey(requestId)),
   ];
-  await writeTrackedRequests(next);
+  await writeTrackedRequests(next, phone);
 }
 
 function normalizeStatus(status: string) {
@@ -110,7 +128,7 @@ async function syncLocalStatuses(local: TrackedRequest[]): Promise<TrackedReques
 }
 
 async function fetchRequestsByPhone(phone: string): Promise<TrackedRequest[]> {
-  const cleaned = text(phone).replace(/[^\d]/g, '');
+  const cleaned = cleanPhone(phone);
   if (cleaned.length < 9) return [];
   try {
     const live = await callPublicRpc<PhoneRequestRow[]>('public_my_requests_by_phone_v1', {
@@ -124,6 +142,7 @@ async function fetchRequestsByPhone(phone: string): Promise<TrackedRequest[]> {
         status: normalizeStatus(String(row.status || 'pending')),
         createdAt: text(row.created_at) || new Date().toISOString(),
         rejectionReason: text(row.reject_reason) || undefined,
+        phone: cleaned,
       }))
       .filter((row) => row.requestId);
   } catch {
@@ -146,6 +165,7 @@ function mergeTracked(local: TrackedRequest[], remote: TrackedRequest[]) {
       status: row.status || prev.status,
       rejectionReason: row.rejectionReason || prev.rejectionReason,
       createdAt: row.createdAt || prev.createdAt,
+      phone: row.phone || prev.phone,
     });
   });
   return Array.from(byId.values())
@@ -153,12 +173,36 @@ function mergeTracked(local: TrackedRequest[], remote: TrackedRequest[]) {
     .slice(0, MAX_ENTRIES);
 }
 
+/**
+ * When a member phone is known, remote phone query is source of truth.
+ * Local device cache is only merged for that same phone — never mix another member's submissions.
+ */
 export async function loadMyRequests(phone?: string): Promise<MemberRequest[]> {
+  const cleaned = cleanPhone(phone || '');
+  if (cleaned.length >= 9) {
+    const remote = await fetchRequestsByPhone(cleaned);
+    const local = await syncLocalStatuses(await readTrackedRequests(cleaned));
+    const localSamePhone = local.filter((row) => {
+      const rowPhone = cleanPhone(row.phone || '');
+      return !rowPhone || rowPhone === cleaned;
+    });
+    const merged = mergeTracked(localSamePhone, remote);
+    await writeTrackedRequests(merged, cleaned);
+    return merged.map(trackedToMemberRequest);
+  }
+
   const local = await syncLocalStatuses(await readTrackedRequests());
-  const remote = phone ? await fetchRequestsByPhone(phone) : [];
-  const merged = mergeTracked(local, remote);
-  await writeTrackedRequests(merged);
-  return merged.map(trackedToMemberRequest);
+  await writeTrackedRequests(local);
+  return local.map(trackedToMemberRequest);
+}
+
+export async function clearTrackedRequests(phone?: string) {
+  const cleaned = cleanPhone(phone || '');
+  if (cleaned.length >= 9) {
+    await AsyncStorage.removeItem(trackKeyForPhone(cleaned));
+    return;
+  }
+  await AsyncStorage.removeItem(LEGACY_TRACK_KEY);
 }
 
 export async function syncTrackedRequestStatuses(): Promise<MemberRequest[]> {
