@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "عائلة الزيدان",
+    "name": "عائلة مطلق الزيدان",
     "slug": "alzidan-family-mobile",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.alzidan.family",
-      "buildNumber": "54",
+      "bundleIdentifier": "com.alzidan.family2",
+      "buildNumber": "50",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية أو ذكرى.",
         "ITSAppUsesNonExemptEncryption": false,
@@ -19,7 +19,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.alzidan.family",
+      "package": "com.alzidan.family2",
       "adaptiveIcon": {
         "backgroundColor": "#F5EDD6",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -52,10 +52,10 @@
               "appExtensions": [
                 {
                   "targetName": "AlzidanFamilyWidgetExtension",
-                  "bundleIdentifier": "com.alzidan.family.AlzidanFamilyWidgetExtension",
+                  "bundleIdentifier": "com.alzidan.family2.AlzidanFamilyWidgetExtension",
                   "entitlements": {
                     "com.apple.security.application-groups": [
-                      "group.com.alzidan.family"
+                      "group.com.alzidan.family2"
                     ]
                   }
                 }
