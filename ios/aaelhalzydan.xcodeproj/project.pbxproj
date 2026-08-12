@@ -490,9 +490,11 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = AlzidanFamilyWidget/AlzidanFamilyWidget.entitlements;
+				CURRENT_PROJECT_VERSION = 50;
 				DEVELOPMENT_TEAM = GZ9M83BFAK;
 				INFOPLIST_FILE = AlzidanFamilyWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.alzidan.family.AlzidanFamilyWidgetExtension;
 				PRODUCT_NAME = AlzidanFamilyWidgetExtension;
@@ -511,7 +513,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = aaelhalzydan/aaelhalzydan.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 50;
 				DEVELOPMENT_TEAM = GZ9M83BFAK;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -549,7 +551,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = aaelhalzydan/aaelhalzydan.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 50;
 				DEVELOPMENT_TEAM = GZ9M83BFAK;
 				INFOPLIST_FILE = aaelhalzydan/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
@@ -713,9 +715,11 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = AlzidanFamilyWidget/AlzidanFamilyWidget.entitlements;
+				CURRENT_PROJECT_VERSION = 50;
 				DEVELOPMENT_TEAM = GZ9M83BFAK;
 				INFOPLIST_FILE = AlzidanFamilyWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.alzidan.family.AlzidanFamilyWidgetExtension;
 				PRODUCT_NAME = AlzidanFamilyWidgetExtension;
