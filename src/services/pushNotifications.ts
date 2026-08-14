@@ -5,6 +5,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 
 import { callPublicRpc, isSupabaseConfigured, upsertPublicRow } from './supabase';
+import { canonicalizePhone } from '../utils/phone';
 
 /** EAS project UUID — required in bare/TestFlight when Constants omit projectId. */
 const EAS_PROJECT_ID = '8a6659eb-ef85-49b5-a8db-7b7be96b8c1f';
@@ -65,27 +66,12 @@ export function getPushRegistrationUserMessage(input: {
 }
 
 function normalizeSaudiPhone(value: string) {
-  const arabicZero = '٠'.charCodeAt(0);
-  const persianZero = '۰'.charCodeAt(0);
-  const mapped = String(value || '').replace(/[٠-٩۰-۹]/g, (digit) => {
-    const code = digit.charCodeAt(0);
-    const n = code >= persianZero ? code - persianZero : code - arabicZero;
-    return String(n);
-  });
-  let digits = mapped.replace(/[^\d]/g, '');
-  if (digits.startsWith('00966') && digits.length === 14 && digits.charAt(5) === '5') {
-    digits = `0${digits.slice(5)}`;
-  } else if (digits.startsWith('966') && digits.length === 12 && digits.charAt(3) === '5') {
-    digits = `0${digits.slice(3)}`;
-  } else if (digits.length === 9 && digits.charAt(0) === '5') {
-    digits = `0${digits}`;
-  }
-  return digits;
+  return canonicalizePhone(value);
 }
 
 export async function rememberPushPhone(phone: string) {
   const normalized = normalizeSaudiPhone(phone);
-  if (normalized.length < 9) return;
+  if (!normalized || normalized.replace(/\D/g, '').length < 9) return;
   await AsyncStorage.setItem(PUSH_PHONE_KEY, normalized);
 }
 

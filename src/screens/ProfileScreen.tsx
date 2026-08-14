@@ -1,15 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
+import { PhoneField } from '../components/PhoneField';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { clearPushPhone, rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { callPublicRpc, selectPublicRows } from '../services/supabase';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, TreeChild } from '../types';
-import { cleanMemberPhone, memberProfilePhoneQuery } from '../utils/memberPhone';
+import {
+  DEFAULT_PHONE_COUNTRY_ID,
+  formatPhoneDisplay,
+  isValidPhone,
+  memberProfilePhoneQuery,
+  phoneLookupCandidates,
+  toE164,
+  canonicalizePhone,
+  isValidStoredPhone,
+} from '../utils/phone';
+import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '../services/occasionInteractions';
 
 type ProfileScreenProps = {
   branches: Branch[];
@@ -45,10 +56,6 @@ type AppLoginByPhoneResult = {
   is_member?: boolean;
 };
 
-function cleanPhone(value: string) {
-  return cleanMemberPhone(value);
-}
-
 function displayPersonName(value: string) {
   const parts = value
     .split('/')
@@ -74,9 +81,12 @@ function tripleNameFromPath(value: string) {
 }
 
 export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemberSessionChange }: ProfileScreenProps) {
-  const [phone, setPhone] = useState('');
+  const [countryId, setCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
+  const [national, setNational] = useState('');
   const [savedPhone, setSavedPhone] = useState('');
   const [member, setMember] = useState<MemberProfileRow | null>(null);
+  const [inbox, setInbox] = useState<OccasionInboxItem[]>([]);
+  const [expandedInbox, setExpandedInbox] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<{ kind: 'idle' | 'success' | 'error'; text: string }>({
     kind: 'idle',
     text: '',
@@ -103,11 +113,25 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
     return 'عضو العائلة';
   }, [isDelegateSession, member?.display_name, memberTreeRow?.name]);
 
+  const tryLoginRpc = async (e164: string) => {
+    const candidates = phoneLookupCandidates(e164);
+    for (const candidate of candidates) {
+      try {
+        const login = await callPublicRpc<AppLoginByPhoneResult>('public_app_login_by_phone_v1', {
+          p_phone: candidate,
+        });
+        if (login?.ok) return login;
+      } catch {
+        // try next candidate / fall through
+      }
+    }
+    return null;
+  };
+
   const activateSession = async (found: MemberProfileRow, cleanedFallback: string, successText: string) => {
-    const storedPhone = cleanPhone(found.phone || cleanedFallback);
+    const storedPhone = canonicalizePhone(found.phone || cleanedFallback) || cleanedFallback;
     setMember(found);
     setSavedPhone(storedPhone);
-    setPhone(storedPhone);
     await AsyncStorage.setItem(MEMBER_PHONE_KEY, storedPhone);
     await rememberPushPhone(storedPhone);
     registerPushToken('profile_login').catch(() => {});
@@ -116,9 +140,9 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
   };
 
   const loadMember = async (targetPhone: string) => {
-    const cleaned = cleanPhone(targetPhone);
-    if (cleaned.length < 9) {
-      setStatus({ kind: 'error', text: 'اكتب رقم جوال صحيح.' });
+    const cleaned = canonicalizePhone(targetPhone);
+    if (!cleaned || !isValidStoredPhone(cleaned)) {
+      setStatus({ kind: 'error', text: 'اكتب رقم جوال صحيح مع اختيار الدولة.' });
       return;
     }
 
@@ -133,9 +157,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
       if (found) {
         let role: MemberProfileRow['role'] = 'member';
         try {
-          const login = await callPublicRpc<AppLoginByPhoneResult>('public_app_login_by_phone_v1', {
-            p_phone: cleaned,
-          });
+          const login = await tryLoginRpc(cleaned);
           if (login?.ok && (login.role === 'delegate' || login.role === 'both')) {
             role = login.role;
           }
@@ -154,9 +176,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
       }
 
       try {
-        const login = await callPublicRpc<AppLoginByPhoneResult>('public_app_login_by_phone_v1', {
-          p_phone: cleaned,
-        });
+        const login = await tryLoginRpc(cleaned);
 
         if (login?.ok && (login.is_delegate || login.role === 'delegate' || login.role === 'both')) {
           const synthetic: MemberProfileRow = {
@@ -199,21 +219,40 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
   useEffect(() => {
     AsyncStorage.getItem(MEMBER_PHONE_KEY)
       .then((value) => {
-        const cleaned = cleanPhone(value || '');
+        const cleaned = canonicalizePhone(value || '');
         if (cleaned) loadMember(cleaned).catch(() => {});
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const p = canonicalizePhone(member?.phone || savedPhone || '');
+    if (!p) {
+      setInbox([]);
+      return;
+    }
+    fetchOccasionInbox(p)
+      .then(setInbox)
+      .catch(() => setInbox([]));
+  }, [member?.phone, savedPhone]);
+
   const logout = () => {
     AsyncStorage.removeItem(MEMBER_PHONE_KEY).catch(() => {});
     clearPushPhone().catch(() => {});
     setMember(null);
     setSavedPhone('');
-    setPhone('');
+    setNational('');
     onMemberSessionChange?.(null);
     setStatus({ kind: 'idle', text: '' });
+  };
+
+  const submitLogin = () => {
+    if (!isValidPhone(countryId, national)) {
+      setStatus({ kind: 'error', text: 'اكتب رقم جوال صحيح مع اختيار الدولة.' });
+      return;
+    }
+    loadMember(toE164(countryId, national)).catch(() => {});
   };
 
   return (
@@ -233,7 +272,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
             <View style={styles.profileText}>
               <Text style={styles.profileName}>{memberName}</Text>
               {branchName ? <Text style={styles.profileMeta}>فرع {branchName}</Text> : null}
-              <Text style={styles.profileMeta}>الجوال: {member.phone || savedPhone}</Text>
+              <Text style={styles.profileMeta}>الجوال: {formatPhoneDisplay(member.phone || savedPhone)}</Text>
               {isDelegateSession ? (
                 <Text style={styles.profileMeta}>إشعارات طلبات الفرع مفعّلة على هذا الجهاز</Text>
               ) : null}
@@ -259,24 +298,114 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
         </SectionCard>
       ) : (
         <SectionCard eyebrow="دخول" title="ادخل برقم الجوال المسجل">
-          <TextInput
-            keyboardType="phone-pad"
-            onChangeText={setPhone}
-            placeholder="05XXXXXXXX"
-            placeholderTextColor={colors.textMuted}
-            style={styles.input}
-            textAlign="right"
-            value={phone}
+          <PhoneField
+            countryId={countryId}
+            national={national}
+            onCountryChange={setCountryId}
+            onNationalChange={setNational}
+            hint="اختر الدولة ثم اكتب الرقم المحلي فقط دون رمز الدولة."
           />
           <ActionButton
             label={loading ? 'جاري الدخول...' : 'دخول'}
-            onPress={() => loadMember(phone)}
+            onPress={submitLogin}
           />
           <Text style={styles.note}>
             الأعضاء والمناديب: بعد الدخول يُربط الجهاز بإشعارات طلبات الفرع تلقائياً.
           </Text>
         </SectionCard>
       )}
+
+      
+      {member ? (
+        <SectionCard
+          eyebrow={
+            inbox.reduce((n, it) => n + (Array.isArray(it.messages) ? it.messages.length : Number(it.total || 0)), 0)
+              ? `${inbox.reduce((n, it) => n + (Array.isArray(it.messages) ? Math.min(8, it.messages.length) : Number(it.total || 0)), 0)} رسالة`
+              : 'خاص'
+          }
+          title="وصلك من العائلة"
+        >
+          {inbox.length === 0 ? (
+            <Text style={styles.note}>
+              لا تفاعلات خاصة بعد. عندما يشاركك أحد مناسبة تخصك تظهر هنا فقط لك.
+            </Text>
+          ) : (
+            inbox.map((item) => {
+              const total = Number(item.total || 0);
+              const yours = yourOccasionPhrase(item.occasion_type);
+              const senderLabel = (raw: string) => {
+                const tokens = String(raw || '')
+                  .trim()
+                  .split(/\s+/)
+                  .filter(Boolean)
+                  .filter((w) => w !== 'بن' && w !== 'ابن' && w !== 'بنت');
+                if (tokens.length >= 2) return `${tokens[0]} ${tokens[1]}`;
+                return tokens[0] || 'فرد من العائلة';
+              };
+              const whoLabel =
+                total <= 1 ? 'فرد من العائلة' : `${total} من أفراد العائلة`;
+              const verb = total <= 1 ? 'شاركك' : 'شاركوك';
+              const key = `${item.occasion_id}-${item.recipient_id}`;
+              const msgs = (item.messages || []).slice(0, 8).filter((m) =>
+                String(m.message || m.full_text || m.label || '').trim()
+              );
+              const msgCount = msgs.length || total || 0;
+              const open = !!expandedInbox[key];
+              const preview = msgs.length
+                ? senderLabel(msgs[0].sender_name || '')
+                : 'اضغط لعرض الرسائل';
+              return (
+              <View key={key} style={styles.inboxCard}>
+                <Pressable
+                  onPress={() =>
+                    setExpandedInbox((prev) => ({ ...prev, [key]: !prev[key] }))
+                  }
+                  style={styles.inboxToggle}
+                >
+                  <View style={styles.inboxTop}>
+                    <View style={styles.inboxBadge}>
+                      <View style={styles.inboxBadgeDot} />
+                      <Text style={styles.inboxBadgeText}>{whoLabel}</Text>
+                    </View>
+                    <Text style={styles.inboxLine}>
+                      <Text style={styles.inboxVerb}>{verb} </Text>
+                      <Text style={styles.inboxOccasion}>{yours}</Text>
+                    </Text>
+                  </View>
+                  <View style={styles.inboxMeta}>
+                    {!open ? <Text style={styles.inboxPreview}>{preview}</Text> : <View style={{ flex: 1 }} />}
+                    <Text style={styles.inboxChip}>
+                      {msgCount === 1
+                        ? 'رسالة واحدة'
+                        : msgCount === 2
+                          ? 'رسالتان'
+                          : msgCount <= 10
+                            ? `${msgCount} رسائل`
+                            : `${msgCount} رسالة`}
+                    </Text>
+                    <Text style={styles.inboxChevron}>{open ? '▴' : '▾'}</Text>
+                  </View>
+                </Pressable>
+                {open
+                  ? msgs.map((m) => {
+                      const textMsg = String(m.message || m.full_text || m.label || '').trim();
+                      if (!textMsg) return null;
+                      const sender = senderLabel(m.sender_name || '');
+                      return (
+                        <View key={m.id} style={styles.inboxMsgRow}>
+                          <Text style={styles.inboxSender}>{sender}</Text>
+                          <Text style={styles.inboxSep}> · </Text>
+                          <Text style={styles.inboxMsg}>{textMsg}</Text>
+                        </View>
+                      );
+                    })
+                  : null}
+              </View>
+              );
+            })
+          )}
+        </SectionCard>
+      ) : null}
 
       {status.text ? (
         <View style={[styles.status, status.kind === 'error' ? styles.errorStatus : styles.successStatus]}>
@@ -288,6 +417,122 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
 }
 
 const styles = StyleSheet.create({
+  inboxCard: {
+    marginTop: spacing.sm,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(37, 92, 77, 0.16)',
+    backgroundColor: colors.primarySoft,
+    overflow: 'hidden',
+  },
+  inboxToggle: {
+    width: '100%',
+  },
+  inboxMeta: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  inboxPreview: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  inboxChip: {
+    color: '#92400E',
+    fontSize: 11.5,
+    fontWeight: '800',
+    paddingVertical: 3,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: colors.accentSoft,
+  },
+  inboxChevron: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  inboxTop: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  inboxBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    backgroundColor: colors.primary,
+  },
+  inboxBadgeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: colors.accent,
+  },
+  inboxBadgeText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
+  inboxLine: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  inboxVerb: {
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  inboxOccasion: {
+    color: colors.primaryDark,
+    fontWeight: '900',
+  },
+  inboxMsgRow: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    gap: 4,
+    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(180, 134, 69, 0.28)',
+    backgroundColor: colors.accentSoft,
+  },
+  inboxSender: {
+    color: colors.primaryDark,
+    fontWeight: '900',
+    fontSize: 14,
+    writingDirection: 'rtl',
+  },
+  inboxSep: {
+    color: colors.accent,
+    fontWeight: '800',
+  },
+  inboxMsg: {
+    color: colors.text,
+    fontSize: typography.caption + 1,
+    lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    flexShrink: 1,
+  },
   input: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: 16,

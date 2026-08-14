@@ -31,12 +31,49 @@ function normalizeTickerText(value: string) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function tickerPrefixForType(typeKey: string) {
+  const key = String(typeKey || '').trim().toLowerCase();
+  if (key === 'death' || key === 'condolence') return '🕊️';
+  if (
+    key === 'sick' ||
+    key === 'operation' ||
+    key === 'healing' ||
+    key === 'discharge' ||
+    key === 'safety'
+  ) {
+    return '❤️';
+  }
+  if (
+    key === 'wedding' ||
+    key === 'contract' ||
+    key === 'graduation' ||
+    key === 'aqiqa' ||
+    key === 'feast' ||
+    key === 'gathering' ||
+    key === 'family_meetup' ||
+    key === 'promotion' ||
+    key === 'retirement' ||
+    key === 'dinner' ||
+    key === 'lunch' ||
+    key === 'general'
+  ) {
+    return '📅';
+  }
+  return '🎉';
+}
+
 export function formatEventTickerItem(event: FamilyEvent) {
   // Keep full wording for the marquee; do not soft-truncate mid-word.
   const detail = String(event.details || '').replace(/\s+/g, ' ').trim();
-  return [event.title, event.person, detail, event.date ? `— ${event.date}` : '']
-    .filter(Boolean)
-    .join(' — ');
+  const typeKey = String(event.type || '').trim().toLowerCase();
+  const prefix = tickerPrefixForType(typeKey);
+  const isUpcoming = prefix === '📅';
+  const core = isUpcoming
+    ? [event.title, event.person, detail, event.date ? event.date : '']
+        .filter(Boolean)
+        .join(' — ')
+    : [event.title, event.person, detail].filter(Boolean).join(' — ');
+  return core ? `${prefix} ${core}` : '';
 }
 
 function createdAtMs(event: FamilyEvent) {

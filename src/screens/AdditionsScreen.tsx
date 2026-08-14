@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
+import { PhoneField } from '../components/PhoneField';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
@@ -9,12 +10,19 @@ import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegate
 import { rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { insertPublicRow } from '../services/supabase';
 import {
-  MOBILE_EVENT_TYPES,
+  MOBILE_EVENT_FAMILIES,
   buildMobileEventRequestMessage,
   findMobileEventType,
+  listMobileEventTypesByFamily,
   validateEventFacts,
+  type MobileEventFamily,
 } from '../utils/eventRequestMessage';
 import { buildTreeCardMessage, treeCardRequestId } from '../utils/treeCardMessage';
+import {
+  DEFAULT_PHONE_COUNTRY_ID,
+  isValidPhone,
+  toE164,
+} from '../utils/phone';
 import { colors, spacing, typography } from '../theme';
 import type { Branch } from '../types';
 
@@ -30,19 +38,10 @@ type RequestStatus = {
   text: string;
 };
 
-const eventTypes = MOBILE_EVENT_TYPES;
-
 function requestId(prefix: string) {
   const stamp = Date.now().toString(36).toUpperCase();
   const random = Math.random().toString(36).slice(2, 6).toUpperCase();
   return `${prefix}-${stamp}-${random}`;
-}
-
-function cleanPhone(value: string) {
-  return String(value || '')
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632))
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
-    .replace(/[^\d+]/g, '');
 }
 
 function buildCorrectionMessage(payload: {
@@ -92,12 +91,12 @@ function buildCorrectionMessage(payload: {
 export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreenProps) {
   const defaultBranch = branches[0]?.id ?? 'زيدان';
   const [branch, setBranch] = useState(defaultBranch);
-  const [eventType, setEventType] = useState(eventTypes[0].key);
+  const [eventFamily, setEventFamily] = useState<MobileEventFamily>('news');
+  const [eventType, setEventType] = useState(() => listMobileEventTypesByFamily('news')[0]?.key || 'birth');
   const [eventPerson, setEventPerson] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [eventPlace, setEventPlace] = useState('');
   const [eventHospitalDept, setEventHospitalDept] = useState('');
-  const [eventContactPhone, setEventContactPhone] = useState('');
   const [eventPrayerPlace, setEventPrayerPlace] = useState('');
   const [eventPrayerTime, setEventPrayerTime] = useState('');
   const [eventBurialPlace, setEventBurialPlace] = useState('');
@@ -114,17 +113,25 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
   const [personCity, setPersonCity] = useState('');
   const [personArea, setPersonArea] = useState('');
   const [submitterName, setSubmitterName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phoneCountryId, setPhoneCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
+  const [phoneNational, setPhoneNational] = useState('');
+  const [contactCountryId, setContactCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
+  const [contactNational, setContactNational] = useState('');
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<RequestStatus>({ kind: 'idle', text: '' });
   const [submitting, setSubmitting] = useState(false);
 
+  const typesForFamily = useMemo(() => listMobileEventTypesByFamily(eventFamily), [eventFamily]);
   const selectedEventType = useMemo(() => findMobileEventType(eventType), [eventType]);
+
+  const submitterPhoneE164 = () => toE164(phoneCountryId, phoneNational);
+  const contactPhoneE164 = () =>
+    contactNational.trim() ? toE164(contactCountryId, contactNational) : '';
 
   const validateSubmitter = () => {
     if (!branch.trim()) return 'اختر الفرع حتى يصل الطلب لمندوب الفرع الصحيح.';
     if (!submitterName.trim()) return 'اكتب اسم المرسل.';
-    if (cleanPhone(phone).length < 9) return 'اكتب رقم جوال صحيح.';
+    if (!isValidPhone(phoneCountryId, phoneNational)) return 'اكتب رقم جوال صحيح مع اختيار الدولة.';
     if (email.trim() && (!email.includes('@') || !email.includes('.'))) {
       return 'البريد الإلكتروني غير صحيح أو اتركه فارغًا.';
     }
@@ -161,7 +168,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         place: eventPlace.trim(),
         hospitalName: eventPlace.trim(),
         hospitalDept: eventHospitalDept.trim(),
-        contactPhone: eventContactPhone.trim(),
+        contactPhone: contactPhoneE164(),
         prayerPlace: eventPrayerPlace.trim(),
         prayerTime: eventPrayerTime.trim(),
         burialPlace: eventBurialPlace.trim(),
@@ -172,7 +179,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         pickedImageName: '',
         pickedVideoName: '',
         submitterName: submitterName.trim(),
-        submitterPhone: cleanPhone(phone),
+        submitterPhone: submitterPhoneE164(),
         requestId: reqId,
         createdAt,
       });
@@ -182,7 +189,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         kind: 'event_card',
         branch_key: branch,
         name: submitterName.trim(),
-        phone: cleanPhone(phone),
+        phone: submitterPhoneE164(),
         email: email.trim() || null,
         message,
         status: 'pending',
@@ -194,16 +201,16 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         branch_key: branch,
         status: 'pending',
         name: submitterName.trim(),
-        phone: cleanPhone(phone),
+        phone: submitterPhoneE164(),
       });
-      await rememberPushPhone(cleanPhone(phone));
+      await rememberPushPhone(submitterPhoneE164());
       registerPushToken('event_submit').catch(() => {});
 
       setEventPerson('');
       setEventDate('');
       setEventPlace('');
       setEventHospitalDept('');
-      setEventContactPhone('');
+      setContactNational('');
       setEventPrayerPlace('');
       setEventPrayerTime('');
       setEventBurialPlace('');
@@ -264,7 +271,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         requestId: reqId,
         submitterEmail: email.trim(),
         submitterName: submitterName.trim(),
-        submitterPhone: cleanPhone(phone),
+        submitterPhone: submitterPhoneE164(),
       });
 
       await insertPublicRow('approval_requests', {
@@ -272,7 +279,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         kind: 'tree_card',
         branch_key: branch,
         name: submitterName.trim(),
-        phone: cleanPhone(phone),
+        phone: submitterPhoneE164(),
         email: email.trim() || null,
         message,
         status: 'pending',
@@ -284,9 +291,9 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         branch_key: branch,
         status: 'pending',
         name: submitterName.trim(),
-        phone: cleanPhone(phone),
+        phone: submitterPhoneE164(),
       });
-      await rememberPushPhone(cleanPhone(phone));
+      await rememberPushPhone(submitterPhoneE164());
       registerPushToken('request_submit').catch(() => {});
       await appendTrackedRequest({
         requestId: reqId,
@@ -294,7 +301,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         status: 'pending',
         createdAt,
         person: name,
-        phone: cleanPhone(phone),
+        phone: submitterPhoneE164(),
       });
 
       setGrandfather('');
@@ -332,7 +339,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
     try {
       const createdAt = new Date().toISOString();
       const reqId = requestId('TED');
-      const submitterPhone = cleanPhone(phone);
+      const submitterPhone = submitterPhoneE164();
       const message = buildCorrectionMessage({
         requestId: reqId,
         branch,
@@ -422,14 +429,12 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
           textAlign="right"
           value={submitterName}
         />
-        <TextInput
-          keyboardType="phone-pad"
-          onChangeText={setPhone}
-          placeholder="رقم الجوال"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          textAlign="right"
-          value={phone}
+        <PhoneField
+          countryId={phoneCountryId}
+          national={phoneNational}
+          onCountryChange={setPhoneCountryId}
+          onNationalChange={setPhoneNational}
+          hint="اختر الدولة ثم اكتب الرقم المحلي فقط."
         />
         <TextInput
           autoCapitalize="none"
@@ -542,7 +547,26 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         }
       >
         <View style={styles.branchPicker}>
-          {eventTypes.map((item) => {
+          {MOBILE_EVENT_FAMILIES.map((item) => {
+            const active = item.key === eventFamily;
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() => {
+                  setEventFamily(item.key);
+                  const next = listMobileEventTypesByFamily(item.key)[0];
+                  if (next) setEventType(next.key);
+                }}
+                style={[styles.chip, active && styles.activeChip]}
+              >
+                <Text style={[styles.chipText, active && styles.activeChipText]}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.fieldLabel}>النوع</Text>
+        <View style={styles.branchPicker}>
+          {typesForFamily.map((item) => {
             const active = item.key === eventType;
             return (
               <Pressable
@@ -567,10 +591,14 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
           onChangeText={setEventDate}
           placeholder={
             selectedEventType.family === 'death'
-              ? 'تاريخ الوفاة — مثال: 2026-08-12'
+              ? 'تاريخ الوفاة (اختياري) — مثال: 2026-08-12'
               : selectedEventType.family === 'health'
-                ? 'تاريخ الحالة — مثال: 2026-08-12'
-                : 'تاريخ المناسبة — مثال: 2026-08-12'
+                ? 'تاريخ الحالة (اختياري) — مثال: 2026-08-12'
+                : selectedEventType.family === 'news'
+                  ? 'التاريخ اختياري للخبر'
+                  : selectedEventType.requiresDate
+                    ? 'تاريخ المناسبة — مثال: 2026-08-12'
+                    : 'التاريخ اختياري'
           }
           placeholderTextColor={colors.textMuted}
           style={styles.input}
@@ -595,14 +623,12 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
               textAlign="right"
               value={eventHospitalDept}
             />
-            <TextInput
-              keyboardType="phone-pad"
-              onChangeText={setEventContactPhone}
-              placeholder="جوال للتواصل اختياري"
-              placeholderTextColor={colors.textMuted}
-              style={styles.input}
-              textAlign="right"
-              value={eventContactPhone}
+            <PhoneField
+              label="جوال للتواصل (اختياري)"
+              countryId={contactCountryId}
+              national={contactNational}
+              onCountryChange={setContactCountryId}
+              onNationalChange={setContactNational}
             />
           </>
         ) : null}
@@ -642,10 +668,14 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
             />
           </>
         ) : null}
-        {selectedEventType.family === 'happy' ? (
+        {selectedEventType.family === 'occasion' && selectedEventType.mode !== 'notice' ? (
           <TextInput
             onChangeText={setEventPlace}
-            placeholder="المكان اختياري (قاعة أو مدينة)"
+            placeholder={
+              selectedEventType.requiresPlace
+                ? 'المكان (مطلوب)'
+                : 'المكان اختياري (قاعة أو مدينة)'
+            }
             placeholderTextColor={colors.textMuted}
             style={styles.input}
             textAlign="right"
@@ -655,7 +685,13 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           multiline
           onChangeText={setEventText}
-          placeholder={selectedEventType.family === 'happy' ? 'نص المناسبة' : 'ملاحظات اختياري'}
+          placeholder={
+            (selectedEventType.family === 'news' || selectedEventType.family === 'occasion')
+              ? selectedEventType.mode === 'notice'
+                ? 'نص التهنئة أو الخبر'
+                : 'نص المناسبة'
+              : 'ملاحظات اختياري'
+          }
           placeholderTextColor={colors.textMuted}
           style={[styles.input, styles.textArea]}
           textAlign="right"
@@ -669,7 +705,9 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
                 ? 'إرسال إعلان الوفاة'
                 : selectedEventType.family === 'health'
                   ? 'إرسال الحالة الصحية'
-                  : 'إرسال المناسبة'
+                  : selectedEventType.mode === 'notice'
+                    ? 'إرسال التهنئة / الخبر'
+                    : 'إرسال المناسبة'
           }
           onPress={submitEvent}
         />

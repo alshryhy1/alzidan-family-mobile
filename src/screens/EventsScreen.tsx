@@ -8,6 +8,7 @@ import { Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 're
 
 import { ActionButton } from '../components/ActionButton';
 import { DataState } from '../components/DataState';
+import { PhoneField } from '../components/PhoneField';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
@@ -17,12 +18,25 @@ import { insertPublicRow, selectPublicRows, uploadPublicFileUri } from '../servi
 import { colors, spacing, typography } from '../theme';
 import type { Branch, FamilyEvent } from '../types';
 import {
-  MOBILE_EVENT_TYPES,
+  MOBILE_EVENT_FAMILIES,
   buildMobileEventRequestMessage,
+  eventAllowsMedia,
   findMobileEventType,
+  listMobileEventTypesByFamily,
   validateEventFacts,
+  type MobileEventFamily,
 } from '../utils/eventRequestMessage';
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
+import { OccasionInteractCard } from '../components/OccasionInteractCard';
+import {
+  DEFAULT_PHONE_COUNTRY_ID,
+  canonicalizePhone,
+  e164Digits,
+  isValidPhone,
+  memberProfilePhoneQuery,
+  parsePhoneToParts,
+  toE164,
+} from '../utils/phone';
 
 type Filter = 'all' | FamilyEvent['category'];
 
@@ -56,8 +70,6 @@ const categoryColor: Record<FamilyEvent['category'], string> = {
   health: colors.health,
   condolence: colors.condolence,
 };
-
-const eventTypes = MOBILE_EVENT_TYPES;
 
 function requestId() {
   return `EVAPP-${Date.now().toString(36).toUpperCase()}-${Math.random()
@@ -94,20 +106,6 @@ async function uploadPickedAsset(asset: ImagePicker.ImagePickerAsset, requestIdV
   return uploadPublicFileUri('event-media', path, uploadUri, contentType);
 }
 
-function normalizeArabicDigits(value: string) {
-  const arabicZero = '٠'.charCodeAt(0);
-  const persianZero = '۰'.charCodeAt(0);
-  return value.replace(/[٠-٩۰-۹]/g, (digit) => {
-    const code = digit.charCodeAt(0);
-    const normalized = code >= persianZero ? code - persianZero : code - arabicZero;
-    return String(normalized);
-  });
-}
-
-function cleanPhone(value: string) {
-  return normalizeArabicDigits(value).replace(/[^\d+]/g, '');
-}
-
 function compactNameFromPath(value: string) {
   const parts = String(value || '')
     .split('/')
@@ -119,17 +117,8 @@ function compactNameFromPath(value: string) {
   return uniqueOrdered.join(' بن ');
 }
 
-function normalizeSaudiPhone(phone: string) {
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.startsWith('966')) return `+${digits}`;
-  if (digits.startsWith('0')) return `+966${digits.slice(1)}`;
-  if (digits.length === 9 && digits.startsWith('5')) return `+966${digits}`;
-  return `+${digits}`;
-}
-
 function whatsappUrl(phone: string, event: FamilyEvent) {
-  const normalized = normalizeSaudiPhone(phone).replace('+', '');
+  const normalized = e164Digits(canonicalizePhone(phone) || phone);
   const message =
     event.category === 'condolence'
       ? 'عظم الله أجركم وأحسن عزاءكم'
@@ -171,6 +160,13 @@ function eventDetailRows(event: FamilyEvent) {
   ].filter((row): row is { label: string; value: string } => Boolean(row));
 }
 
+function stripMarkdownNoise(value?: string | null) {
+  return String(value || '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function EventVideo({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = false;
@@ -191,12 +187,14 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const [filter, setFilter] = useState<Filter>('all');
   const [addOpen, setAddOpen] = useState(false);
   const [addBranch, setAddBranch] = useState(branches[0]?.id ?? 'زيدان');
-  const [addType, setAddType] = useState(eventTypes[0].key);
+  const [addFamily, setAddFamily] = useState<MobileEventFamily>('news');
+  const [addType, setAddType] = useState(() => listMobileEventTypesByFamily('news')[0]?.key || 'birth');
   const [addPerson, setAddPerson] = useState('');
   const [addDate, setAddDate] = useState('');
   const [addPlace, setAddPlace] = useState('');
   const [addHospitalDept, setAddHospitalDept] = useState('');
-  const [addContactPhone, setAddContactPhone] = useState('');
+  const [contactCountryId, setContactCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
+  const [contactNational, setContactNational] = useState('');
   const [addPrayerPlace, setAddPrayerPlace] = useState('');
   const [addPrayerTime, setAddPrayerTime] = useState('');
   const [addBurialPlace, setAddBurialPlace] = useState('');
@@ -206,7 +204,8 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const [pickedVideo, setPickedVideo] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [addText, setAddText] = useState('');
   const [submitterName, setSubmitterName] = useState('');
-  const [submitterPhone, setSubmitterPhone] = useState('');
+  const [phoneCountryId, setPhoneCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
+  const [phoneNational, setPhoneNational] = useState('');
   const [submitStatus, setSubmitStatus] = useState<{ kind: 'idle' | 'success' | 'error'; text: string }>({
     kind: 'idle',
     text: '',
@@ -217,23 +216,29 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const happyCount = events.filter((event) => event.category === 'happy').length;
   const healthCount = events.filter((event) => event.category === 'health').length;
   const condolenceCount = events.filter((event) => event.category === 'condolence').length;
+  const typesForFamily = listMobileEventTypesByFamily(addFamily);
   const selectedType = findMobileEventType(addType);
+  const allowsMedia = eventAllowsMedia(selectedType.key);
 
   useEffect(() => {
     let alive = true;
 
     AsyncStorage.getItem(MEMBER_PHONE_KEY)
       .then(async (stored) => {
-        const cleaned = cleanPhone(stored || '');
+        const cleaned = canonicalizePhone(stored || '');
         if (!cleaned) return;
 
         if (alive) {
-          setSubmitterPhone((current) => (current.trim() ? current : cleaned));
+          setPhoneNational((current) => {
+            if (current.trim()) return current;
+            const parts = parsePhoneToParts(cleaned);
+            setPhoneCountryId(parts.countryId);
+            return parts.national;
+          });
         }
 
-        const rows = await selectPublicRows<MemberProfileRow>(
-          `member_profiles?select=phone,branch_key,tree_child_id,display_name,status&phone=eq.${encodeURIComponent(cleaned)}&status=eq.active&limit=1`,
-        );
+        const query = memberProfilePhoneQuery(cleaned);
+        const rows = query ? await selectPublicRows<MemberProfileRow>(query) : [];
         const found = rows[0];
         if (!found) return;
 
@@ -309,13 +314,17 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   };
 
   const submitEventRequest = async () => {
-    const phone = cleanPhone(submitterPhone);
+    const phone = toE164(phoneCountryId, phoneNational);
     if (!addBranch.trim()) {
       setSubmitStatus({ kind: 'error', text: 'اختر الفرع حتى يصل الطلب لمندوب الفرع الصحيح.' });
       return;
     }
-    if (!submitterName.trim() || phone.length < 9) {
-      setSubmitStatus({ kind: 'error', text: 'اكتب اسم المرسل ورقم جوال صحيح.' });
+    if (!submitterName.trim() || !isValidPhone(phoneCountryId, phoneNational)) {
+      setSubmitStatus({ kind: 'error', text: 'اكتب اسم المرسل ورقم جوال صحيح مع اختيار الدولة.' });
+      return;
+    }
+    if (contactNational.trim() && !isValidPhone(contactCountryId, contactNational)) {
+      setSubmitStatus({ kind: 'error', text: 'رقم جوال التواصل غير صحيح.' });
       return;
     }
     const factsError = validateEventFacts({
@@ -328,11 +337,11 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
       setSubmitStatus({ kind: 'error', text: factsError });
       return;
     }
-    if (selectedType.family === 'happy' && addImageUrl.trim() && !/^https?:\/\//i.test(addImageUrl.trim())) {
+    if (allowsMedia && addImageUrl.trim() && !/^https?:\/\//i.test(addImageUrl.trim())) {
       setSubmitStatus({ kind: 'error', text: 'رابط الصورة يجب أن يبدأ بـ http أو https.' });
       return;
     }
-    if (selectedType.family === 'happy' && addVideoUrl.trim() && !/^https?:\/\//i.test(addVideoUrl.trim())) {
+    if (allowsMedia && addVideoUrl.trim() && !/^https?:\/\//i.test(addVideoUrl.trim())) {
       setSubmitStatus({ kind: 'error', text: 'رابط الفيديو يجب أن يبدأ بـ http أو https.' });
       return;
     }
@@ -342,15 +351,16 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
       const createdAt = new Date().toISOString();
       const requestIdValue = requestId();
       const uploadedImageUrl =
-        selectedType.family === 'happy' && pickedImage
+        allowsMedia && pickedImage
           ? await uploadPickedAsset(pickedImage, requestIdValue, 'image')
           : '';
       const uploadedVideoUrl =
-        selectedType.family === 'happy' && pickedVideo
+        allowsMedia && pickedVideo
           ? await uploadPickedAsset(pickedVideo, requestIdValue, 'video')
           : '';
-      const finalImageUrl = selectedType.family === 'happy' ? uploadedImageUrl || addImageUrl.trim() : '';
-      const finalVideoUrl = selectedType.family === 'happy' ? uploadedVideoUrl || addVideoUrl.trim() : '';
+      const finalImageUrl = allowsMedia ? uploadedImageUrl || addImageUrl.trim() : '';
+      const finalVideoUrl = allowsMedia ? uploadedVideoUrl || addVideoUrl.trim() : '';
+      const contactPhone = contactNational.trim() ? toE164(contactCountryId, contactNational) : '';
       const message = buildMobileEventRequestMessage({
         branch: addBranch,
         type: selectedType.key,
@@ -360,7 +370,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
         place: addPlace.trim(),
         hospitalName: addPlace.trim(),
         hospitalDept: addHospitalDept.trim(),
-        contactPhone: addContactPhone.trim(),
+        contactPhone,
         prayerPlace: addPrayerPlace.trim(),
         prayerTime: addPrayerTime.trim(),
         burialPlace: addBurialPlace.trim(),
@@ -410,7 +420,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
       setAddDate('');
       setAddPlace('');
       setAddHospitalDept('');
-      setAddContactPhone('');
+      setContactNational('');
       setAddPrayerPlace('');
       setAddPrayerTime('');
       setAddBurialPlace('');
@@ -517,15 +527,17 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
               </View>
               {event.person ? <Text style={styles.person}>{event.person}</Text> : null}
               {event.imageUrl ? (
-                <Image
-                  resizeMode="cover"
-                  source={{ uri: event.imageUrl }}
-                  style={styles.eventImage}
-                />
+                <View style={styles.eventImageFrame}>
+                  <Image
+                    resizeMode="contain"
+                    source={{ uri: event.imageUrl }}
+                    style={styles.eventImage}
+                  />
+                </View>
               ) : null}
               {event.details ? (
                 <Text numberOfLines={4} style={styles.details}>
-                  {event.details}
+                  {stripMarkdownNoise(event.details)}
                 </Text>
               ) : null}
               {event.videoUrl ? <EventVideo uri={event.videoUrl} /> : null}
@@ -542,7 +554,9 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
               {event.contactPhone ? (
                 <View style={styles.actions}>
                   <Pressable
-                    onPress={() => Linking.openURL(`tel:${normalizeSaudiPhone(event.contactPhone ?? '')}`)}
+                    onPress={() =>
+                      Linking.openURL(`tel:${canonicalizePhone(event.contactPhone ?? '') || event.contactPhone}`)
+                    }
                     style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
                   >
                     <Text style={styles.actionText}>اتصال</Text>
@@ -560,6 +574,11 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 </View>
               ) : null}
               {event.branch ? <Text style={styles.branch}>{event.branch}</Text> : null}
+              <OccasionInteractCard
+                occasionId={Number(event.id)}
+                eventType={String(event.type || '')}
+                person={event.person}
+              />
               </View>
             </View>
           ))
@@ -606,9 +625,30 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 );
               })}
             </View>
-            <Text style={styles.fieldLabel}>نوع المناسبة</Text>
+            <Text style={styles.fieldLabel}>العائلة</Text>
             <View style={styles.branchPicker}>
-              {eventTypes.map((item) => {
+              {MOBILE_EVENT_FAMILIES.map((item) => {
+                const active = item.key === addFamily;
+                return (
+                  <Pressable
+                    key={item.key}
+                    onPress={() => {
+                      setAddFamily(item.key);
+                      const next = listMobileEventTypesByFamily(item.key)[0];
+                      if (next) setAddType(next.key);
+                    }}
+                    style={[styles.formChip, active && styles.activeFormChip]}
+                  >
+                    <Text style={[styles.formChipText, active && styles.activeFormChipText]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.fieldLabel}>النوع</Text>
+            <View style={styles.branchPicker}>
+              {typesForFamily.map((item) => {
                 const active = item.key === addType;
                 return (
                   <Pressable
@@ -635,10 +675,14 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
               onChangeText={setAddDate}
               placeholder={
                 selectedType.family === 'death'
-                  ? 'تاريخ الوفاة — مثال: 2026-08-12'
+                  ? 'تاريخ الوفاة (اختياري) — مثال: 2026-08-12'
                   : selectedType.family === 'health'
-                    ? 'تاريخ الحالة — مثال: 2026-08-12'
-                    : 'تاريخ المناسبة — مثال: 2026-08-12'
+                    ? 'تاريخ الحالة (اختياري) — مثال: 2026-08-12'
+                    : selectedType.family === 'news'
+                      ? 'التاريخ اختياري للخبر'
+                      : selectedType.requiresDate
+                        ? 'تاريخ المناسبة — مثال: 2026-08-12'
+                        : 'التاريخ اختياري'
               }
               placeholderTextColor={colors.textMuted}
               style={styles.input}
@@ -663,14 +707,12 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                   textAlign="right"
                   value={addHospitalDept}
                 />
-                <TextInput
-                  keyboardType="phone-pad"
-                  onChangeText={setAddContactPhone}
-                  placeholder="جوال للتواصل اختياري"
-                  placeholderTextColor={colors.textMuted}
-                  style={styles.input}
-                  textAlign="right"
-                  value={addContactPhone}
+                <PhoneField
+                  label="جوال للتواصل (اختياري)"
+                  countryId={contactCountryId}
+                  national={contactNational}
+                  onCountryChange={setContactCountryId}
+                  onNationalChange={setContactNational}
                 />
               </>
             ) : null}
@@ -710,16 +752,22 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 />
               </>
             ) : null}
-            {selectedType.family === 'happy' ? (
+            {allowsMedia ? (
               <>
-                <TextInput
-                  onChangeText={setAddPlace}
-                  placeholder="المكان اختياري (قاعة أو مدينة)"
-                  placeholderTextColor={colors.textMuted}
-                  style={styles.input}
-                  textAlign="right"
-                  value={addPlace}
-                />
+                {selectedType.family === 'occasion' ? (
+                  <TextInput
+                    onChangeText={setAddPlace}
+                    placeholder={
+                      selectedType.requiresPlace
+                        ? 'المكان (مطلوب)'
+                        : 'المكان اختياري (قاعة أو مدينة)'
+                    }
+                    placeholderTextColor={colors.textMuted}
+                    style={styles.input}
+                    textAlign="right"
+                    value={addPlace}
+                  />
+                ) : null}
                 <TextInput
                   onChangeText={setAddImageUrl}
                   placeholder="رابط صورة اختياري أو اختر من الجهاز"
@@ -792,7 +840,11 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
               multiline
               onChangeText={setAddText}
               placeholder={
-                selectedType.family === 'happy' ? 'نص المناسبة' : 'ملاحظات اختياري'
+                allowsMedia
+                  ? selectedType.mode === 'notice'
+                    ? 'نص التهنئة أو الخبر'
+                    : 'نص المناسبة'
+                  : 'ملاحظات اختياري'
               }
               placeholderTextColor={colors.textMuted}
               style={[styles.input, styles.textArea]}
@@ -804,23 +856,21 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 ? `سيراجع الطلب مندوب فرع ${addBranch}.`
                 : 'اختر الفرع قبل الإرسال.'}
             </Text>
-            <View style={styles.submitterRow}>
+            <View style={styles.submitterCol}>
               <TextInput
                 onChangeText={setSubmitterName}
                 placeholder="اسم المرسل"
                 placeholderTextColor={colors.textMuted}
-                style={[styles.input, styles.submitterInput]}
+                style={styles.input}
                 textAlign="right"
                 value={submitterName}
               />
-              <TextInput
-                keyboardType="phone-pad"
-                onChangeText={setSubmitterPhone}
-                placeholder="الجوال"
-                placeholderTextColor={colors.textMuted}
-                style={[styles.input, styles.submitterInput]}
-                textAlign="right"
-                value={submitterPhone}
+              <PhoneField
+                countryId={phoneCountryId}
+                national={phoneNational}
+                onCountryChange={setPhoneCountryId}
+                onNationalChange={setPhoneNational}
+                hint="اختر الدولة ثم اكتب الرقم المحلي فقط."
               />
             </View>
             <ActionButton
@@ -831,14 +881,16 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                     ? 'إرسال إعلان الوفاة'
                     : selectedType.family === 'health'
                       ? 'إرسال الحالة الصحية'
-                      : 'إرسال المناسبة'
+                      : selectedType.mode === 'notice'
+                        ? 'إرسال التهنئة / الخبر'
+                        : 'إرسال المناسبة'
               }
               onPress={submitEventRequest}
             />
           </>
         ) : (
           <Text style={styles.addHint}>
-            اختر النوع أولًا: فرح، مريض، أو وفاة. الحقول تتغير حسب الاختصاص.
+            اختر النوع: تهنئة/خبر (بدون موعد حفل)، مناسبة أو دعوة، حالة صحية، أو وفاة.
           </Text>
         )}
 
@@ -1037,6 +1089,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     writingDirection: 'rtl',
   },
+  submitterCol: {
+    gap: spacing.sm,
+  },
   submitterRow: {
     flexDirection: 'row-reverse',
     gap: spacing.sm,
@@ -1120,10 +1175,15 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-  eventImage: {
+  eventImageFrame: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: 16,
-    height: 210,
+    overflow: 'hidden',
+    width: '100%',
+    aspectRatio: 1,
+  },
+  eventImage: {
+    height: '100%',
     width: '100%',
   },
   details: {

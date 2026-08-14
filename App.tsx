@@ -41,13 +41,14 @@ import { trackAppView } from './src/services/viewTracking';
 import { colors, spacing, typography } from './src/theme';
 import type { MemberRequest, PublicScreen } from './src/types';
 import { isFamilyEventPubliclyVisible } from './src/utils/eventVisibility';
+import { canonicalizePhone, memberProfilePhoneQuery } from './src/utils/phone';
 
 I18nManager.allowRTL(true);
 
 const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
 
 function cleanStoredPhone(value: string) {
-  return String(value || '').replace(/[^\d]/g, '');
+  return canonicalizePhone(value);
 }
 
 function tripleNameFromPath(value: string) {
@@ -143,7 +144,7 @@ async function fetchTickerSpeedSeconds() {
 }
 
 const tabs: Array<{ key: PublicScreen; label: string; icon: string }> = [
-  { key: 'home', label: 'الرئيسية', icon: '⌂' },
+  { key: 'home', label: 'نبض', icon: '⌂' },
   { key: 'branches', label: 'الفروع', icon: '⌘' },
   { key: 'tree', label: 'الشجرة', icon: '♧' },
   { key: 'events', label: 'المناسبات', icon: '◇' },
@@ -179,6 +180,7 @@ export default function App() {
   const [focusedTreeChildId, setFocusedTreeChildId] = useState<number | null>(null);
   const [additionsIntent, setAdditionsIntent] = useState<'person' | 'correction'>('person');
   const [memberGreeting, setMemberGreeting] = useState<string | null>(null);
+  const [memberBranchKey, setMemberBranchKey] = useState<string | null>(null);
   const [memberPhoneForRequests, setMemberPhoneForRequests] = useState('');
   const [memberRequests, setMemberRequests] = useState<MemberRequest[]>([]);
   const [specialCards, setSpecialCards] = useState<SpecialCard[]>([]);
@@ -257,18 +259,19 @@ export default function App() {
         if (!phone) {
           if (alive) {
             setMemberGreeting(null);
+            setMemberBranchKey(null);
             setMemberPhoneForRequests('');
           }
           return;
         }
 
-        const rows = await selectPublicRows<MemberProfileRow>(
-          `member_profiles?select=phone,branch_key,tree_child_id,display_name,status&phone=eq.${encodeURIComponent(phone)}&status=eq.active&limit=1`,
-        );
+        const query = memberProfilePhoneQuery(phone);
+        const rows = query ? await selectPublicRows<MemberProfileRow>(query) : [];
         const profile = rows[0];
         if (!profile) {
           if (alive) {
             setMemberGreeting(null);
+            setMemberBranchKey(null);
             setMemberPhoneForRequests('');
           }
           return;
@@ -278,6 +281,7 @@ export default function App() {
         const name = child?.name ? tripleNameFromPath(child.name) : profile.display_name || null;
         if (alive) {
           setMemberGreeting(name);
+          setMemberBranchKey(profile.branch_key || null);
           setMemberPhoneForRequests(phone);
         }
         rememberPushPhone(phone)
@@ -287,6 +291,7 @@ export default function App() {
       .catch(() => {
         if (alive) {
           setMemberGreeting(null);
+          setMemberBranchKey(null);
           setMemberPhoneForRequests('');
         }
       });
@@ -481,6 +486,7 @@ export default function App() {
               setMemberPhoneForRequests(cleaned);
               if (!cleaned) {
                 setMemberGreeting(null);
+          setMemberBranchKey(null);
                 setMemberRequests([]);
               }
             }}
@@ -495,28 +501,13 @@ export default function App() {
       default:
         return (
           <HomeScreen
-            branchesCount={publicData.branches.length}
             error={publicData.error}
-            latestEvent={activeEvents[0] ?? null}
             latestEvents={activeEvents}
-            upcomingEvents={activeEvents}
-            bannerMessages={bannerMessages
-              .map((item) => String(item.message || '').trim())
-              .filter(Boolean)
-              .map((message) => (message.startsWith('خبر عام') ? message : `خبر عام — ${message}`))}
-            specialCardTickerItems={specialCardTickerItems}
-            tickerSpeedSeconds={tickerSpeedSeconds}
             memberGreeting={memberGreeting}
-            memberRequests={memberRequests}
+            memberBranchKey={memberBranchKey}
             loading={publicData.loading}
-            membersCount={publicData.branches.reduce((sum, branch) => sum + branch.membersCount, 0)}
-            onOpenEvents={() => setScreen('events')}
-            onOpenProfile={() => setScreen('profile')}
-            onOpenAdditions={(intent) => {
-              setAdditionsIntent(intent);
-              setScreen('additions');
-            }}
             onRetry={reloadPublished}
+            onOpenEvents={() => setScreen('events')}
           />
         );
     }
@@ -528,13 +519,15 @@ export default function App() {
         <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
           <StatusBar style="dark" />
           <View style={styles.app}>
-            <View style={styles.header}>
-              <View style={styles.brandMark}>
-                <Text style={styles.brandLetter}>ز</Text>
+            <View style={[styles.header, screen === 'home' && styles.headerCompact]}>
+              <View style={[styles.brandMark, screen === 'home' && styles.brandMarkCompact]}>
+                <Text style={[styles.brandLetter, screen === 'home' && styles.brandLetterCompact]}>ز</Text>
               </View>
               <View style={styles.headerText}>
-                <Text style={styles.title}>عائلة الزيدان</Text>
-                <Text style={styles.subtitle}>صلة، توثيق، ومشاركة</Text>
+                <Text style={[styles.title, screen === 'home' && styles.titleCompact]}>عائلة الزيدان</Text>
+                {screen === 'home' ? null : (
+                  <Text style={styles.subtitle}>صلة، توثيق، ومشاركة</Text>
+                )}
               </View>
             </View>
 
@@ -603,6 +596,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+  headerCompact: {
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
   brandMark: {
     alignItems: 'center',
     backgroundColor: colors.primary,
@@ -611,10 +608,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 48,
   },
+  brandMarkCompact: {
+    borderRadius: 12,
+    height: 32,
+    width: 32,
+  },
   brandLetter: {
     color: colors.surface,
     fontSize: 25,
     fontWeight: '800',
+  },
+  brandLetterCompact: {
+    fontSize: 16,
   },
   headerText: {
     flex: 1,
@@ -625,6 +630,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
+  },
+  titleCompact: {
+    fontSize: typography.body,
+    fontWeight: '700',
+    opacity: 0.72,
   },
   subtitle: {
     color: colors.textMuted,

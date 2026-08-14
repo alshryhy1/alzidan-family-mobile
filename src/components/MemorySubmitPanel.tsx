@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from './ActionButton';
+import { PhoneField } from './PhoneField';
 import { SectionCard } from './SectionCard';
 import {
   prepareImagePickerAsset,
@@ -10,8 +11,10 @@ import {
   type MemoryPickedFile,
   type MemoryUiKind,
 } from '../services/memorySubmit';
+import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
 import { colors, spacing, typography } from '../theme';
 import type { Branch } from '../types';
+import { DEFAULT_PHONE_COUNTRY_ID, isValidPhone, toE164 } from '../utils/phone';
 
 const memoryTypes = [
   { key: 'image', label: 'صورة' },
@@ -26,16 +29,6 @@ type MemorySubmitPanelProps = {
   defaultBranch?: string;
 };
 
-function normalizeDigits(value: string) {
-  return String(value || '')
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632))
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776));
-}
-
-function cleanPhone(value: string) {
-  return normalizeDigits(value).replace(/[^\d]/g, '');
-}
-
 export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanelProps) {
   const [branch, setBranch] = useState(defaultBranch ?? branches[0]?.id ?? 'زيدان');
   const [memoryType, setMemoryType] = useState<(typeof memoryTypes)[number]['key']>('image');
@@ -47,7 +40,8 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
   const [memoryDate, setMemoryDate] = useState('');
   const [memoryYear, setMemoryYear] = useState('');
   const [submitterName, setSubmitterName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phoneCountryId, setPhoneCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
+  const [phoneNational, setPhoneNational] = useState('');
   const [pickedMemoryFile, setPickedMemoryFile] = useState<MemoryPickedFile | null>(null);
   const [pickingMemoryFile, setPickingMemoryFile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -120,14 +114,15 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
       setStatus({ kind: 'error', text: 'اكتب اسم المرسل.' });
       return;
     }
-    if (cleanPhone(phone).length < 9) {
-      setStatus({ kind: 'error', text: 'اكتب رقم جوال صحيح (9 أرقام على الأقل).' });
+    if (!isValidPhone(phoneCountryId, phoneNational)) {
+      setStatus({ kind: 'error', text: 'اكتب رقم جوال صحيح مع اختيار الدولة.' });
       return;
     }
 
     setSubmitting(true);
     try {
-      await submitMemoryItem({
+      const phone = toE164(phoneCountryId, phoneNational);
+      const result = await submitMemoryItem({
         branchKey: branch,
         uiKind: memoryType,
         personName: memoryPerson.trim(),
@@ -139,8 +134,17 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         memoryYear: memoryYear.trim(),
         pickedFile: pickedMemoryFile,
         submittedByName: submitterName.trim(),
-        submittedByPhone: cleanPhone(phone),
+        submittedByPhone: phone,
         submittedByRelation: 'تطبيق الجوال',
+      });
+
+      await notifyBranchDelegatesOfRequest({
+        request_id: String(result?.requestId || result?.id || `MEM-${Date.now()}`),
+        kind: 'memory_card',
+        branch_key: branch,
+        status: 'pending',
+        name: memoryPerson.trim() || memoryTitle.trim(),
+        phone,
       });
 
       setMemoryPerson('');
@@ -151,7 +155,10 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
       setMemoryDate('');
       setMemoryYear('');
       setPickedMemoryFile(null);
-      setStatus({ kind: 'success', text: 'تم رفع الذكرى للمراجعة قبل النشر.' });
+      setStatus({
+        kind: 'success',
+        text: 'تم رفع الذكرى للمراجعة في «الذكريات» لدى الإدارة قبل النشر.',
+      });
     } catch (error) {
       setStatus({
         kind: 'error',
@@ -208,14 +215,13 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
           textAlign="right"
           value={submitterName}
         />
-        <TextInput
-          keyboardType="phone-pad"
-          onChangeText={setPhone}
-          placeholder="جوال المرسل * (عربي أو إنجليزي)"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          textAlign="right"
-          value={phone}
+        <PhoneField
+          countryId={phoneCountryId}
+          national={phoneNational}
+          onCountryChange={setPhoneCountryId}
+          onNationalChange={setPhoneNational}
+          label="جوال المرسل"
+          hint="اختر الدولة ثم اكتب الرقم المحلي فقط."
         />
         <TextInput
           onChangeText={setMemoryPerson}

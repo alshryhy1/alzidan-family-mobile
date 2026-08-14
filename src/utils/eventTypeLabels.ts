@@ -1,28 +1,33 @@
-const ARABIC_LABELS: Record<string, string> = {
-  birth: 'عقيقة مولود',
-  marriage: 'زواج',
-  engagement: 'خطوبة',
-  contract: 'عقد قران',
-  graduation: 'حفل تخرج',
-  promotion: 'حفل ترقية',
-  success: 'نجاح / تفوق',
-  new_house: 'منزل جديد',
-  travel: 'سفر',
-  gathering: 'اجتماع عائلي',
-  meeting: 'اجتماع عائلي',
-  sick: 'مريض',
-  operation: 'عملية',
-  discharge: 'خروج من المستشفى',
-  death: 'وفاة',
-  general: 'مناسبة عامة',
-  happy: 'فرح',
-  other: 'أخرى',
-};
+import { MOBILE_EVENT_TYPES } from './eventRequestMessage';
+
+const ARABIC_LABELS: Record<string, string> = Object.fromEntries(
+  MOBILE_EVENT_TYPES.map((item) => [item.key, item.label]),
+);
+
+// Legacy display-only
+ARABIC_LABELS.engagement = 'خطوبة';
+ARABIC_LABELS.congratulation = 'خبر عائلي';
+ARABIC_LABELS.invitation = 'دعوة عشاء';
+ARABIC_LABELS.travel = 'خبر عائلي';
+ARABIC_LABELS.happy = 'خبر عائلي';
+ARABIC_LABELS.other = 'مناسبة عامة';
+ARABIC_LABELS.meeting = 'اجتماع عائلي';
+
+const NOTICE_TYPES = new Set(
+  MOBILE_EVENT_TYPES.filter((item) => item.mode === 'notice').map((item) => item.key),
+);
 
 export function eventTypeArabicLabel(type?: string | null) {
   const key = String(type || '')
     .trim()
     .toLowerCase();
-  if (!key) return 'مناسبة عائلية';
-  return ARABIC_LABELS[key] || 'مناسبة عائلية';
+  if (!key) return 'خبر عائلي';
+  return ARABIC_LABELS[key] || 'خبر عائلي';
+}
+
+export function isNoticeEventType(type?: string | null) {
+  const key = String(type || '')
+    .trim()
+    .toLowerCase();
+  return NOTICE_TYPES.has(key);
 }

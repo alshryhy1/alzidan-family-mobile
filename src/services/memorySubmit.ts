@@ -1,7 +1,8 @@
 import * as ImageManipulator from 'expo-image-manipulator';
 import type { ImagePickerAsset } from 'expo-image-picker';
 
-import { uploadPublicFileUri } from './supabase';
+import { canonicalizePhone, isValidStoredPhone } from '../utils/phone';
+import { uploadPublicFileUri, insertPublicRow } from './supabase';
 
 export type MemoryUiKind = 'image' | 'video' | 'audio' | 'story' | 'document';
 
@@ -42,14 +43,8 @@ function cleanText(value: string) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function normalizeDigits(value: string) {
-  return String(value || '')
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632))
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776));
-}
-
 function cleanPhone(value: string) {
-  return normalizeDigits(value).replace(/[^\d]/g, '');
+  return canonicalizePhone(value);
 }
 
 function requiresFile(kind: MemoryUiKind) {
@@ -94,7 +89,7 @@ export function validateMemorySubmit(input: MemorySubmitInput) {
   if (!cleanText(input.personName)) return 'اسم الشخص مطلوب.';
   if (!cleanText(input.title)) return 'عنوان الذكرى مطلوب.';
   if (!cleanText(input.submittedByName)) return 'اسم المرسل مطلوب.';
-  if (cleanPhone(input.submittedByPhone).length < 9) return 'رقم جوال صحيح مطلوب (9 أرقام على الأقل).';
+  if (!isValidStoredPhone(input.submittedByPhone)) return 'رقم جوال صحيح مطلوب مع رمز الدولة.';
   if (input.uiKind === 'story' && !cleanText(input.storyText ?? '')) return 'نص القصة مطلوب.';
   if (requiresFile(input.uiKind) && !input.pickedFile) {
     if (input.uiKind === 'image') return 'اختر صورة للرفع.';
@@ -209,5 +204,37 @@ export async function submitMemoryItem(input: MemorySubmitInput) {
     : [];
 
   const id = await callMemorySubmitRpc(item, mediaPayload);
-  return { ok: true as const, id };
+
+  // جسر لطلبات المندوب — طابور الفرع يقرأ approval_requests فقط.
+  const requestIdForDelegate = requestId;
+  try {
+    await insertPublicRow('approval_requests', {
+      request_id: requestIdForDelegate,
+      kind: 'memory_card',
+      branch_key: cleanText(input.branchKey),
+      name: cleanText(input.personName) || cleanText(input.title),
+      phone: cleanPhone(input.submittedByPhone),
+      email: null,
+      status: 'pending',
+      message: [
+        'طلب: ذكرى',
+        `العنوان: ${cleanText(input.title)}`,
+        `الشخص: ${cleanText(input.personName)}`,
+        `الفرع: ${cleanText(input.branchKey)}`,
+        `المرسل: ${cleanText(input.submittedByName)}`,
+        `الجوال: ${cleanPhone(input.submittedByPhone)}`,
+        `__JSON__:${JSON.stringify({
+          memory_id: id,
+          title: cleanText(input.title),
+          person_name: cleanText(input.personName),
+          memory_kind: memoryKind,
+          branch_key: cleanText(input.branchKey),
+        })}`,
+      ].join('\n'),
+    });
+  } catch {
+    // لا نلغي الذكرى إن فشل الجسر — الإدارة ما زالت تراها في الذكريات.
+  }
+
+  return { ok: true as const, id, requestId: requestIdForDelegate };
 }

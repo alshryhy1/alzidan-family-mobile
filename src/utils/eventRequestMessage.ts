@@ -1,4 +1,5 @@
-export type EventFamily = 'happy' | 'health' | 'death';
+export type EventFamily = 'news' | 'health' | 'death' | 'occasion';
+export type MobileEventFamily = EventFamily;
 
 export type MobileEventType = {
   key: string;
@@ -6,28 +7,97 @@ export type MobileEventType = {
   adminTypeLabel: string;
   family: EventFamily;
   personLabel: string;
+  /** notice = تهنئة/خبر/صحة/وفاة؛ occasion = مناسبة بموعد */
+  mode: 'notice' | 'occasion';
+  requiresDate?: boolean;
+  requiresTime?: boolean;
+  requiresPlace?: boolean;
 };
 
+export const EVENT_FAMILIES: { key: EventFamily; label: string }[] = [
+  { key: 'news', label: 'تهاني وأخبار' },
+  { key: 'health', label: 'صحة وعافية' },
+  { key: 'death', label: 'وفاة وتعزية' },
+  { key: 'occasion', label: 'مناسبات ودعوات' },
+];
+
+export const MOBILE_EVENT_FAMILIES = EVENT_FAMILIES;
+
+/** كتالوج موحّد مع الويب — بدون جدول Supabase. */
 export const MOBILE_EVENT_TYPES: MobileEventType[] = [
-  { key: 'birth', label: 'عقيقة مولود', adminTypeLabel: 'مولود', family: 'happy', personLabel: 'اسم المولود' },
-  { key: 'marriage', label: 'زواج', adminTypeLabel: 'زواج', family: 'happy', personLabel: 'اسم العريس' },
-  { key: 'graduation', label: 'حفل تخرج', adminTypeLabel: 'تخرج', family: 'happy', personLabel: 'اسم الخريج' },
-  { key: 'promotion', label: 'حفل ترقية', adminTypeLabel: 'ترقية', family: 'happy', personLabel: 'اسم صاحب الترقية' },
-  { key: 'new_house', label: 'منزل جديد', adminTypeLabel: 'منزل جديد', family: 'happy', personLabel: 'اسم صاحب المنزل' },
-  { key: 'gathering', label: 'اجتماع عائلي', adminTypeLabel: 'اجتماع', family: 'happy', personLabel: 'اسم الداعي' },
-  { key: 'general', label: 'مناسبة عامة', adminTypeLabel: 'مناسبة عامة', family: 'happy', personLabel: 'اسم صاحب المناسبة' },
-  { key: 'sick', label: 'مريض', adminTypeLabel: 'مريض', family: 'health', personLabel: 'اسم المريض' },
-  { key: 'operation', label: 'عملية', adminTypeLabel: 'عملية', family: 'health', personLabel: 'اسم المريض' },
-  { key: 'discharge', label: 'خروج من المستشفى', adminTypeLabel: 'خروج من المستشفى', family: 'health', personLabel: 'اسم المريض' },
-  { key: 'death', label: 'وفاة', adminTypeLabel: 'وفاة', family: 'death', personLabel: 'اسم المتوفى' },
+  // تهاني وأخبار
+  { key: 'promotion_notice', label: 'ترقية', adminTypeLabel: 'ترقية', family: 'news', personLabel: 'اسم المُهنَّأ', mode: 'notice' },
+  { key: 'graduation_notice', label: 'تخرج', adminTypeLabel: 'تخرج', family: 'news', personLabel: 'اسم الخريج', mode: 'notice' },
+  { key: 'success', label: 'نجاح', adminTypeLabel: 'نجاح', family: 'news', personLabel: 'اسم المُهنَّأ', mode: 'notice' },
+  { key: 'marriage', label: 'زواج', adminTypeLabel: 'زواج', family: 'news', personLabel: 'اسم العريس/العروسين', mode: 'notice' },
+  { key: 'birth', label: 'مولود جديد', adminTypeLabel: 'مولود جديد', family: 'news', personLabel: 'اسم المولود أو الأب', mode: 'notice' },
+  { key: 'achievement', label: 'تكريم وإنجاز', adminTypeLabel: 'تكريم وإنجاز', family: 'news', personLabel: 'اسم صاحب الإنجاز', mode: 'notice' },
+  { key: 'appointment', label: 'تعيين / منصب', adminTypeLabel: 'تعيين / منصب', family: 'news', personLabel: 'اسم المعيَّن', mode: 'notice' },
+  { key: 'retirement_notice', label: 'تقاعد', adminTypeLabel: 'تقاعد', family: 'news', personLabel: 'اسم المتقاعد', mode: 'notice' },
+  { key: 'certification', label: 'شهادة / اعتماد', adminTypeLabel: 'شهادة / اعتماد', family: 'news', personLabel: 'اسم الحاصل على الشهادة', mode: 'notice' },
+  { key: 'new_house', label: 'منزل جديد', adminTypeLabel: 'منزل جديد', family: 'news', personLabel: 'اسم صاحب المنزل', mode: 'notice' },
+  { key: 'family_news', label: 'خبر عائلي', adminTypeLabel: 'خبر عائلي', family: 'news', personLabel: 'الاسم المرتبط بالخبر', mode: 'notice' },
+
+  // صحة
+  { key: 'sick', label: 'مريض', adminTypeLabel: 'مريض', family: 'health', personLabel: 'اسم المريض', mode: 'notice' },
+  { key: 'operation', label: 'عملية', adminTypeLabel: 'عملية', family: 'health', personLabel: 'اسم المريض', mode: 'notice' },
+  { key: 'healing', label: 'شفاء', adminTypeLabel: 'شفاء', family: 'health', personLabel: 'اسم المتعافي', mode: 'notice' },
+  { key: 'discharge', label: 'خروج من المستشفى', adminTypeLabel: 'خروج من المستشفى', family: 'health', personLabel: 'اسم المريض', mode: 'notice' },
+  { key: 'safety', label: 'سلامة', adminTypeLabel: 'سلامة', family: 'health', personLabel: 'اسم الشخص', mode: 'notice' },
+
+  // وفاة وتعزية
+  { key: 'death', label: 'إعلان وفاة', adminTypeLabel: 'إعلان وفاة', family: 'death', personLabel: 'اسم المتوفى', mode: 'notice' },
+  { key: 'condolence', label: 'تعزية', adminTypeLabel: 'تعزية', family: 'death', personLabel: 'اسم المتوفى / أهل الفقيد', mode: 'notice' },
+
+  // مناسبات ودعوات
+  { key: 'wedding', label: 'حفل زواج', adminTypeLabel: 'حفل زواج', family: 'occasion', personLabel: 'اسم العريس', mode: 'occasion', requiresDate: true, requiresTime: true, requiresPlace: true },
+  { key: 'contract', label: 'عقد قران', adminTypeLabel: 'عقد قران', family: 'occasion', personLabel: 'اسم العريس', mode: 'occasion', requiresDate: true, requiresPlace: true },
+  { key: 'graduation', label: 'حفل تخرج', adminTypeLabel: 'حفل تخرج', family: 'occasion', personLabel: 'اسم الخريج', mode: 'occasion', requiresDate: true },
+  { key: 'aqiqa', label: 'عقيقة', adminTypeLabel: 'عقيقة', family: 'occasion', personLabel: 'اسم المولود / الأب', mode: 'occasion', requiresDate: true },
+  { key: 'feast', label: 'وليمة', adminTypeLabel: 'وليمة', family: 'occasion', personLabel: 'اسم الداعي', mode: 'occasion', requiresDate: true, requiresTime: true },
+  { key: 'gathering', label: 'اجتماع عائلي', adminTypeLabel: 'اجتماع عائلي', family: 'occasion', personLabel: 'اسم الداعي', mode: 'occasion', requiresDate: true, requiresTime: true },
+  { key: 'family_meetup', label: 'لقاء عائلي', adminTypeLabel: 'لقاء عائلي', family: 'occasion', personLabel: 'اسم الداعي', mode: 'occasion', requiresDate: true, requiresTime: true },
+  { key: 'promotion', label: 'حفل ترقية', adminTypeLabel: 'حفل ترقية', family: 'occasion', personLabel: 'اسم صاحب الحفل', mode: 'occasion', requiresDate: true, requiresPlace: true },
+  { key: 'retirement', label: 'حفل تقاعد', adminTypeLabel: 'حفل تقاعد', family: 'occasion', personLabel: 'اسم المتقاعد', mode: 'occasion', requiresDate: true },
+  { key: 'dinner', label: 'دعوة عشاء', adminTypeLabel: 'دعوة عشاء', family: 'occasion', personLabel: 'اسم الداعي', mode: 'occasion', requiresDate: true, requiresTime: true },
+  { key: 'lunch', label: 'دعوة غداء', adminTypeLabel: 'دعوة غداء', family: 'occasion', personLabel: 'اسم الداعي', mode: 'occasion', requiresDate: true, requiresTime: true },
+  { key: 'general', label: 'مناسبة عامة', adminTypeLabel: 'مناسبة عامة', family: 'occasion', personLabel: 'اسم صاحب المناسبة', mode: 'occasion', requiresDate: true },
 ];
 
 export function findMobileEventType(key: string) {
   return MOBILE_EVENT_TYPES.find((item) => item.key === key) ?? MOBILE_EVENT_TYPES[0];
 }
 
+export function listMobileEventTypesByFamily(family: EventFamily) {
+  return MOBILE_EVENT_TYPES.filter((item) => item.family === family);
+}
+
 export function eventFamilyOf(type: string): EventFamily {
   return findMobileEventType(type).family;
+}
+
+export function isNoticeEventType(type: string) {
+  return findMobileEventType(type).mode === 'notice';
+}
+
+export function eventRequiresDate(type: string) {
+  const meta = findMobileEventType(type);
+  if (meta.requiresDate != null) return !!meta.requiresDate;
+  return meta.mode === 'occasion';
+}
+
+export function eventRequiresPlace(type: string) {
+  return !!findMobileEventType(type).requiresPlace;
+}
+
+export function eventRequiresTime(type: string) {
+  return !!findMobileEventType(type).requiresTime;
+}
+
+/** محتوى إعلامي يسمح بصورة/فيديو (تهاني + مناسبات). */
+export function eventAllowsMedia(type: string) {
+  const family = eventFamilyOf(type);
+  return family === 'news' || family === 'occasion';
 }
 
 type EventRequestFacts = {
@@ -92,21 +162,24 @@ export function validateEventFacts(input: {
   type: string;
   person: string;
   dateLabel: string;
+  place?: string;
   text: string;
 }) {
   const family = eventFamilyOf(input.type);
+  const notice = isNoticeEventType(input.type);
   if (!input.person.trim()) {
-    if (family === 'death') return 'اكتب اسم المتوفى.';
+    if (family === 'death') return 'اكتب اسم المتوفى أو أهل الفقيد.';
     if (family === 'health') return 'اكتب اسم المريض.';
     return 'اكتب الاسم المطلوب لهذا النوع.';
   }
-  if (!input.dateLabel.trim()) {
-    if (family === 'death') return 'تاريخ الوفاة مطلوب. بدونه لا يُحدد وقت الظهور.';
-    if (family === 'health') return 'تاريخ الحالة مطلوب. بدونه لا يُحدد وقت الظهور.';
-    return 'تاريخ المناسبة مطلوب. بدونه لا يُحدد وقت الظهور.';
+  if (eventRequiresDate(input.type) && !input.dateLabel.trim()) {
+    return 'تاريخ المناسبة مطلوب.';
   }
-  if (family === 'happy' && !input.text.trim()) {
-    return 'اكتب نص المناسبة.';
+  if (eventRequiresPlace(input.type) && !String(input.place || '').trim()) {
+    return 'المكان مطلوب لهذا النوع.';
+  }
+  if ((family === 'news' || family === 'occasion') && !input.text.trim()) {
+    return notice ? 'اكتب نص التهنئة أو الخبر.' : 'اكتب نص المناسبة.';
   }
   return '';
 }
@@ -114,6 +187,7 @@ export function validateEventFacts(input: {
 export function buildMobileEventRequestMessage(input: EventRequestFacts) {
   const family = eventFamilyOf(input.type);
   const typeMeta = findMobileEventType(input.type);
+  const notice = typeMeta.mode === 'notice';
   const person = input.person.trim();
   const dateLabel = input.dateLabel.trim();
   const place = input.place.trim();
@@ -125,9 +199,15 @@ export function buildMobileEventRequestMessage(input: EventRequestFacts) {
   const lines: string[] = [];
 
   if (family === 'death') {
-    lines.push('طلب نشر إعلان وفاة في تطبيق عائلة الزيدان');
+    lines.push(
+      typeMeta.key === 'condolence'
+        ? 'طلب نشر تعزية في تطبيق عائلة الزيدان'
+        : 'طلب نشر إعلان وفاة في تطبيق عائلة الزيدان',
+    );
   } else if (family === 'health') {
-    lines.push('طلب نشر حالة مرضية في تطبيق عائلة الزيدان');
+    lines.push('طلب نشر خبر صحي في تطبيق عائلة الزيدان');
+  } else if (notice) {
+    lines.push('طلب نشر تهنئة / خبر عائلي في تطبيق عائلة الزيدان');
   } else {
     lines.push('طلب نشر مناسبة في تطبيق عائلة الزيدان');
   }
@@ -135,28 +215,22 @@ export function buildMobileEventRequestMessage(input: EventRequestFacts) {
   lines.push(`رقم الطلب: ${input.requestId}`);
   lines.push(`الفرع: ${input.branch}`);
   lines.push(`النوع: ${typeMeta.adminTypeLabel}`);
+  if (notice) lines.push('التصنيف: خبر/تهنئة (بدون اشتراط موعد حفل)');
 
   if (family === 'death') {
-    lines.push(`اسم المتوفى: ${person}`);
-    lines.push(`صاحب المناسبة: ${person}`);
+    lines.push(`الاسم: ${person}`);
   } else if (family === 'health') {
-    lines.push(`نوع الحالة: ${typeMeta.adminTypeLabel}`);
     lines.push(`اسم المريض: ${person}`);
-    lines.push(`صاحب المناسبة: ${person}`);
   } else {
-    lines.push(`نوع المناسبة: ${typeMeta.adminTypeLabel}`);
-    lines.push(`${typeMeta.personLabel}: ${person}`);
-    lines.push(`صاحب المناسبة: ${person}`);
+    lines.push(`الاسم: ${person}`);
   }
 
   if (dateLabel) lines.push(`التاريخ: ${dateLabel}`);
-
   if (family === 'health') {
     if (hospitalName) lines.push(`المستشفى / المكان: ${hospitalName}`);
     if (hospitalDept) lines.push(`القسم: ${hospitalDept}`);
-    if (input.contactPhone.trim()) lines.push(`جوال التواصل: ${input.contactPhone.trim()}`);
   } else if (family === 'death') {
-    if (condolencePlace) lines.push(`موقع العزاء: ${condolencePlace}`);
+    if (condolencePlace) lines.push(`مكان العزاء: ${condolencePlace}`);
     if (input.prayerPlace.trim()) lines.push(`مكان الصلاة: ${input.prayerPlace.trim()}`);
     if (input.prayerTime.trim()) lines.push(`وقت الصلاة: ${input.prayerTime.trim()}`);
     if (input.burialPlace.trim()) lines.push(`مكان الدفن: ${input.burialPlace.trim()}`);
@@ -164,76 +238,55 @@ export function buildMobileEventRequestMessage(input: EventRequestFacts) {
     lines.push(`المكان: ${place}`);
   }
 
-  if (family === 'happy') {
-    if (input.imageUrl) lines.push(`رابط الصورة: ${input.imageUrl}`);
-    if (input.videoUrl) lines.push(`رابط الفيديو: ${input.videoUrl}`);
-    if (input.pickedImageName) lines.push(`صورة مختارة من التطبيق: ${input.pickedImageName}`);
-    if (input.pickedVideoName) lines.push(`فيديو مختار من التطبيق: ${input.pickedVideoName}`);
+  if (notes) {
+    lines.push('');
+    lines.push(notice ? 'نص التهنئة / الخبر:' : 'النص:');
+    lines.push(notes);
   }
 
-  lines.push(family === 'happy' ? `النص: ${notes}` : `الملاحظات: ${notes}`);
-  lines.push(`المرسل: ${input.submitterName}`);
-  lines.push(`الجوال: ${input.submitterPhone}`);
-
-  const details =
-    family === 'death'
-      ? {
-          v: 1,
-          kind: 'death_notice',
-          requestId: input.requestId,
-          notes,
-          condolencePlace,
-          prayerPlace: input.prayerPlace.trim(),
-          prayerTime: input.prayerTime.trim(),
-          burialPlace: input.burialPlace.trim(),
-          phones: input.contactPhone.trim() ? [input.contactPhone.trim()] : [],
-          showDays: 7,
-        }
-      : family === 'health'
-        ? {
-            v: 1,
-            kind: 'health_notice',
-            requestId: input.requestId,
-            notes,
-            hospitalName,
-            hospitalDept,
-            showDays: 7,
-          }
-        : {
-            v: 1,
-            kind: 'happy_notice',
-            requestId: input.requestId,
-            text: notes,
-            imageUrl: input.imageUrl,
-            videoUrl: input.videoUrl,
-            place,
-            showDays: 7,
-          };
-
-  const envelope = {
-    v: 1,
-    kind: 'event_card',
-    source: 'mobile_app',
-    event: {
-      type: input.type,
-      typeLabel: typeMeta.adminTypeLabel,
-      branch_key: input.branch,
-      person,
-      date_label: dateLabel,
-      event_date: eventDateIso,
-      created_at: input.createdAt,
-      hospital_name: family === 'health' ? hospitalName : '',
-      hospital_dept: family === 'health' ? hospitalDept : '',
-      contact_phone: input.contactPhone.trim() || input.submitterPhone,
-      details,
-    },
-    submitter: {
-      name: input.submitterName,
-      phone: input.submitterPhone,
-    },
-  };
-
+  lines.push('');
+  lines.push('بيانات المرسل:');
+  lines.push(`الاسم: ${input.submitterName.trim()}`);
+  lines.push(`الجوال: ${input.submitterPhone.trim()}`);
+  lines.push(`التاريخ: ${new Date(input.createdAt).toLocaleString('ar-SA')}`);
+  lines.push('');
   lines.push('__JSON__:');
-  lines.push(JSON.stringify(envelope));
-  return lines.filter((line, index) => line || index === 0).join('\n');
+  lines.push(
+    JSON.stringify({
+      v: 1,
+      kind:
+        family === 'death'
+          ? 'death_notice'
+          : family === 'health'
+            ? 'health_notice'
+            : notice
+              ? 'family_notice'
+              : 'happy_notice',
+      mode: typeMeta.mode,
+      family,
+      type: typeMeta.key,
+      typeLabel: typeMeta.adminTypeLabel,
+      person,
+      date_label: dateLabel || null,
+      event_date: eventDateIso || null,
+      place: place || null,
+      hospital_name: hospitalName || null,
+      hospital_dept: hospitalDept || null,
+      prayer_place: input.prayerPlace.trim() || null,
+      prayer_time: input.prayerTime.trim() || null,
+      burial_place: input.burialPlace.trim() || null,
+      condolence_place: condolencePlace || null,
+      text: notes,
+      image_url: input.imageUrl.trim() || null,
+      video_url: input.videoUrl.trim() || null,
+      contact_phone: input.contactPhone.trim() || null,
+      submitter_name: input.submitterName.trim(),
+      submitter_phone: input.submitterPhone.trim(),
+      request_id: input.requestId,
+      created_at: input.createdAt,
+      showDays: 7,
+    }),
+  );
+
+  return lines.join('\n');
 }

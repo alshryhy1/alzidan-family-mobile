@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { MemberRequest } from '../types';
+import { canonicalizePhone, e164Digits } from '../utils/phone';
 import { callPublicRpc } from './supabase';
 
 const TRACK_KEY_PREFIX = 'alzidan_rx_my_requests_v1';
@@ -22,7 +23,9 @@ function text(value: unknown) {
 }
 
 function cleanPhone(value: unknown) {
-  return text(value).replace(/[^\d]/g, '');
+  const raw = text(value);
+  const e164 = canonicalizePhone(raw);
+  return e164Digits(e164 || raw);
 }
 
 function trackIdKey(value: string) {
