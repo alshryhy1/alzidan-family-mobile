@@ -67,6 +67,7 @@ export function buildTreeCardMessage(payload: TreeCardMessagePayload) {
       {
         v: 1,
         kind: 'tree_card',
+        schema: 'tree_card.v1',
         branch_key: payload.branch,
         grandfather: payload.grandfather,
         ancestors: payload.ancestors,

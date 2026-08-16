@@ -15,6 +15,7 @@ import { colors, spacing, typography } from '../theme';
 type Props = {
   visible: boolean;
   uri: string;
+  /** Optional a11y label only — never shown as overlay chrome. */
   caption?: string;
   onClose: () => void;
 };
@@ -26,8 +27,15 @@ export function ImageViewerModal({ visible, uri, caption, onClose }: Props) {
   if (!uri) return null;
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
-      <View style={styles.backdrop}>
+    <Modal
+      animationType="fade"
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      transparent
+      visible={visible}
+    >
+      <View style={[styles.backdrop, { paddingBottom: insets.bottom }]}>
         <Pressable
           accessibilityLabel="إغلاق عارض الصورة"
           accessibilityRole="button"
@@ -55,14 +63,12 @@ export function ImageViewerModal({ visible, uri, caption, onClose }: Props) {
             showsVerticalScrollIndicator={false}
           >
             <Image
-              accessibilityLabel={caption || 'صورة من الذاكرة'}
+              accessibilityLabel={caption || 'بطاقة التهنئة'}
               resizeMode="contain"
               source={{ uri }}
-              style={{ width: width - spacing.md * 2, height: height * 0.72 }}
+              style={{ width: width - spacing.md * 2, height: height * 0.82 }}
             />
           </ScrollView>
-
-          {caption ? <Text style={styles.caption}>{caption}</Text> : null}
         </View>
       </View>
     </Modal>
@@ -102,14 +108,5 @@ const styles = StyleSheet.create({
     fontSize: typography.title,
     fontWeight: '700',
     lineHeight: 22,
-  },
-  caption: {
-    color: colors.white,
-    fontSize: typography.body,
-    lineHeight: 24,
-    marginTop: spacing.sm,
-    opacity: 0.88,
-    textAlign: 'right',
-    writingDirection: 'rtl',
   },
 });

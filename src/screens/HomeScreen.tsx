@@ -1,22 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DataState } from '../components/DataState';
 import { ImageViewerModal } from '../components/ImageViewerModal';
 import { Screen } from '../components/Screen';
 import { colors, spacing, typography } from '../theme';
-import type { FamilyEvent } from '../types';
+import type { FamilyEvent, TreeChild } from '../types';
 import { eventTypeArabicLabel } from '../utils/eventTypeLabels';
 import { isFamilyEventPubliclyVisible } from '../utils/eventVisibility';
 
 type HomeScreenProps = {
   memberGreeting?: string | null;
   memberBranchKey?: string | null;
+  /** Loaded tree children — presence marks use the member's branch only. */
+  branchChildren?: TreeChild[];
   error: string | null;
   latestEvents?: FamilyEvent[];
   loading: boolean;
   onRetry: () => void;
   onOpenEvents?: () => void;
+  onOpenFamilyLab?: () => void;
 };
 
 function stripMarkdownNoise(value?: string | null) {
@@ -40,6 +43,27 @@ function personShortName(person?: string | null) {
     .filter((w) => w !== 'بن' && w !== 'ابن' && w !== 'بنت');
   if (tokens.length >= 2) return `${tokens[0]} ${tokens[1]}`;
   return tokens[0] || '';
+}
+
+function normalizePersonKey(value?: string | null) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function samePerson(a?: string | null, b?: string | null) {
+  const left = normalizePersonKey(a);
+  const right = normalizePersonKey(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const leftFirst = firstNameOnly(left);
+  const rightFirst = firstNameOnly(right);
+  if (leftFirst.length >= 2 && leftFirst === rightFirst) {
+    // Soft match only when one name is a prefix of the other (مزيد / مزيد خميس).
+    return left.startsWith(right) || right.startsWith(left);
+  }
+  return left.includes(right) || right.includes(left);
 }
 
 function timestampOf(value?: string) {
@@ -80,6 +104,72 @@ function aboutMember(event: FamilyEvent, memberGreeting?: string | null) {
   return person.includes(memberFirst) && memberFirst.length >= 2;
 }
 
+function sameBranchAsMember(event: FamilyEvent, branchKeyNorm: string) {
+  if (!branchKeyNorm) return false;
+  return String(event.branch || '')
+    .trim()
+    .toLowerCase()
+    .includes(branchKeyNorm);
+}
+
+/** Soft kinship line — only when a real signal exists. Never invent. */
+function kinshipHint(
+  event: FamilyEvent,
+  memberGreeting?: string | null,
+  branchKeyNorm?: string,
+) {
+  if (aboutMember(event, memberGreeting)) return 'لحظتك';
+  if (branchKeyNorm && sameBranchAsMember(event, branchKeyNorm)) return 'من أهلك';
+  return '';
+}
+
+const PRESENCE_MAX = 5;
+const PRESENCE_MIN_OTHERS = 2;
+
+/**
+ * Quiet presence marks from real branch people.
+ * Returns lit index + count, or null when data is insufficient (no fake row).
+ */
+function buildPresenceMarks(input: {
+  branchKey: string | null | undefined;
+  momentPerson: string;
+  memberGreeting?: string | null;
+  children: TreeChild[];
+}): { count: number; litIndex: number } | null {
+  const key = String(input.branchKey || '')
+    .trim()
+    .toLowerCase();
+  if (!key || !input.momentPerson.trim()) return null;
+
+  const inBranch = input.children.filter(
+    (row) =>
+      String(row.branchKey || '')
+        .trim()
+        .toLowerCase() === key && String(row.name || '').trim(),
+  );
+
+  const unique: TreeChild[] = [];
+  for (const row of inBranch) {
+    if (unique.some((u) => samePerson(u.name, row.name))) continue;
+    unique.push(row);
+  }
+
+  const others = unique.filter(
+    (row) =>
+      !samePerson(row.name, input.momentPerson) &&
+      !samePerson(row.name, input.memberGreeting),
+  );
+
+  if (others.length < PRESENCE_MIN_OTHERS) return null;
+
+  const slots = Math.min(PRESENCE_MAX, others.length + 1);
+  const otherSlots = slots - 1;
+  const pickedOthers = others.slice(0, otherSlots);
+  // Lit mark near the middle — moment person; Hassan never appears here.
+  const litIndex = Math.min(Math.floor(slots / 2), pickedOthers.length);
+  return { count: pickedOthers.length + 1, litIndex };
+}
+
 /**
  * Presentation rule (no schema): family_events.imageUrl is a greeting/poster
  * attachment on Pulse — never the Hero. Attachment must not outrank kinship.
@@ -87,14 +177,20 @@ function aboutMember(event: FamilyEvent, memberGreeting?: string | null) {
 export function HomeScreen({
   memberGreeting,
   memberBranchKey,
+  branchChildren = [],
   error,
   latestEvents = [],
   loading,
   onRetry,
   onOpenEvents,
+  onOpenFamilyLab,
 }: HomeScreenProps) {
   const [posterOpen, setPosterOpen] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
+
+  // TEMP: Pulse case B — hide attachment so we judge place without media.
+  // Flip to false after the user verdict (do not ship).
+  const FORCE_PULSE_CASE_B = true;
 
   const publicEvents = useMemo(
     () =>
@@ -126,15 +222,9 @@ export function HomeScreen({
 
   const rankedMoments = useMemo(() => {
     const scored = publicEvents.filter(isUsableMoment).map((event) => {
-      const sameBranch =
-        !!branchKeyNorm &&
-        String(event.branch || '')
-          .trim()
-          .toLowerCase()
-          .includes(branchKeyNorm);
+      const sameBranch = sameBranchAsMember(event, branchKeyNorm);
       const aboutYou = aboutMember(event, memberGreeting);
       const happyBoost = event.category === 'happy' ? 1 : 0;
-      // You → kinship → (soft) happy → newest. Image never boosts rank.
       const score = (aboutYou ? 8 : 0) + (sameBranch ? 4 : 0) + happyBoost;
       return { event, score, created: timestampOf(event.createdAt) };
     });
@@ -154,24 +244,39 @@ export function HomeScreen({
 
   const moment =
     rankedMoments.find((event) => event.id === focusId) ?? rankedMoments[0] ?? null;
-  const others = rankedMoments.filter((event) => event.id !== moment?.id);
+  const otherMoments = rankedMoments.filter((event) => event.id !== moment?.id);
   const totalMoments = rankedMoments.length;
 
   const greetingFirst = firstNameOnly(memberGreeting) || 'بك';
   const heroPerson = moment ? personShortName(moment.person) || moment.person : '';
   const heroBlessing = moment ? blessingLine(moment) : '';
-  const posterUrl = String(moment?.imageUrl || '').trim();
+  const posterUrl = FORCE_PULSE_CASE_B
+    ? ''
+    : String(moment?.imageUrl || '').trim();
+  const kinship = moment ? kinshipHint(moment, memberGreeting, branchKeyNorm) : '';
+
+  const presence = useMemo(() => {
+    if (!moment) return null;
+    return buildPresenceMarks({
+      branchKey: memberBranchKey,
+      momentPerson: moment.person,
+      memberGreeting,
+      children: branchChildren,
+    });
+  }, [moment, memberBranchKey, memberGreeting, branchChildren]);
 
   const moreLabel =
-    totalMoments === 2 && others[0]
-      ? `أيضًا في أهلك · ${personShortName(others[0].person) || others[0].person}`
-      : totalMoments >= 3
-        ? `${totalMoments} لحظات جديدة في أهلك`
-        : '';
+    FORCE_PULSE_CASE_B
+      ? ''
+      : totalMoments === 2 && otherMoments[0]
+        ? `أيضًا في أهلك · ${personShortName(otherMoments[0].person) || otherMoments[0].person}`
+        : totalMoments >= 3
+          ? `${totalMoments} لحظات جديدة في أهلك`
+          : '';
 
   function onPressMore() {
-    if (totalMoments === 2 && others[0]) {
-      setFocusId(others[0].id);
+    if (totalMoments === 2 && otherMoments[0]) {
+      setFocusId(otherMoments[0].id);
       setPosterOpen(false);
       return;
     }
@@ -180,7 +285,6 @@ export function HomeScreen({
         onOpenEvents();
         return;
       }
-      // Cycle quietly if events tab handler is absent
       const idx = rankedMoments.findIndex((event) => event.id === moment?.id);
       const next = rankedMoments[(idx + 1) % rankedMoments.length];
       if (next) setFocusId(next.id);
@@ -201,16 +305,45 @@ export function HomeScreen({
           moment ? (
             <View style={styles.moment}>
               <Text style={styles.person}>{heroPerson}</Text>
+              {kinship ? <Text style={styles.kinship}>{kinship}</Text> : null}
               <Text style={styles.blessing}>{heroBlessing}</Text>
+
+              {presence ? (
+                <View
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  pointerEvents="none"
+                  style={styles.presence}
+                >
+                  {Array.from({ length: presence.count }).map((_, index) => {
+                    const lit = index === presence.litIndex;
+                    return (
+                      <View
+                        key={`p-${index}`}
+                        style={[styles.presenceDot, lit ? styles.presenceDotLit : null]}
+                      />
+                    );
+                  })}
+                </View>
+              ) : null}
 
               {posterUrl ? (
                 <Pressable
+                  accessibilityHint="فتح بطاقة التهنئة"
                   accessibilityRole="button"
                   onPress={() => setPosterOpen(true)}
-                  style={({ pressed }) => [styles.posterLink, pressed && styles.pressed]}
+                  style={({ pressed }) => [styles.attachment, pressed && styles.pressed]}
                 >
-                  <Text style={styles.posterLinkLabel}>بطاقة التهنئة</Text>
-                  <Text style={styles.posterLinkAction}>فتح</Text>
+                  <Image
+                    accessibilityIgnoresInvertColors
+                    resizeMode="cover"
+                    source={{ uri: posterUrl }}
+                    style={styles.attachmentThumb}
+                  />
+                  <View style={styles.attachmentText}>
+                    <Text style={styles.attachmentLabel}>بطاقة التهنئة</Text>
+                    <Text style={styles.attachmentAction}>فتح</Text>
+                  </View>
                 </Pressable>
               ) : null}
 
@@ -234,29 +367,38 @@ export function HomeScreen({
       </View>
 
       <ImageViewerModal
-        caption={heroPerson ? `${heroPerson} · ${heroBlessing}` : undefined}
         onClose={() => setPosterOpen(false)}
         uri={posterUrl}
         visible={posterOpen && Boolean(posterUrl)}
       />
+
+      {onOpenFamilyLab ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenFamilyLab}
+          style={({ pressed }) => [styles.labLink, pressed && styles.pressed]}
+        >
+          <Text style={styles.labLinkText}>اختبار مساحة العائلة</Text>
+        </Pressable>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   space: {
-    gap: spacing.xl,
+    gap: spacing.md,
     paddingBottom: spacing.xxl,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.xs,
   },
   hello: {
-    gap: 6,
+    gap: 4,
   },
   salam: {
     color: colors.text,
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
-    lineHeight: 34,
+    lineHeight: 32,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
@@ -269,46 +411,89 @@ const styles = StyleSheet.create({
   },
   moment: {
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingTop: spacing.xl,
+    gap: 4,
+    paddingTop: spacing.md,
   },
   person: {
     color: colors.primaryDark,
-    fontSize: 30,
-    fontWeight: '900',
-    lineHeight: 38,
+    fontSize: 24,
+    fontWeight: '700',
+    lineHeight: 32,
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  kinship: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+    fontStyle: 'italic',
+    opacity: 0.78,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   blessing: {
     color: colors.textMuted,
     fontSize: typography.title,
-    fontWeight: '600',
+    fontWeight: '500',
     lineHeight: 26,
+    marginTop: 2,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
-  posterLink: {
+  presence: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 14,
+    justifyContent: 'center',
+    marginTop: 14,
+    opacity: 0.9,
+  },
+  presenceDot: {
+    backgroundColor: colors.textMuted,
+    borderRadius: 999,
+    height: 4,
+    opacity: 0.22,
+    width: 4,
+  },
+  presenceDotLit: {
+    backgroundColor: colors.primaryDark,
+    height: 5,
+    opacity: 0.42,
+    width: 5,
+  },
+  attachment: {
     alignItems: 'center',
     flexDirection: 'row-reverse',
-    gap: 8,
+    gap: 10,
     marginTop: spacing.md,
     paddingVertical: 4,
   },
-  posterLinkLabel: {
-    color: colors.textMuted,
-    fontSize: typography.caption,
-    fontWeight: '600',
+  attachmentThumb: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 7,
+    borderWidth: 1,
+    height: 48,
+    width: 36,
+  },
+  attachmentText: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  attachmentLabel: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: '700',
     writingDirection: 'rtl',
   },
-  posterLinkAction: {
+  attachmentAction: {
     color: colors.primary,
     fontSize: typography.caption,
-    fontWeight: '800',
+    fontWeight: '700',
     writingDirection: 'rtl',
   },
   moreLink: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     paddingVertical: 4,
   },
   moreText: {
@@ -319,12 +504,12 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   pressed: {
-    opacity: 0.7,
+    opacity: 0.72,
   },
   emptyMoment: {
     alignItems: 'center',
     gap: spacing.sm,
-    paddingTop: spacing.xxl,
+    paddingTop: spacing.xl,
   },
   emptyTitle: {
     color: colors.primaryDark,
@@ -337,6 +522,20 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.body,
     lineHeight: 24,
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  labLink: {
+    alignSelf: 'center',
+    marginBottom: spacing.lg,
+    marginTop: spacing.md,
+    paddingVertical: 8,
+  },
+  labLinkText: {
+    color: colors.textMuted,
+    fontSize: typography.caption,
+    fontWeight: '600',
+    opacity: 0.55,
     textAlign: 'center',
     writingDirection: 'rtl',
   },

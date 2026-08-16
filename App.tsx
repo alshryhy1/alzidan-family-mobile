@@ -16,6 +16,7 @@ import { AboutScreen } from './src/screens/AboutScreen';
 import { AdditionsScreen } from './src/screens/AdditionsScreen';
 import { BranchesScreen } from './src/screens/BranchesScreen';
 import { EventsScreen } from './src/screens/EventsScreen';
+import { FamilySpaceMotionLab } from './src/screens/FamilySpaceMotionLab';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { MemoryScreen } from './src/screens/MemoryScreen';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
@@ -152,8 +153,12 @@ const tabs: Array<{ key: PublicScreen; label: string; icon: string }> = [
   { key: 'profile', label: 'ملفي', icon: 'i' },
 ];
 
+/** Prototype shell: Family Space is the app. Legacy tabs stay reachable only from inside. */
+const FAMILY_SPACE_DEFAULT = true;
+
 export default function App() {
-  const [screen, setScreen] = useState<PublicScreen>('home');
+  const [screen, setScreen] = useState<PublicScreen>(FAMILY_SPACE_DEFAULT ? 'familyLab' : 'home');
+  const [legacyChrome, setLegacyChrome] = useState(!FAMILY_SPACE_DEFAULT);
   const publicData = usePublicData();
   const activeEvents = publicData.events.filter((event) =>
     isFamilyEventPubliclyVisible({
@@ -498,9 +503,19 @@ export default function App() {
         return <AdditionsScreen branches={publicData.branches} intent={additionsIntent} />;
       case 'about':
         return <AboutScreen />;
+      case 'familyLab':
+        return (
+          <FamilySpaceMotionLab
+            onOpenPulse={() => {
+              setLegacyChrome(true);
+              setScreen('home');
+            }}
+          />
+        );
       default:
         return (
           <HomeScreen
+            branchChildren={publicData.children}
             error={publicData.error}
             latestEvents={activeEvents}
             memberGreeting={memberGreeting}
@@ -508,6 +523,10 @@ export default function App() {
             loading={publicData.loading}
             onRetry={reloadPublished}
             onOpenEvents={() => setScreen('events')}
+            onOpenFamilyLab={() => {
+              setLegacyChrome(false);
+              setScreen('familyLab');
+            }}
           />
         );
     }
@@ -519,13 +538,19 @@ export default function App() {
         <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
           <StatusBar style="dark" />
           <View style={styles.app}>
-            <View style={[styles.header, screen === 'home' && styles.headerCompact]}>
-              <View style={[styles.brandMark, screen === 'home' && styles.brandMarkCompact]}>
-                <Text style={[styles.brandLetter, screen === 'home' && styles.brandLetterCompact]}>ز</Text>
+            <View
+              style={[
+                styles.header,
+                screen === 'home' && styles.headerPulse,
+                (screen === 'familyLab' || !legacyChrome) && styles.headerHidden,
+              ]}
+            >
+              <View style={[styles.brandMark, screen === 'home' && styles.brandMarkPulse]}>
+                <Text style={[styles.brandLetter, screen === 'home' && styles.brandLetterPulse]}>ز</Text>
               </View>
               <View style={styles.headerText}>
-                <Text style={[styles.title, screen === 'home' && styles.titleCompact]}>عائلة الزيدان</Text>
-                {screen === 'home' ? null : (
+                <Text style={[styles.title, screen === 'home' && styles.titlePulse]}>عائلة الزيدان</Text>
+                {screen === 'home' || screen === 'familyLab' ? null : (
                   <Text style={styles.subtitle}>صلة، توثيق، ومشاركة</Text>
                 )}
               </View>
@@ -533,7 +558,7 @@ export default function App() {
 
             <View style={styles.content}>{renderScreen()}</View>
 
-          {!specialCardVisible && remainingSpecialCards > 0 && (
+          {!specialCardVisible && remainingSpecialCards > 0 && legacyChrome && screen !== 'familyLab' && (
             <Pressable style={styles.nextSpecialCardButton} onPress={showNextSpecialCard}>
               <Text style={styles.nextSpecialCardText}>
                 🎉 تبقى {remainingSpecialCards} بطاقات تهنئة - عرض التالية
@@ -541,6 +566,7 @@ export default function App() {
             </Pressable>
           )}
 
+          {legacyChrome && screen !== 'familyLab' ? (
           <View style={styles.tabBar}>
             {tabs.map((tab) => {
               const active = screen === tab.key;
@@ -564,6 +590,19 @@ export default function App() {
               );
             })}
           </View>
+          ) : null}
+
+          {legacyChrome && screen !== 'familyLab' ? (
+            <Pressable
+              onPress={() => {
+                setLegacyChrome(false);
+                setScreen('familyLab');
+              }}
+              style={styles.backToFamily}
+            >
+              <Text style={styles.backToFamilyText}>عودة لمساحة العائلة</Text>
+            </Pressable>
+          ) : null}
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -596,9 +635,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  headerCompact: {
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
+  headerPulse: {
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
+    gap: 6,
+    paddingVertical: 6,
+  },
+  headerHidden: {
+    display: 'none',
+    height: 0,
+    overflow: 'hidden',
+    paddingVertical: 0,
   },
   brandMark: {
     alignItems: 'center',
@@ -608,18 +655,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 48,
   },
-  brandMarkCompact: {
-    borderRadius: 12,
-    height: 32,
-    width: 32,
+  brandMarkPulse: {
+    backgroundColor: colors.primarySoft,
+    borderRadius: 10,
+    height: 24,
+    opacity: 0.9,
+    width: 24,
   },
   brandLetter: {
     color: colors.surface,
     fontSize: 25,
     fontWeight: '800',
   },
-  brandLetterCompact: {
-    fontSize: 16,
+  brandLetterPulse: {
+    color: colors.primaryDark,
+    fontSize: 12,
+    fontWeight: '700',
   },
   headerText: {
     flex: 1,
@@ -631,10 +682,11 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-  titleCompact: {
-    fontSize: typography.body,
-    fontWeight: '700',
-    opacity: 0.72,
+  titlePulse: {
+    color: colors.textMuted,
+    fontSize: typography.caption,
+    fontWeight: '600',
+    opacity: 0.55,
   },
   subtitle: {
     color: colors.textMuted,
@@ -668,6 +720,18 @@ const styles = StyleSheet.create({
   },
   pressedTab: {
     opacity: 0.7,
+  },
+  backToFamily: {
+    alignItems: 'center',
+    paddingBottom: spacing.sm,
+    paddingTop: 2,
+  },
+  backToFamilyText: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: '700',
+    opacity: 0.75,
+    writingDirection: 'rtl',
   },
   tabIcon: {
     color: colors.textMuted,
