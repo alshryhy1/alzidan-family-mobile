@@ -575,7 +575,17 @@ export function setupPushRegistration() {
     registerPushToken(source)
       .then((result) => {
         if (!result?.ok) {
-          console.warn('[PUSH] registerPushToken finished with failure:', result?.reason || result);
+          const reason = String(result?.reason || result?.error || '');
+          // Expected on simulator / Expo Go — do not raise LogBox over the UI.
+          if (
+            reason.includes('physical_device') ||
+            reason.includes('push_requires_physical_device') ||
+            reason.includes('not_physical_device')
+          ) {
+            console.log('[PUSH] skipped on simulator/Expo Go:', reason);
+          } else {
+            console.warn('[PUSH] registerPushToken finished with failure:', reason || result);
+          }
         } else {
           console.log('[PUSH] registerPushToken finished successfully', {
             source,

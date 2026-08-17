@@ -124,7 +124,6 @@ export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
             />
             <Pressable onPress={() => setPhase('approach')} style={styles.hit}>
               <Text style={styles.hitName}>محمد خميس</Text>
-              <Text style={styles.hitKin}>ابن خالك</Text>
             </Pressable>
           </View>
         ) : (
@@ -147,7 +146,6 @@ export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
                 style={[styles.slot, styles.slotSulaiman, { opacity: placeFade }]}
               >
                 <Text style={styles.nameL}>سليمان</Text>
-                <Text style={styles.kin}>خالك</Text>
               </Animated.View>
 
               {/* Mohammed stays visible while flying to center */}
@@ -166,13 +164,6 @@ export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
               >
                 <Pressable onPress={() => setPhase('approach')} disabled={away}>
                   <Text style={[styles.nameM, away && styles.nameFocus]}>محمد خميس</Text>
-                  {away ? (
-                    <Animated.Text style={[styles.kin, styles.kinFocus, { opacity: meaningOp }]}>
-                      ابن خالك
-                    </Animated.Text>
-                  ) : (
-                    <Text style={styles.kin}>ابن خالك</Text>
-                  )}
                 </Pressable>
               </Animated.View>
 
@@ -181,7 +172,6 @@ export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
                 style={[styles.slot, styles.slotAbdullah, { opacity: placeFade }]}
               >
                 <Text style={styles.nameS}>عبدالله</Text>
-                <Text style={styles.kin}>عمك</Text>
               </Animated.View>
             </View>
 
@@ -210,11 +200,9 @@ export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
                   <Text style={styles.extendLead}>ما بعد بيتك القريب</Text>
                   <Pressable onPress={() => setPhase('approach')} style={styles.extendPerson}>
                     <Text style={styles.nameS}>فهد</Text>
-                    <Text style={styles.kin}>ابن عمك</Text>
                   </Pressable>
                   <Pressable onPress={() => setPhase('approach')} style={styles.extendPerson}>
                     <Text style={styles.nameM}>محمد خميس</Text>
-                    <Text style={styles.kin}>ابن خالك</Text>
                   </Pressable>
                   <Pressable onPress={() => setPhase('place')}>
                     <Text style={styles.backNear}>عد إلى مكانك</Text>
@@ -244,9 +232,7 @@ export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
                     <Text style={styles.pathLine}>حسن</Text>
                     <Text style={styles.pathSoft}>أنت</Text>
                     <Text style={styles.pathLine}>سليمان</Text>
-                    <Text style={styles.pathSoft}>خالك</Text>
                     <Text style={styles.pathLine}>محمد</Text>
-                    <Text style={styles.pathSoft}>ابن خالك</Text>
                     <Pressable onPress={() => setPhase('approach')} style={styles.settle}>
                       <Text style={styles.settleText}>حسنًا</Text>
                     </Pressable>
@@ -421,7 +407,7 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
   focusChrome: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingBottom: 100,

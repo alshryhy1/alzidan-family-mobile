@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AppState,
   I18nManager,
+  LogBox,
   Pressable,
   StyleSheet,
   Text,
@@ -19,6 +20,7 @@ import { EventsScreen } from './src/screens/EventsScreen';
 import { FamilySpaceMotionLab } from './src/screens/FamilySpaceMotionLab';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { MemoryScreen } from './src/screens/MemoryScreen';
+import { PersonEncounterScreen } from './src/screens/PersonEncounterScreen';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
@@ -43,8 +45,18 @@ import { colors, spacing, typography } from './src/theme';
 import type { MemberRequest, PublicScreen } from './src/types';
 import { isFamilyEventPubliclyVisible } from './src/utils/eventVisibility';
 import { canonicalizePhone, memberProfilePhoneQuery } from './src/utils/phone';
+import { resolveEncounterMode } from './src/utils/personEncounter';
 
 I18nManager.allowRTL(true);
+
+/** Expo Go + simulator: expected limits — must not cover the UI during visual review. */
+LogBox.ignoreLogs([
+  'expo-notifications',
+  'Android Push notifications',
+  'functionality is not fully supported in Expo Go',
+  'push_requires_physical_device',
+  '[PUSH] registerPushToken finished with failure',
+]);
 
 const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
 
@@ -153,8 +165,8 @@ const tabs: Array<{ key: PublicScreen; label: string; icon: string }> = [
   { key: 'profile', label: 'ملفي', icon: 'i' },
 ];
 
-/** Prototype shell: Family Space is the app. Legacy tabs stay reachable only from inside. */
-const FAMILY_SPACE_DEFAULT = true;
+/** Person Encounter is the active visual slice — open on home with tabs, not motion lab. */
+const FAMILY_SPACE_DEFAULT = false;
 
 export default function App() {
   const [screen, setScreen] = useState<PublicScreen>(FAMILY_SPACE_DEFAULT ? 'familyLab' : 'home');
@@ -183,9 +195,12 @@ export default function App() {
   const [tickerSpeedSeconds, setTickerSpeedSeconds] = useState(30);
   const [selectedBranchKey, setSelectedBranchKey] = useState<string | null>(null);
   const [focusedTreeChildId, setFocusedTreeChildId] = useState<number | null>(null);
+  const [encounterTreeChildId, setEncounterTreeChildId] = useState<number | null>(null);
+  const [encounterReturnScreen, setEncounterReturnScreen] = useState<PublicScreen>('tree');
   const [additionsIntent, setAdditionsIntent] = useState<'person' | 'correction'>('person');
   const [memberGreeting, setMemberGreeting] = useState<string | null>(null);
   const [memberBranchKey, setMemberBranchKey] = useState<string | null>(null);
+  const [memberTreeChildId, setMemberTreeChildId] = useState<number | null>(null);
   const [memberPhoneForRequests, setMemberPhoneForRequests] = useState('');
   const [memberRequests, setMemberRequests] = useState<MemberRequest[]>([]);
   const [specialCards, setSpecialCards] = useState<SpecialCard[]>([]);
@@ -265,6 +280,7 @@ export default function App() {
           if (alive) {
             setMemberGreeting(null);
             setMemberBranchKey(null);
+            setMemberTreeChildId(null);
             setMemberPhoneForRequests('');
           }
           return;
@@ -277,6 +293,7 @@ export default function App() {
           if (alive) {
             setMemberGreeting(null);
             setMemberBranchKey(null);
+            setMemberTreeChildId(null);
             setMemberPhoneForRequests('');
           }
           return;
@@ -287,6 +304,9 @@ export default function App() {
         if (alive) {
           setMemberGreeting(name);
           setMemberBranchKey(profile.branch_key || null);
+          setMemberTreeChildId(
+            Number.isFinite(Number(profile.tree_child_id)) ? Number(profile.tree_child_id) : null,
+          );
           setMemberPhoneForRequests(phone);
         }
         rememberPushPhone(phone)
@@ -297,6 +317,7 @@ export default function App() {
         if (alive) {
           setMemberGreeting(null);
           setMemberBranchKey(null);
+          setMemberTreeChildId(null);
           setMemberPhoneForRequests('');
         }
       });
@@ -304,7 +325,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [publicData.children, screen]);
+  }, [publicData.children, screen, memberPhoneForRequests]);
 
   const reloadMyRequests = useCallback(async () => {
     const rows = await loadMyRequests(memberPhoneForRequests);
@@ -444,6 +465,44 @@ export default function App() {
     setScreen('tree');
   };
 
+  const openPersonEncounter = (
+    branchKey: string,
+    treeChildId: number,
+    returnScreen: PublicScreen = 'tree',
+  ) => {
+    if (branchKey) setSelectedBranchKey(branchKey);
+    setEncounterTreeChildId(treeChildId);
+    setEncounterReturnScreen(returnScreen);
+    setLegacyChrome(returnScreen !== 'familyLab');
+    setScreen('person');
+  };
+
+  const closePersonEncounter = () => {
+    setEncounterTreeChildId(null);
+    const next = encounterReturnScreen === 'person' ? 'tree' : encounterReturnScreen;
+    setLegacyChrome(next !== 'familyLab');
+    setScreen(next);
+  };
+
+  const encounterPerson = useMemo(() => {
+    if (encounterTreeChildId == null) return null;
+    return publicData.children.find((row) => Number(row.id) === Number(encounterTreeChildId)) || null;
+  }, [encounterTreeChildId, publicData.children]);
+
+  const encounterViewer = useMemo(() => {
+    if (memberTreeChildId == null) return null;
+    return publicData.children.find((row) => Number(row.id) === Number(memberTreeChildId)) || null;
+  }, [memberTreeChildId, publicData.children]);
+
+  const encounterMode = useMemo(() => {
+    if (!encounterPerson) return 'visitor' as const;
+    return resolveEncounterMode({
+      hasMemberSession: Boolean(memberPhoneForRequests && memberTreeChildId != null),
+      viewerTreeChildId: memberTreeChildId,
+      targetTreeChildId: encounterPerson.id,
+    });
+  }, [encounterPerson, memberPhoneForRequests, memberTreeChildId]);
+
   const renderScreen = () => {
     switch (screen) {
       case 'branches':
@@ -468,6 +527,31 @@ export default function App() {
             parents={publicData.parents}
             focusedTreeChildId={focusedTreeChildId}
             onSelectBranch={setSelectedBranchKey}
+            onOpenEncounter={openPersonEncounter}
+          />
+        );
+      case 'person':
+        if (!encounterPerson) {
+          return (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+              <Text style={{ color: colors.text, textAlign: 'center', writingDirection: 'rtl' }}>
+                تعذر فتح لقاء الشخص.
+              </Text>
+              <Pressable onPress={closePersonEncounter} style={{ marginTop: 16 }}>
+                <Text style={{ color: colors.primary, fontWeight: '800' }}>رجوع</Text>
+              </Pressable>
+            </View>
+          );
+        }
+        return (
+          <PersonEncounterScreen
+            mode={encounterMode}
+            person={encounterPerson}
+            viewer={encounterViewer}
+            branches={publicData.branches}
+            childrenRows={publicData.children}
+            events={activeEvents}
+            onClose={closePersonEncounter}
           />
         );
       case 'events':
@@ -485,13 +569,16 @@ export default function App() {
           <ProfileScreen
             branches={publicData.branches}
             childrenRows={publicData.children}
-            onOpenMemberCard={(branchKey, treeChildId) => openTree(branchKey, treeChildId)}
+            onOpenMemberCard={(branchKey, treeChildId) =>
+              openPersonEncounter(branchKey, treeChildId, 'profile')
+            }
             onMemberSessionChange={(phone) => {
               const cleaned = cleanStoredPhone(phone || '');
               setMemberPhoneForRequests(cleaned);
               if (!cleaned) {
                 setMemberGreeting(null);
-          setMemberBranchKey(null);
+                setMemberBranchKey(null);
+                setMemberTreeChildId(null);
                 setMemberRequests([]);
               }
             }}
@@ -542,7 +629,7 @@ export default function App() {
               style={[
                 styles.header,
                 screen === 'home' && styles.headerPulse,
-                (screen === 'familyLab' || !legacyChrome) && styles.headerHidden,
+                (screen === 'familyLab' || screen === 'person' || !legacyChrome) && styles.headerHidden,
               ]}
             >
               <View style={[styles.brandMark, screen === 'home' && styles.brandMarkPulse]}>
@@ -558,7 +645,7 @@ export default function App() {
 
             <View style={styles.content}>{renderScreen()}</View>
 
-          {!specialCardVisible && remainingSpecialCards > 0 && legacyChrome && screen !== 'familyLab' && (
+          {!specialCardVisible && remainingSpecialCards > 0 && legacyChrome && screen !== 'familyLab' && screen !== 'person' && (
             <Pressable style={styles.nextSpecialCardButton} onPress={showNextSpecialCard}>
               <Text style={styles.nextSpecialCardText}>
                 🎉 تبقى {remainingSpecialCards} بطاقات تهنئة - عرض التالية
@@ -566,7 +653,7 @@ export default function App() {
             </Pressable>
           )}
 
-          {legacyChrome && screen !== 'familyLab' ? (
+          {legacyChrome && screen !== 'familyLab' && screen !== 'person' ? (
           <View style={styles.tabBar}>
             {tabs.map((tab) => {
               const active = screen === tab.key;
@@ -592,7 +679,7 @@ export default function App() {
           </View>
           ) : null}
 
-          {legacyChrome && screen !== 'familyLab' ? (
+          {legacyChrome && screen !== 'familyLab' && screen !== 'person' ? (
             <Pressable
               onPress={() => {
                 setLegacyChrome(false);

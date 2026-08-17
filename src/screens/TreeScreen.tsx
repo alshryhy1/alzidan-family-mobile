@@ -21,6 +21,7 @@ type TreeScreenProps = {
   onSelectBranch: (branchKey: string) => void;
   parents: TreeParent[];
   focusedTreeChildId?: number | null;
+  onOpenEncounter?: (branchKey: string, treeChildId: number) => void;
 };
 
 
@@ -272,6 +273,7 @@ export function TreeScreen({
   onSelectBranch,
   parents,
   focusedTreeChildId,
+  onOpenEncounter,
 }: TreeScreenProps) {
   const branch = branches.find((item) => item.id === branchKey);
   const tree = useMemo(
@@ -478,6 +480,15 @@ export function TreeScreen({
             <Text style={styles.childrenCount}>
               {directChildren.length ? `${directChildren.length} من الأبناء` : 'لا يوجد أبناء مسجلون'}
             </Text>
+
+            {onOpenEncounter && branchKey && Number.isFinite(Number(currentPerson.id)) ? (
+              <Pressable
+                onPress={() => onOpenEncounter(branchKey, Number(currentPerson.id))}
+                style={({ pressed }) => [styles.encounterButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.encounterButtonText}>لقاء الشخص</Text>
+              </Pressable>
+            ) : null}
 
             {detailRows.length ? (
               <View style={styles.detailRows}>
@@ -712,6 +723,23 @@ const styles = StyleSheet.create({
     color: colors.primaryDark,
     fontSize: typography.caption,
     fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  encounterButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.accent,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  encounterButtonText: {
+    color: colors.accentSoft,
+    fontSize: typography.body,
+    fontWeight: '900',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
