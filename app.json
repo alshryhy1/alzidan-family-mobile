@@ -2,14 +2,14 @@
   "expo": {
     "name": "عائلة مطلق الزيدان",
     "slug": "alzidan-family-mobile",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "scheme": "com.alzidan.family2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.alzidan.family2",
-      "buildNumber": "55",
+      "buildNumber": "56",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية أو ذكرى.",
         "ITSAppUsesNonExemptEncryption": false,
