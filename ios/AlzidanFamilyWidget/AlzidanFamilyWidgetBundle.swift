@@ -12,5 +12,6 @@ import SwiftUI
 struct AlzidanFamilyWidgetBundle: WidgetBundle {
     var body: some Widget {
         AlzidanFamilyWidget()
+        AlzidanFamilyLockWidget()
     }
 }

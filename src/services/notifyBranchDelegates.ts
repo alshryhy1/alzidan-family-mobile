@@ -4,9 +4,16 @@ const DELEGATE_NOTIFY_KINDS = new Set([
   'event_card',
   'family_event',
   'event_request',
+  'occasion',
+  'patient',
+  'health',
+  'event_death',
   'tree_card',
+  'add_person',
   'tree_edit',
   'memory_card',
+  'memory',
+  'tree_founder',
 ]);
 
 export type BranchRequestNotifyRow = {

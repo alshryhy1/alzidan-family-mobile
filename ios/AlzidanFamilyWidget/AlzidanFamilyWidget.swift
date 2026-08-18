@@ -213,8 +213,9 @@ struct WidgetBackgroundView: View {
     var body: some View {
         LinearGradient(
             colors: [
-                Color(red: 0.98, green: 0.94, blue: 0.84),
-                Color(red: 0.78, green: 0.62, blue: 0.36)
+                Color(red: 15 / 255, green: 42 / 255, blue: 36 / 255),
+                Color(red: 23 / 255, green: 63 / 255, blue: 53 / 255),
+                Color(red: 36 / 255, green: 88 / 255, blue: 76 / 255),
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -337,7 +338,8 @@ enum EventVisibility {
     }
 
     static func isDeath(_ type: String) -> Bool {
-        type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "death"
+        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return key == "death" || key.contains("death") || key.contains("وفاة")
     }
 
     static func isHappy(_ type: String) -> Bool {
@@ -409,6 +411,16 @@ enum EventVisibility {
         let soon = now.addingTimeInterval(15 * 60)
         return min(soon, midnight)
     }
+}
+
+enum WidgetDeepLink {
+    static let events = URL(string: "com.alzidan.family2://events")!
+}
+
+struct SceneInk {
+    static let cream = Color(red: 1.0, green: 0.973, blue: 0.925)
+    static let gold = Color(red: 196 / 255, green: 163 / 255, blue: 90 / 255)
+    static let goldSoft = Color(red: 232 / 255, green: 213 / 255, blue: 168 / 255)
 }
 
 struct PrayerEntry: TimelineEntry {
@@ -752,7 +764,7 @@ struct PrayerProgressRing: View {
     let progress: Double
     let nextName: String
     let remainingRange: ClosedRange<Date>
-    var ringColor = Color(red: 0.55, green: 0.68, blue: 0.32)
+    var ringColor = SceneInk.gold
     var size: CGFloat = 108
 
     private var timerFontSize: CGFloat { size < 90 ? 9 : 11 }
@@ -761,7 +773,7 @@ struct PrayerProgressRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.primary.opacity(0.14), lineWidth: 8)
+                .stroke(SceneInk.cream.opacity(0.18), lineWidth: 8)
 
             Circle()
                 .trim(from: 0, to: progress)
@@ -774,6 +786,7 @@ struct PrayerProgressRing: View {
             VStack(alignment: .center, spacing: size < 90 ? 2 : 3) {
                 Text(nextName)
                     .font(.system(size: size < 90 ? 9 : 11, weight: .bold))
+                    .foregroundStyle(SceneInk.cream)
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -781,7 +794,8 @@ struct PrayerProgressRing: View {
 
                 Text("المتبقي")
                     .font(.system(size: size < 90 ? 7 : 8, weight: .medium))
-                    .opacity(0.72)
+                    .foregroundStyle(SceneInk.goldSoft)
+                    .opacity(0.85)
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -789,6 +803,7 @@ struct PrayerProgressRing: View {
                 Text(timerInterval: remainingRange, countsDown: true)
                     .environment(\.locale, Locale(identifier: "ar_SA"))
                     .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
+                    .foregroundStyle(SceneInk.cream)
                     .monospacedDigit()
                     .multilineTextAlignment(.center)
                     .frame(minWidth: timerMinWidth, alignment: .center)
@@ -799,7 +814,7 @@ struct PrayerProgressRing: View {
         }
         .background(
             Circle()
-                .fill(Color.white.opacity(0.55))
+                .fill(Color.white.opacity(0.08))
         )
         .frame(width: size, height: size)
     }
@@ -810,22 +825,27 @@ struct AlzidanFamilyWidgetEntryView: View {
     @Environment(\.widgetFamily) var family
 
     private let contentPadding: CGFloat = 8
-    private let ink = Color(red: 0.12, green: 0.08, blue: 0.03)
     private let maxEvents = 2
 
     var body: some View {
         switch family {
         case .systemSmall:
             smallEventView
-                .foregroundStyle(ink)
+                .foregroundStyle(SceneInk.cream)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         case .systemMedium:
             mediumEventView
-                .foregroundStyle(ink)
+                .foregroundStyle(SceneInk.cream)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        case .accessoryCircular:
+            lockCircularView
+        case .accessoryRectangular:
+            lockRectangularView
+        case .accessoryInline:
+            lockInlineView
         default:
             largePrayerAndEventsView
-                .foregroundStyle(ink)
+                .foregroundStyle(SceneInk.cream)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -837,6 +857,30 @@ struct AlzidanFamilyWidgetEntryView: View {
 
     private var visibleEvents: [FamilyEvent] {
         Array(entry.events.prefix(maxEvents))
+    }
+
+    private var pulseMoment: FamilyEvent? {
+        entry.events.first { !EventVisibility.isDeath($0.rawType) }
+    }
+
+    @ViewBuilder
+    private func familyBrand(titleSize: Font, mark: CGFloat) -> some View {
+        HStack(spacing: 6) {
+            Text("عائلة الزيدان")
+                .font(titleSize)
+                .foregroundStyle(SceneInk.goldSoft)
+                .lineLimit(1)
+            ZStack {
+                Circle()
+                    .fill(SceneInk.gold.opacity(0.18))
+                Circle()
+                    .stroke(SceneInk.gold, lineWidth: 1)
+                Text("ز")
+                    .font(.system(size: mark * 0.52, weight: .heavy))
+                    .foregroundStyle(SceneInk.goldSoft)
+            }
+            .frame(width: mark, height: mark)
+        }
     }
 
     /// Short daily adhkar shown only when there is no family event/news to display.
@@ -860,21 +904,21 @@ struct AlzidanFamilyWidgetEntryView: View {
 
     @ViewBuilder
     private func emptyFamilyContentFallback(compact: Bool) -> some View {
-        VStack(alignment: .trailing, spacing: compact ? 1 : 3) {
-            Text("ذكر اليوم")
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .opacity(0.7)
+        VStack(alignment: .trailing, spacing: compact ? 2 : 4) {
+            Text("عائلتك معك")
+                .font(compact ? .caption : .subheadline)
+                .fontWeight(.bold)
+                .foregroundStyle(SceneInk.goldSoft)
                 .lineLimit(1)
             Text(dailyAdhkarText)
                 .font(compact ? .caption2 : .caption)
-                .fontWeight(.bold)
+                .fontWeight(.semibold)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(compact ? 3 : 4)
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .accessibilityLabel("ذكر اليوم: \(dailyAdhkarText)")
+        .accessibilityLabel("عائلتك معك. \(dailyAdhkarText)")
     }
 
     private var weekdayName: String {
@@ -898,6 +942,7 @@ struct AlzidanFamilyWidgetEntryView: View {
             Text(event.statusText)
                 .font(titleSize)
                 .fontWeight(.bold)
+                .foregroundStyle(SceneInk.gold)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -919,109 +964,42 @@ struct AlzidanFamilyWidgetEntryView: View {
         }
     }
 
-    @ViewBuilder
-    private func nextPrayerSection(info: PrayerInfo, alignment: HorizontalAlignment = .leading, compact: Bool = false, showRemaining: Bool = true) -> some View {
-        VStack(alignment: alignment, spacing: compact ? 2 : 3) {
-            Text("الصلاة القادمة")
-                .font(.caption2)
-                .opacity(0.8)
-
-            Text(info.nextName)
-                .font(compact ? .headline : .title3)
-                .fontWeight(.bold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-
-            HStack(spacing: 4) {
-                Text("الساعة:")
-                    .font(.caption2)
-                    .opacity(0.75)
-                Text(timeText(info.nextTime))
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-            }
-
-            if showRemaining {
-                HStack(spacing: 4) {
-                    Text("المتبقي:")
-                        .font(.caption2)
-                        .opacity(0.75)
-                    Text(timerInterval: safeTimerRange(from: entry.date, until: info.nextTime), countsDown: true)
-                        .environment(\.locale, Locale(identifier: "ar_SA"))
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                }
-            }
-        }
-    }
-
     var smallEventView: some View {
-        let info = HailPrayerCalculator.prayerInfo(now: entry.date)
+        VStack(alignment: .trailing, spacing: 8) {
+            familyBrand(titleSize: .caption2.weight(.bold), mark: 22)
 
-        return VStack(alignment: .trailing, spacing: 2) {
-            Text("🌳 عائلة الزيدان")
-                .font(.caption2)
-                .fontWeight(.bold)
-                .lineLimit(1)
-
-            Text(weekdayName)
-                .font(.system(size: 11, weight: .bold))
-                .lineLimit(1)
-
-            Text(compactDatePair)
-                .font(.system(size: 8))
-                .opacity(0.78)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            nextPrayerSection(info: info, alignment: .trailing, compact: true)
-
-            Divider().opacity(0.25)
-
-            if visibleEvents.isEmpty {
-                emptyFamilyContentFallback(compact: true)
-            } else {
-                ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
-                    if index > 0 {
-                        Divider().opacity(0.18)
-                    }
-                    widgetEventBlock(
-                        event,
-                        titleSize: .system(size: 10, weight: .bold),
-                        nameSize: .system(size: 9, weight: .semibold),
-                        dateSize: .system(size: 8)
-                    )
+            if let event = pulseMoment {
+                Spacer(minLength: 4)
+                Text(event.name)
+                    .font(.system(size: 17, weight: .heavy))
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                Text(event.statusText)
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(SceneInk.gold)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                if !event.dateLine.isEmpty {
+                    Text(event.dateLine)
+                        .font(.system(size: 9))
+                        .foregroundStyle(SceneInk.goldSoft)
+                        .opacity(0.85)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
+            } else {
+                Spacer(minLength: 4)
+                emptyFamilyContentFallback(compact: false)
             }
         }
         .padding(contentPadding)
     }
 
     var mediumEventView: some View {
-        let info = HailPrayerCalculator.prayerInfo(now: entry.date)
-
-        return HStack(alignment: .center, spacing: 6) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("🌳 عائلة الزيدان")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .lineLimit(1)
-
-                Text(weekdayName)
-                    .font(.system(size: 13, weight: .bold))
-                    .lineLimit(1)
-
-                Text(compactDatePair)
-                    .font(.system(size: 9))
-                    .opacity(0.78)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-
-                nextPrayerSection(info: info, alignment: .leading, compact: false, showRemaining: false)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
+        HStack(alignment: .center, spacing: 8) {
             TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
                 let now = timeline.date
                 let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
@@ -1037,20 +1015,28 @@ struct AlzidanFamilyWidgetEntryView: View {
             .frame(width: 76)
 
             VStack(alignment: .trailing, spacing: 4) {
-                if visibleEvents.isEmpty {
-                    emptyFamilyContentFallback(compact: true)
+                familyBrand(titleSize: .caption.weight(.bold), mark: 20)
+
+                Text(weekdayName)
+                    .font(.system(size: 13, weight: .bold))
+                    .lineLimit(1)
+
+                Text(compactDatePair)
+                    .font(.system(size: 9))
+                    .foregroundStyle(SceneInk.goldSoft)
+                    .opacity(0.9)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                if let event = pulseMoment {
+                    widgetEventBlock(
+                        event,
+                        titleSize: .caption,
+                        nameSize: .caption2,
+                        dateSize: .system(size: 9)
+                    )
                 } else {
-                    ForEach(Array(visibleEvents.enumerated()), id: \.element.id) { index, event in
-                        if index > 0 {
-                            Divider().opacity(0.18)
-                        }
-                        widgetEventBlock(
-                            event,
-                            titleSize: .caption2,
-                            nameSize: .caption2,
-                            dateSize: .system(size: 9)
-                        )
-                    }
+                    emptyFamilyContentFallback(compact: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -1078,10 +1064,7 @@ struct AlzidanFamilyWidgetEntryView: View {
 
                 Spacer(minLength: 0)
 
-                Text("🌳 عائلة الزيدان")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .lineLimit(1)
+                familyBrand(titleSize: .subheadline.weight(.bold), mark: 24)
             }
 
             TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
@@ -1113,7 +1096,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                         }
                         .padding(.vertical, 1)
                         .padding(.horizontal, 4)
-                        .background(p.name == info.nextName ? Color(red: 0.55, green: 0.68, blue: 0.32).opacity(0.28) : Color.clear)
+                        .background(p.name == info.nextName ? SceneInk.gold.opacity(0.28) : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
@@ -1145,6 +1128,71 @@ struct AlzidanFamilyWidgetEntryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    var lockCircularView: some View {
+        let info = HailPrayerCalculator.prayerInfo(now: entry.date)
+        let progress = HailPrayerCalculator.progressUntilNextPrayer(now: entry.date)
+
+        return Gauge(value: progress) {
+            Text(info.nextName)
+        } currentValueLabel: {
+            Text("ز")
+                .font(.headline.weight(.heavy))
+        }
+        .gaugeStyle(.accessoryCircular)
+        .accessibilityLabel("\(info.nextName)، المتبقي \(info.remainingText)")
+    }
+
+    var lockRectangularView: some View {
+        let info = HailPrayerCalculator.prayerInfo(now: entry.date)
+
+        return VStack(alignment: .trailing, spacing: 2) {
+            HStack(spacing: 4) {
+                Spacer(minLength: 0)
+                Text("عائلة الزيدان")
+                    .font(.headline)
+                    .lineLimit(1)
+                Text("ز")
+                    .font(.headline.weight(.heavy))
+            }
+
+            if let event = pulseMoment {
+                Text(event.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(event.statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            } else {
+                Text("عائلتك معك")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text("\(info.nextName) · \(info.remainingText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        .modifier(LockAccessoryBackground())
+    }
+
+    var lockInlineView: some View {
+        Text(lockInlineText)
+            .lineLimit(1)
+    }
+
+    private var lockInlineText: String {
+        if let event = pulseMoment {
+            let first = event.name.split(separator: " ").first.map(String.init) ?? event.name
+            return "\(first) · \(event.typeLabel)"
+        }
+        let info = HailPrayerCalculator.prayerInfo(now: entry.date)
+        return "عائلتك معك · \(info.nextName)"
+    }
+
     func timeText(_ date: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ar_SA")
@@ -1171,6 +1219,7 @@ struct AlzidanFamilyWidget: Widget {
             if #available(iOS 17.0, *) {
                 AlzidanFamilyWidgetEntryView(entry: entry)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .widgetURL(WidgetDeepLink.events)
                     .containerBackground(for: .widget) {
                         WidgetBackgroundView()
                     }
@@ -1178,15 +1227,42 @@ struct AlzidanFamilyWidget: Widget {
                 WidgetRoot {
                     AlzidanFamilyWidgetEntryView(entry: entry)
                 }
+                .widgetURL(WidgetDeepLink.events)
             }
         }
         .configurationDisplayName("عائلة الزيدان")
-        .description("يعرض مناسبات العائلة وأوقات الصلاة في حائل.")
+        .description("لحظة من أهلك، وأوقات الصلاة في حائل.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
 
         if #available(iOS 17.0, *) {
             return configuration.contentMarginsDisabled()
         }
         return configuration
+    }
+}
+
+struct AlzidanFamilyLockWidget: Widget {
+    let kind: String = "AlzidanFamilyLockWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: Provider()) { entry in
+            AlzidanFamilyWidgetEntryView(entry: entry)
+                .widgetURL(WidgetDeepLink.events)
+        }
+        .configurationDisplayName("عائلة الزيدان — القفل")
+        .description("لحظة من أهلك أو الصلاة القادمة على شاشة القفل.")
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
+    }
+}
+
+private struct LockAccessoryBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.containerBackground(for: .widget) {
+                AccessoryWidgetBackground()
+            }
+        } else {
+            content
+        }
     }
 }

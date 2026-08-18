@@ -10,8 +10,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { OccasionInteractCard } from '../components/OccasionInteractCard';
+import { PersonPhoto } from '../components/PersonPhoto';
 import { colors, spacing, typography } from '../theme';
 import type { Branch, FamilyEvent, TreeChild } from '../types';
+import { kinshipLabelForPerson } from '../utils/maternalKinship';
 import {
   findDirectSons,
   findPersonOccasions,
@@ -19,6 +21,7 @@ import {
   occasionOwnerDisplayName,
   publicLineageChain,
   resolveProvenKinshipLabel,
+  resolveSharedAncestorBadge,
   type EncounterMode,
 } from '../utils/personEncounter';
 
@@ -29,6 +32,8 @@ type Props = {
   branches: Branch[];
   childrenRows: TreeChild[];
   events: FamilyEvent[];
+  maternalLabel?: string | null;
+  kinshipById?: Record<number, string>;
   onClose: () => void;
 };
 
@@ -42,11 +47,6 @@ const CREAM_CARD = '#FFF8EC';
 function branchLabel(branches: Branch[], branchKey: string) {
   const found = branches.find((b) => b.id === branchKey);
   return found?.name || branchKey;
-}
-
-function initialLetter(name: string) {
-  const leaf = leafPersonName(name);
-  return leaf.slice(0, 1) || 'ز';
 }
 
 function modeTitle(mode: EncounterMode) {
@@ -72,17 +72,34 @@ export function PersonEncounterScreen({
   branches,
   childrenRows,
   events,
+  maternalLabel,
+  kinshipById,
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
   const name = leafPersonName(person.name);
   const branch = branchLabel(branches, person.branchKey);
   const lineage = publicLineageChain(person.name);
-  const kinship = mode === 'member' ? resolveProvenKinshipLabel(viewer, person) : null;
-  const sons =
+  const maternal =
+    maternalLabel || kinshipLabelForPerson(kinshipById, person, childrenRows) || null;
+  const kinship =
+    mode === 'member'
+      ? resolveProvenKinshipLabel(viewer, person, maternal) || maternal || null
+      : null;
+  const directSons =
     mode === 'visitor' || mode === 'member'
       ? findDirectSons(childrenRows, person)
       : [];
+  const linkedSons = useMemo(() => {
+    if (mode !== 'self' || !kinshipById) return [];
+    const ids = Object.keys(kinshipById)
+      .map(Number)
+      .filter((id) => kinshipById[id] === 'ابنك');
+    return ids
+      .map((id) => childrenRows.find((row) => Number(row.id) === id))
+      .filter((row): row is TreeChild => Boolean(row));
+  }, [mode, kinshipById, childrenRows]);
+  const sons = mode === 'self' ? linkedSons : directSons;
   const occasions = useMemo(
     () => findPersonOccasions(events, person, childrenRows),
     [events, person, childrenRows],
@@ -104,9 +121,7 @@ export function PersonEncounterScreen({
   }, [mode, person]);
 
   const sharedPathLabel =
-    mode === 'member' && lineage.length > 1
-      ? `يجمعكما: ${[...lineage].reverse().join(' ← ')}`
-      : null;
+    mode === 'member' && !kinship ? resolveSharedAncestorBadge(viewer, person) : null;
 
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
@@ -155,11 +170,7 @@ export function PersonEncounterScreen({
           <Text style={styles.encounterLabelEn}>PERSON ENCOUNTER</Text>
 
           <View style={styles.monogramWrap}>
-            <View style={styles.monogramOuter}>
-              <View style={styles.monogramInner}>
-                <Text style={styles.monogramLetter}>{initialLetter(person.name)}</Text>
-              </View>
-            </View>
+            <PersonPhoto name={name} showFallback size="lg" uri={person.photoUrl} />
           </View>
 
           <Text style={styles.heroName}>{name}</Text>
@@ -230,13 +241,16 @@ export function PersonEncounterScreen({
 
           {sons.length ? (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>عائلته</Text>
+              <Text style={styles.sectionTitle}>{mode === 'self' ? 'أبناؤك' : 'عائلته'}</Text>
               <OrnamentDivider />
               <View style={styles.familyList}>
                 {sons.map((son) => (
                   <View key={son.id} style={styles.familyCard}>
-                    <Text style={styles.familyStar}>✦</Text>
-                    <Text style={styles.familyName}>{leafPersonName(son.name)}</Text>
+                    <PersonPhoto name={leafPersonName(son.name)} size="sm" uri={son.photoUrl} />
+                    <Text style={styles.familyName}>
+                      {leafPersonName(son.name)}
+                      {mode === 'self' ? ' — ابنك' : ''}
+                    </Text>
                   </View>
                 ))}
               </View>

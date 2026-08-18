@@ -1,19 +1,31 @@
 export const colors = {
-  background: '#F5F1E8',
-  surface: '#FFFEFB',
-  surfaceMuted: '#EEE8DA',
-  primary: '#255C4D',
+  background: '#F3EBD9',
+  surface: '#FFF8EC',
+  surfaceMuted: '#EDE3C9',
+  primary: '#1F4F44',
   primaryDark: '#173F35',
   primarySoft: '#DCEBE4',
-  accent: '#B48645',
-  accentSoft: '#F2E4CB',
+  accent: '#C4A35A',
+  accentSoft: '#E8D5A8',
   text: '#1E2925',
   textMuted: '#66736E',
-  border: '#E3DDD1',
+  border: '#DCCDB0',
   happy: '#A36A20',
   health: '#4F7187',
   condolence: '#5D5B67',
   white: '#FFFFFF',
+};
+
+/** Locked product scene: deep green + gold + cream. */
+export const scene = {
+  greenDeep: '#0F2A24',
+  green: '#173F35',
+  greenMid: '#1F4F44',
+  gold: '#C4A35A',
+  goldSoft: '#E8D5A8',
+  cream: '#F3EBD9',
+  creamLift: '#FFF8EC',
+  ink: '#1E2925',
 };
 
 export const spacing = {

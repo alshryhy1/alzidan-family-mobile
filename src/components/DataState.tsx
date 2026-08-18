@@ -51,10 +51,6 @@ export function DataState({
 const styles = StyleSheet.create({
   box: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 18,
-    borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
   },

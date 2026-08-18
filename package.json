@@ -41,7 +41,9 @@
     "verify:news-expiry": "node scripts/verify-news-expiry.mjs",
     "verify:home-ticker": "node scripts/verify-home-ticker.mjs",
     "verify:tree-stats": "node scripts/verify-tree-stats.mjs",
-    "verify:handover": "npm run verify:bug36 && npm run verify:news-expiry && npm run verify:home-ticker && npm run verify:tree-card && npm run verify:event-card && npm run verify:notifications && npm run verify:push && npm run verify:tree-stats && npx tsc --noEmit"
+    "verify:person-encounter": "node scripts/verify-person-encounter-identity.mjs",
+    "verify:maternal-kinship": "node scripts/verify-maternal-kinship.mjs",
+    "verify:handover": "npm run verify:bug36 && npm run verify:news-expiry && npm run verify:home-ticker && npm run verify:tree-card && npm run verify:event-card && npm run verify:notifications && npm run verify:push && npm run verify:tree-stats && npm run verify:person-encounter && npm run verify:maternal-kinship && npx tsc --noEmit"
   },
   "private": true
 }

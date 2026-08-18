@@ -2,14 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { DataState } from '../components/DataState';
-import { Screen } from '../components/Screen';
-import { colors, spacing, typography } from '../theme';
+import { PersonPhoto } from '../components/PersonPhoto';
+import { SceneSection, SceneShell } from '../components/scene';
+import { colors, scene, spacing, typography } from '../theme';
 import type { Branch, TreeChild, TreeParent, TreePerson } from '../types';
 import {
   getBranchRootName,
   groupChildrenRows,
   normalizePersonName,
 } from '../utils/groupChildrenRows';
+import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 
 type TreeScreenProps = {
   branchKey: string | null;
@@ -22,6 +24,7 @@ type TreeScreenProps = {
   parents: TreeParent[];
   focusedTreeChildId?: number | null;
   onOpenEncounter?: (branchKey: string, treeChildId: number) => void;
+  onBackToHouses?: () => void;
 };
 
 
@@ -184,7 +187,9 @@ function buildBranchTree(
   if (!branch) return null;
 
   const branchParents = parents.filter((parent) => parent.branchKey === branch.id);
-  const branchChildren = childrenRows.filter((child) => child.branchKey === branch.id);
+  const branchChildren = childrenRows.filter(
+    (child) => child.branchKey === branch.id && !isPublicLineageHiddenPerson(child),
+  );
   const byParent = groupChildrenRows(branchChildren, branch.id);
 
   const branchRoot = getBranchRootName(branch.id);
@@ -227,6 +232,7 @@ function buildBranchTree(
       city: child.city,
       area: child.area,
       isDeceased: child.isDeceased,
+      photoUrl: child.photoUrl || null,
       meta: personMeta(child),
       children: buildChildren(child.name, nextVisited),
     }));
@@ -274,6 +280,7 @@ export function TreeScreen({
   parents,
   focusedTreeChildId,
   onOpenEncounter,
+  onBackToHouses,
 }: TreeScreenProps) {
   const branch = branches.find((item) => item.id === branchKey);
   const tree = useMemo(
@@ -394,12 +401,44 @@ export function TreeScreen({
     : [];
 
   return (
-    <Screen
-      title="شجرة العائلة"
-      description="شجرة للقراءة فقط من قاعدة البيانات المعتمدة. اختر فرعًا لعرضه."
+    <SceneShell
+      english="FAMILY TREE"
+      eyebrow="تسلسل العائلة"
+      heroExtra={
+        currentPerson ? (
+          <View style={styles.heroPerson}>
+            <View style={styles.heroNameRow}>
+              <PersonPhoto name={currentPerson.name} size="md" uri={currentPerson.photoUrl} />
+              <View style={styles.heroNameText}>
+                <Text style={styles.heroEyebrow}>{canGoBack ? 'الشخص الحالي' : 'أصل الفرع'}</Text>
+                <Text style={styles.heroName}>{personDisplayName(currentPerson)}</Text>
+              </View>
+            </View>
+            {lineageDisplay ? <Text style={styles.heroLineage}>{lineageDisplay}</Text> : null}
+            <Text style={styles.heroCount}>
+              {directChildren.length ? `${directChildren.length} من الأبناء` : 'لا يوجد أبناء مسجلون'}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.heroInvite}>اختر فرعًا لتفتح تسلسله.</Text>
+        )
+      }
       onRefresh={onRetry}
       refreshing={loading}
+      subtitle="شجرة للقراءة فقط من القاعدة المعتمدة."
+      title="الشجرة"
+      variant="lineage"
     >
+      {onBackToHouses ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onBackToHouses}
+          style={({ pressed }) => [styles.housesBack, pressed && styles.pressed]}
+        >
+          <Text style={styles.housesBackText}>رجوع إلى الفروع</Text>
+        </Pressable>
+      ) : null}
+
       <View style={styles.branchPicker}>
         {branches.map((item) => {
           const active = item.id === branchKey;
@@ -441,7 +480,10 @@ export function TreeScreen({
                       pressed && styles.pressed,
                     ]}
                   >
-                    <Text style={styles.searchResultName}>{personDisplayName(result.person)}</Text>
+                    <View style={styles.searchResultRow}>
+                      <PersonPhoto name={result.person.name} size="sm" uri={result.person.photoUrl} />
+                      <Text style={styles.searchResultName}>{personDisplayName(result.person)}</Text>
+                    </View>
                     <Text numberOfLines={2} style={styles.searchResultPath}>
                       {`${result.branchName} · ${result.path.map(personDisplayName).join(' ‹ ')}`}
                     </Text>
@@ -473,13 +515,7 @@ export function TreeScreen({
           ) : null}
 
           <View style={styles.personCard}>
-            <Text style={styles.personEyebrow}>{canGoBack ? 'بطاقة الشخص' : 'أصل الفرع'}</Text>
-            <Text style={styles.personName}>{personDisplayName(currentPerson)}</Text>
-            {lineageDisplay ? <Text style={styles.personLineage}>{lineageDisplay}</Text> : null}
             {currentPerson.meta ? <Text style={styles.personMeta}>{currentPerson.meta}</Text> : null}
-            <Text style={styles.childrenCount}>
-              {directChildren.length ? `${directChildren.length} من الأبناء` : 'لا يوجد أبناء مسجلون'}
-            </Text>
 
             {onOpenEncounter && branchKey && Number.isFinite(Number(currentPerson.id)) ? (
               <Pressable
@@ -512,8 +548,7 @@ export function TreeScreen({
           </View>
 
           {directChildren.length ? (
-            <View style={styles.directChildren}>
-              <Text style={styles.sectionTitle}>الأبناء المباشرون</Text>
+            <SceneSection title="الأبناء المباشرون">
               {directChildren.map((child) => {
                 const hasDescendants = Boolean(child.children?.length);
                 return (
@@ -523,7 +558,10 @@ export function TreeScreen({
                     style={({ pressed }) => [styles.childCard, pressed && styles.pressed]}
                   >
                     <View style={styles.nodeText}>
-                      <Text style={styles.nodeName}>{personDisplayName(child)}</Text>
+                      <View style={styles.nodeNameRow}>
+                        <PersonPhoto name={child.name} size="sm" uri={child.photoUrl} />
+                        <Text style={styles.nodeName}>{personDisplayName(child)}</Text>
+                      </View>
                       {child.meta ? <Text style={styles.nodeMeta}>{child.meta}</Text> : null}
                       <Text style={styles.descendantsText}>
                         {hasDescendants
@@ -535,31 +573,43 @@ export function TreeScreen({
                   </Pressable>
                 );
               })}
-            </View>
+            </SceneSection>
           ) : null}
         </View>
       ) : null}
-    </Screen>
+    </SceneShell>
   );
 }
 
 const styles = StyleSheet.create({
+  housesBack: {
+    alignSelf: 'flex-end',
+    paddingBottom: 4,
+    paddingVertical: 4,
+  },
+  housesBackText: {
+    color: colors.textMuted,
+    fontSize: typography.caption,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
   branchPicker: {
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
   branchChip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: 'transparent',
+    borderColor: scene.gold,
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   activeBranchChip: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: scene.green,
+    borderColor: scene.green,
   },
   branchChipText: {
     color: colors.textMuted,
@@ -574,9 +624,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   searchInput: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 16,
+    backgroundColor: scene.creamLift,
+    borderColor: scene.gold,
+    borderRadius: 18,
     borderWidth: 1,
     color: colors.text,
     fontSize: typography.body,
@@ -597,6 +647,11 @@ const styles = StyleSheet.create({
     gap: 2,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  searchResultRow: {
+    alignItems: 'center',
+    flexDirection: 'row-reverse',
+    gap: spacing.sm,
   },
   searchResultName: {
     color: colors.text,
@@ -755,10 +810,10 @@ const styles = StyleSheet.create({
   },
   childCard: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 18,
-    borderRightColor: colors.accent,
+    backgroundColor: scene.creamLift,
+    borderColor: 'rgba(196,163,90,0.4)',
+    borderRadius: 20,
+    borderRightColor: scene.gold,
     borderRightWidth: 4,
     borderWidth: 1,
     flexDirection: 'row-reverse',
@@ -774,6 +829,11 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     gap: 2,
     minWidth: 0,
+  },
+  nodeNameRow: {
+    alignItems: 'center',
+    flexDirection: 'row-reverse',
+    gap: spacing.sm,
   },
   nodeName: {
     color: colors.text,
@@ -802,5 +862,55 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     width: 24,
+  },
+  heroPerson: {
+    gap: 6,
+    paddingBottom: spacing.sm,
+  },
+  heroNameRow: {
+    alignItems: 'center',
+    flexDirection: 'row-reverse',
+    gap: spacing.sm,
+  },
+  heroNameText: {
+    flex: 1,
+    gap: 4,
+    minWidth: 0,
+  },
+  heroEyebrow: {
+    color: scene.gold,
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  heroName: {
+    color: scene.creamLift,
+    fontSize: 30,
+    fontWeight: '800',
+    lineHeight: 40,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  heroLineage: {
+    color: scene.goldSoft,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 22,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  heroCount: {
+    color: scene.gold,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  heroInvite: {
+    color: scene.goldSoft,
+    fontSize: 15,
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
 });

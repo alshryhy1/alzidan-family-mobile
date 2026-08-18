@@ -5,7 +5,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { DataState } from '../components/DataState';
 import { ImageViewerModal } from '../components/ImageViewerModal';
 import { MemorySubmitPanel } from '../components/MemorySubmitPanel';
-import { Screen } from '../components/Screen';
+import { SceneSection, SceneShell } from '../components/scene';
 import { SectionCard } from '../components/SectionCard';
 import {
   fetchApprovedMemoryItems,
@@ -14,7 +14,7 @@ import {
   type MemoryReaction,
   type MemoryUiKind,
 } from '../services/memory';
-import { colors, spacing, typography } from '../theme';
+import { colors, scene, spacing, typography } from '../theme';
 import type { Branch } from '../types';
 
 type IndexFilterKind = 'all' | MemoryUiKind;
@@ -464,30 +464,40 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
   if (selectedPerson) {
     return (
       <>
-        <Screen
-          description="عرض ذاكرة الشخص مع الصور والفيديو والصوت والقصص والوثائق، إضافة إلى الدعاء والتعليقات المعتمدة."
+        <SceneShell
+          english="FROM MEMORY"
+          eyebrow="أرشيف العائلة"
+          heroExtra={
+            <View style={styles.detailHero}>
+              {selectedPerson.personLineage ? (
+                <Text style={styles.heroLineage}>{selectedPerson.personLineage}</Text>
+              ) : null}
+              <Pressable
+                onPress={() => {
+                  setSelectedPerson(null);
+                  setDetailKind('all');
+                }}
+                style={({ pressed }) => [styles.backChip, pressed && styles.pressed]}
+              >
+                <Text style={styles.backChipText}>العودة إلى الفهرس</Text>
+              </Pressable>
+            </View>
+          }
           onRefresh={load}
           refreshing={loading}
+          subtitle={selectedPerson.branchKey ? `فرع ${selectedPerson.branchKey}` : 'ذاكرة شخصية'}
           title={selectedPerson.personName}
+          variant="archive"
         >
-        <Pressable
-          onPress={() => {
-            setSelectedPerson(null);
-            setDetailKind('all');
-          }}
-          style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.backButtonText}>← العودة إلى فهرس من الذاكرة</Text>
-        </Pressable>
 
-        <SectionCard>
+        <SceneSection>
           <Text style={styles.memoryMeta}>
             {[selectedPerson.branchKey ? `الفرع: ${selectedPerson.branchKey}` : '', selectedPerson.personLineage ? `النسب: ${selectedPerson.personLineage}` : '']
               .filter(Boolean)
               .join(' — ') || 'ذاكرة شخصية'}
           </Text>
           <Text style={styles.statTitle}>إجمالي المواد: {personItems.length}</Text>
-        </SectionCard>
+        </SceneSection>
 
         <View style={styles.filterWrap}>
           {detailKindFilters.map((entry) => {
@@ -527,7 +537,7 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
             ))}
           </>
         )}
-      </Screen>
+      </SceneShell>
       {imageViewer}
       </>
     );
@@ -535,13 +545,29 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
 
   return (
     <>
-    <Screen
-      description="فهرس من الذاكرة: أحدث الذكريات، بطاقات الأشخاص، والبحث والفلاتر على المواد المعتمدة فقط."
+    <SceneShell
+      english="FROM MEMORY"
+      eyebrow="أرشيف العائلة"
+      heroExtra={
+        latestItems[0] ? (
+          <View style={styles.featuredMemory}>
+            <Text style={styles.featuredLabel}>أحدث ما حُفظ</Text>
+            <Text style={styles.featuredTitle}>{cleanText(latestItems[0].title) || latestItems[0].personName}</Text>
+            {latestItems[0].personName ? (
+              <Text style={styles.featuredPerson}>{latestItems[0].personName}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <Text style={styles.featuredEmpty}>الذاكرة هنا حتى قبل الصورة.</Text>
+        )
+      }
       onRefresh={load}
       refreshing={loading}
+      subtitle="مواد معتمدة من أهل البيت — ليست قائمة ملفات."
       title="من الذاكرة"
+      variant="archive"
     >
-      <SectionCard title="ملخص سريع">
+      <SceneSection title="ملخص سريع">
         <View style={styles.statsGrid}>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{personCards.length}</Text>
@@ -568,9 +594,9 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
             <Text style={styles.statLabel}>وثائق</Text>
           </View>
         </View>
-      </SectionCard>
+      </SceneSection>
 
-      <SectionCard title="بحث وفلاتر">
+      <SceneSection title="بحث وفلاتر">
         <TextInput
           onChangeText={setQuery}
           placeholder="ابحث باسم الشخص أو عنوان المادة"
@@ -614,13 +640,13 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
             );
           })}
         </View>
-      </SectionCard>
+      </SceneSection>
 
       <DataState error={error} loading={loading} onRetry={load} />
 
       {!loading && !error ? (
         <>
-          <SectionCard title="أحدث الذكريات" eyebrow={`المواد المعتمدة: ${filteredItems.length}`}>
+          <SceneSection title="أحدث الذكريات">
             {!latestItems.length ? <DataState empty emptyText="لا توجد ذكريات مطابقة للبحث الحالي." /> : null}
             {latestItems.map((item) => (
               <MemoryCard
@@ -630,9 +656,9 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
                 onViewImage={openImageViewer}
               />
             ))}
-          </SectionCard>
+          </SceneSection>
 
-          <SectionCard title="شخصيات من الذاكرة">
+          <SceneSection title="شخصيات من الذاكرة">
             {!personCards.length ? <DataState empty emptyText="لا توجد شخصيات مطابقة للفلاتر الحالية." /> : null}
 
             {personCards.map((person) => (
@@ -644,25 +670,28 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
                 }}
                 style={({ pressed }) => [styles.personCard, pressed && styles.pressed]}
               >
-                <Text style={styles.personName}>{person.personName}</Text>
-                <Text style={styles.personMeta}>
-                  {[
-                    person.branchKey ? `الفرع: ${person.branchKey}` : '',
-                    person.memoriesCount ? `عدد المواد: ${person.memoriesCount}` : '',
-                    person.latestCreatedAt ? `آخر تحديث: ${dateLabel(person.latestCreatedAt)}` : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' — ')}
-                </Text>
-                {person.personLineage ? <Text style={styles.personMeta}>النسب: {person.personLineage}</Text> : null}
+                <View style={styles.personSeal}>
+                  <Text style={styles.personSealLetter}>{person.personName.slice(0, 1)}</Text>
+                </View>
+                <View style={styles.personCopy}>
+                  <Text style={styles.personName}>{person.personName}</Text>
+                  <Text style={styles.personMeta}>
+                    {[
+                      person.branchKey ? `الفرع: ${person.branchKey}` : '',
+                      person.memoriesCount ? `${person.memoriesCount} مواد` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                </View>
               </Pressable>
             ))}
-          </SectionCard>
+          </SceneSection>
 
           <MemorySubmitPanel branches={branchList} />
         </>
       ) : null}
-    </Screen>
+    </SceneShell>
     {imageViewer}
     </>
   );
@@ -721,16 +750,16 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   filterChip: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
+    backgroundColor: 'transparent',
+    borderColor: 'rgba(196,163,90,0.55)',
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   filterChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: scene.green,
+    borderColor: scene.green,
   },
   filterChipText: {
     color: colors.text,
@@ -822,13 +851,34 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   personCard: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: 16,
+    alignItems: 'center',
+    backgroundColor: scene.creamLift,
+    borderColor: 'rgba(196,163,90,0.4)',
+    borderRadius: 20,
     borderWidth: 1,
-    gap: 4,
-    paddingHorizontal: spacing.sm,
+    flexDirection: 'row-reverse',
+    gap: 12,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  personSeal: {
+    alignItems: 'center',
+    backgroundColor: scene.green,
+    borderColor: scene.gold,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  personSealLetter: {
+    color: scene.goldSoft,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  personCopy: {
+    flex: 1,
+    gap: 2,
   },
   personName: {
     color: colors.text,
@@ -859,5 +909,58 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.72,
+  },
+  featuredMemory: {
+    alignItems: 'flex-end',
+    gap: 4,
+    paddingBottom: spacing.sm,
+  },
+  featuredLabel: {
+    color: scene.gold,
+    fontSize: 12,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
+  featuredTitle: {
+    color: scene.creamLift,
+    fontSize: 24,
+    fontWeight: '800',
+    lineHeight: 34,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  featuredPerson: {
+    color: scene.goldSoft,
+    fontSize: 14,
+    writingDirection: 'rtl',
+  },
+  featuredEmpty: {
+    color: scene.goldSoft,
+    fontSize: 15,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  detailHero: {
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  heroLineage: {
+    color: scene.goldSoft,
+    fontSize: 14,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  backChip: {
+    borderColor: scene.gold,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  backChipText: {
+    color: scene.goldSoft,
+    fontSize: 12,
+    fontWeight: '800',
+    writingDirection: 'rtl',
   },
 });

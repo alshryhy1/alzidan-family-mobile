@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AppState,
   I18nManager,
+  Linking,
   LogBox,
   Pressable,
   StyleSheet,
@@ -39,11 +40,13 @@ import {
   type SpecialCard,
 } from './src/services/specialCards';
 import { loadMyRequests } from './src/services/myRequestsTrack';
+import { loadKinshipForViewer, loadMemberViewerPerson } from './src/services/publicData';
 import { selectPublicRows } from './src/services/supabase';
 import { trackAppView } from './src/services/viewTracking';
 import { colors, spacing, typography } from './src/theme';
-import type { MemberRequest, PublicScreen } from './src/types';
+import type { MemberRequest, PublicScreen, TreeChild } from './src/types';
 import { isFamilyEventPubliclyVisible } from './src/utils/eventVisibility';
+import { kinshipLabelForPerson } from './src/utils/maternalKinship';
 import { canonicalizePhone, memberProfilePhoneQuery } from './src/utils/phone';
 import { resolveEncounterMode } from './src/utils/personEncounter';
 
@@ -59,6 +62,13 @@ LogBox.ignoreLogs([
 ]);
 
 const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
+
+function screenFromOpenUrl(url: string | null): PublicScreen | null {
+  const raw = String(url || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw.includes('://events') || raw.includes('/events')) return 'events';
+  return null;
+}
 
 function cleanStoredPhone(value: string) {
   return canonicalizePhone(value);
@@ -159,7 +169,6 @@ async function fetchTickerSpeedSeconds() {
 const tabs: Array<{ key: PublicScreen; label: string; icon: string }> = [
   { key: 'home', label: 'نبض', icon: '⌂' },
   { key: 'branches', label: 'الفروع', icon: '⌘' },
-  { key: 'tree', label: 'الشجرة', icon: '♧' },
   { key: 'events', label: 'المناسبات', icon: '◇' },
   { key: 'memory', label: 'من الذاكرة', icon: '◈' },
   { key: 'profile', label: 'ملفي', icon: 'i' },
@@ -201,6 +210,8 @@ export default function App() {
   const [memberGreeting, setMemberGreeting] = useState<string | null>(null);
   const [memberBranchKey, setMemberBranchKey] = useState<string | null>(null);
   const [memberTreeChildId, setMemberTreeChildId] = useState<number | null>(null);
+  const [memberViewerPerson, setMemberViewerPerson] = useState<TreeChild | null>(null);
+  const [maternalKinshipById, setMaternalKinshipById] = useState<Record<number, string>>({});
   const [memberPhoneForRequests, setMemberPhoneForRequests] = useState('');
   const [memberRequests, setMemberRequests] = useState<MemberRequest[]>([]);
   const [specialCards, setSpecialCards] = useState<SpecialCard[]>([]);
@@ -271,6 +282,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const openFromUrl = (url: string | null) => {
+      const next = screenFromOpenUrl(url);
+      if (!next) return;
+      setLegacyChrome(true);
+      setScreen(next);
+    };
+
+    Linking.getInitialURL()
+      .then(openFromUrl)
+      .catch(() => undefined);
+
+    const sub = Linking.addEventListener('url', ({ url }) => openFromUrl(url));
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
     let alive = true;
 
     AsyncStorage.getItem(MEMBER_PHONE_KEY)
@@ -281,6 +308,7 @@ export default function App() {
             setMemberGreeting(null);
             setMemberBranchKey(null);
             setMemberTreeChildId(null);
+            setMemberViewerPerson(null);
             setMemberPhoneForRequests('');
           }
           return;
@@ -294,19 +322,27 @@ export default function App() {
             setMemberGreeting(null);
             setMemberBranchKey(null);
             setMemberTreeChildId(null);
+            setMemberViewerPerson(null);
             setMemberPhoneForRequests('');
           }
           return;
         }
 
-        const child = publicData.children.find((row) => row.id === profile.tree_child_id);
-        const name = child?.name ? tripleNameFromPath(child.name) : profile.display_name || null;
+        const hiddenViewer = await loadMemberViewerPerson(phone);
+        const child =
+          publicData.children.find((row) => row.id === profile.tree_child_id) || hiddenViewer;
+        const name = child?.name
+          ? tripleNameFromPath(child.name)
+          : profile.display_name || null;
         if (alive) {
           setMemberGreeting(name);
-          setMemberBranchKey(profile.branch_key || null);
+          setMemberBranchKey(profile.branch_key || hiddenViewer?.branchKey || null);
           setMemberTreeChildId(
-            Number.isFinite(Number(profile.tree_child_id)) ? Number(profile.tree_child_id) : null,
+            Number.isFinite(Number(profile.tree_child_id))
+              ? Number(profile.tree_child_id)
+              : hiddenViewer?.id || null,
           );
+          setMemberViewerPerson(hiddenViewer || child || null);
           setMemberPhoneForRequests(phone);
         }
         rememberPushPhone(phone)
@@ -318,6 +354,7 @@ export default function App() {
           setMemberGreeting(null);
           setMemberBranchKey(null);
           setMemberTreeChildId(null);
+          setMemberViewerPerson(null);
           setMemberPhoneForRequests('');
         }
       });
@@ -335,6 +372,44 @@ export default function App() {
   useEffect(() => {
     void reloadMyRequests();
   }, [reloadMyRequests, screen]);
+
+  useEffect(() => {
+    let alive = true;
+    if (memberTreeChildId == null) {
+      setMaternalKinshipById({});
+      return () => {
+        alive = false;
+      };
+    }
+    const viewer =
+      memberViewerPerson && Number(memberViewerPerson.id) === Number(memberTreeChildId)
+        ? memberViewerPerson
+        : publicData.children.find((row) => Number(row.id) === Number(memberTreeChildId)) ||
+          memberViewerPerson || {
+            id: memberTreeChildId,
+            branchKey: memberBranchKey || '',
+            parentName: '',
+            name: '',
+            birthOrder: null,
+            birthDateGregorian: null,
+            birthDateHijri: null,
+            birthYear: null,
+            city: null,
+            area: null,
+            isDeceased: null,
+            gender: null,
+          };
+    loadKinshipForViewer(viewer, publicData.children)
+      .then((map) => {
+        if (alive) setMaternalKinshipById(map);
+      })
+      .catch(() => {
+        if (alive) setMaternalKinshipById((prev) => prev);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [memberTreeChildId, memberViewerPerson, memberBranchKey, publicData.children]);
 
   useEffect(() => {
     let mounted = true;
@@ -486,13 +561,39 @@ export default function App() {
 
   const encounterPerson = useMemo(() => {
     if (encounterTreeChildId == null) return null;
-    return publicData.children.find((row) => Number(row.id) === Number(encounterTreeChildId)) || null;
-  }, [encounterTreeChildId, publicData.children]);
+    const fromPublic = publicData.children.find(
+      (row) => Number(row.id) === Number(encounterTreeChildId),
+    );
+    const fromViewer =
+      memberViewerPerson && Number(memberViewerPerson.id) === Number(encounterTreeChildId)
+        ? memberViewerPerson
+        : null;
+    if (fromPublic && fromViewer) {
+      return {
+        ...fromPublic,
+        photoUrl: fromPublic.photoUrl || fromViewer.photoUrl || null,
+      };
+    }
+    return fromPublic || fromViewer || null;
+  }, [encounterTreeChildId, publicData.children, memberViewerPerson]);
 
   const encounterViewer = useMemo(() => {
+    if (memberViewerPerson) {
+      const fromPublic = publicData.children.find(
+        (row) => Number(row.id) === Number(memberViewerPerson.id),
+      );
+      if (fromPublic) {
+        return {
+          ...fromPublic,
+          ...memberViewerPerson,
+          photoUrl: memberViewerPerson.photoUrl || fromPublic.photoUrl || null,
+        };
+      }
+      return memberViewerPerson;
+    }
     if (memberTreeChildId == null) return null;
     return publicData.children.find((row) => Number(row.id) === Number(memberTreeChildId)) || null;
-  }, [memberTreeChildId, publicData.children]);
+  }, [memberViewerPerson, memberTreeChildId, publicData.children]);
 
   const encounterMode = useMemo(() => {
     if (!encounterPerson) return 'visitor' as const;
@@ -528,6 +629,7 @@ export default function App() {
             focusedTreeChildId={focusedTreeChildId}
             onSelectBranch={setSelectedBranchKey}
             onOpenEncounter={openPersonEncounter}
+            onBackToHouses={() => setScreen('branches')}
           />
         );
       case 'person':
@@ -551,6 +653,12 @@ export default function App() {
             branches={publicData.branches}
             childrenRows={publicData.children}
             events={activeEvents}
+            maternalLabel={kinshipLabelForPerson(
+              maternalKinshipById,
+              encounterPerson,
+              publicData.children,
+            )}
+            kinshipById={maternalKinshipById}
             onClose={closePersonEncounter}
           />
         );
@@ -569,9 +677,13 @@ export default function App() {
           <ProfileScreen
             branches={publicData.branches}
             childrenRows={publicData.children}
+            viewerPerson={memberViewerPerson}
             onOpenMemberCard={(branchKey, treeChildId) =>
               openPersonEncounter(branchKey, treeChildId, 'profile')
             }
+            onPhotoSaved={() => {
+              void reloadPublished();
+            }}
             onMemberSessionChange={(phone) => {
               const cleaned = cleanStoredPhone(phone || '');
               setMemberPhoneForRequests(cleaned);
@@ -579,7 +691,9 @@ export default function App() {
                 setMemberGreeting(null);
                 setMemberBranchKey(null);
                 setMemberTreeChildId(null);
-                setMemberRequests([]);
+                setMemberViewerPerson(null);
+              setMaternalKinshipById({});
+              setMemberRequests([]);
               }
             }}
           />
@@ -607,13 +721,21 @@ export default function App() {
             latestEvents={activeEvents}
             memberGreeting={memberGreeting}
             memberBranchKey={memberBranchKey}
+            memberPhotoUrl={encounterViewer?.photoUrl || null}
+            memberTreeChildId={memberTreeChildId}
             loading={publicData.loading}
             onRetry={reloadPublished}
             onOpenEvents={() => setScreen('events')}
-            onOpenFamilyLab={() => {
-              setLegacyChrome(false);
-              setScreen('familyLab');
-            }}
+            onOpenMyCard={
+              memberTreeChildId != null && (memberBranchKey || encounterViewer?.branchKey)
+                ? () =>
+                    openPersonEncounter(
+                      memberBranchKey || encounterViewer?.branchKey || '',
+                      memberTreeChildId,
+                      'home',
+                    )
+                : undefined
+            }
           />
         );
     }
@@ -622,14 +744,13 @@ export default function App() {
   return (
     <>
       <SafeAreaProvider>
-        <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-          <StatusBar style="dark" />
+        <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+          <StatusBar style="light" />
           <View style={styles.app}>
             <View
               style={[
                 styles.header,
-                screen === 'home' && styles.headerPulse,
-                (screen === 'familyLab' || screen === 'person' || !legacyChrome) && styles.headerHidden,
+                styles.headerHidden,
               ]}
             >
               <View style={[styles.brandMark, screen === 'home' && styles.brandMarkPulse]}>
@@ -656,7 +777,8 @@ export default function App() {
           {legacyChrome && screen !== 'familyLab' && screen !== 'person' ? (
           <View style={styles.tabBar}>
             {tabs.map((tab) => {
-              const active = screen === tab.key;
+              const tabScreen = screen === 'tree' ? 'branches' : screen;
+              const active = tabScreen === tab.key;
               return (
                 <Pressable
                   accessibilityRole="tab"
@@ -679,17 +801,6 @@ export default function App() {
           </View>
           ) : null}
 
-          {legacyChrome && screen !== 'familyLab' && screen !== 'person' ? (
-            <Pressable
-              onPress={() => {
-                setLegacyChrome(false);
-                setScreen('familyLab');
-              }}
-              style={styles.backToFamily}
-            >
-              <Text style={styles.backToFamilyText}>عودة لمساحة العائلة</Text>
-            </Pressable>
-          ) : null}
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -706,7 +817,7 @@ export default function App() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
   },
   app: {
     flex: 1,
@@ -786,39 +897,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tabBar: {
-    backgroundColor: colors.surface,
-    borderTopColor: colors.border,
+    backgroundColor: colors.background,
+    borderTopColor: 'rgba(196,163,90,0.35)',
     borderTopWidth: 1,
     flexDirection: 'row-reverse',
     paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xs,
+    paddingVertical: 6,
   },
   tab: {
     alignItems: 'center',
-    borderRadius: 14,
+    borderRadius: 16,
     flex: 1,
     gap: 2,
-    minHeight: 54,
+    minHeight: 56,
     justifyContent: 'center',
     paddingHorizontal: 2,
   },
   activeTab: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: 'rgba(23,63,53,0.12)',
   },
   pressedTab: {
     opacity: 0.7,
-  },
-  backToFamily: {
-    alignItems: 'center',
-    paddingBottom: spacing.sm,
-    paddingTop: 2,
-  },
-  backToFamilyText: {
-    color: colors.primary,
-    fontSize: typography.caption,
-    fontWeight: '700',
-    opacity: 0.75,
-    writingDirection: 'rtl',
   },
   tabIcon: {
     color: colors.textMuted,
@@ -852,6 +951,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   activeTabText: {
-    color: colors.primary,
+    color: colors.primaryDark,
+    fontWeight: '800',
   },
 });

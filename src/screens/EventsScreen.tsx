@@ -9,13 +9,13 @@ import { Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 're
 import { ActionButton } from '../components/ActionButton';
 import { DataState } from '../components/DataState';
 import { PhoneField } from '../components/PhoneField';
-import { Screen } from '../components/Screen';
+import { SceneShell } from '../components/scene';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
 import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
 import { rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { insertPublicRow, selectPublicRows, uploadPublicFileUri } from '../services/supabase';
-import { colors, spacing, typography } from '../theme';
+import { colors, scene, spacing, typography } from '../theme';
 import type { Branch, FamilyEvent } from '../types';
 import {
   MOBILE_EVENT_FAMILIES,
@@ -213,6 +213,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const [submitting, setSubmitting] = useState(false);
   const [pickingMedia, setPickingMedia] = useState<'image' | 'video' | null>(null);
   const visibleEvents = filter === 'all' ? events : events.filter((event) => event.category === filter);
+  const featuredEvent = visibleEvents[0] ?? null;
   const happyCount = events.filter((event) => event.category === 'happy').length;
   const healthCount = events.filter((event) => event.category === 'health').length;
   const condolenceCount = events.filter((event) => event.category === 'condolence').length;
@@ -444,11 +445,27 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   };
 
   return (
-    <Screen
-      title="المناسبات"
-      description="ما يظهر الآن في العائلة. أرسل مناسبة جديدة من أسفل الصفحة."
+    <SceneShell
+      english="FAMILY OCCASIONS"
+      eyebrow="مجلس العائلة"
+      heroExtra={
+        featuredEvent ? (
+          <View style={styles.featured}>
+            <Text style={styles.featuredPerson}>{featuredEvent.person || featuredEvent.title}</Text>
+            <Text style={styles.featuredTitle}>
+              {stripMarkdownNoise(featuredEvent.title) || featuredEvent.categoryLabel}
+            </Text>
+            {featuredEvent.date ? <Text style={styles.featuredDate}>{featuredEvent.date}</Text> : null}
+          </View>
+        ) : (
+          <Text style={styles.featuredEmpty}>لا مناسبة ظاهرة في هذا التصنيف الآن.</Text>
+        )
+      }
       onRefresh={onRetry}
       refreshing={loading}
+      subtitle="ما يظهر الآن في العائلة — مشهد حي لا قائمة إدارية."
+      title="المناسبات"
+      variant="occasion"
     >
       <View style={styles.filters}>
         {filters.map((item) => {
@@ -502,6 +519,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
               key={event.id}
               style={[
                 styles.eventCard,
+                event.id === featuredEvent?.id && styles.eventStage,
                 event.category === 'condolence' && styles.eventCardQuiet,
                 event.category === 'happy' && styles.eventCardHappy,
                 event.category === 'health' && styles.eventCardHealth,
@@ -905,8 +923,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
           </View>
         ) : null}
       </SectionCard>
-
-    </Screen>
+    </SceneShell>
   );
 }
 
@@ -917,16 +934,16 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   filter: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: 'transparent',
+    borderColor: scene.gold,
     borderRadius: 20,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   activeFilter: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: scene.green,
+    borderColor: scene.green,
   },
   filterText: {
     color: colors.textMuted,
@@ -943,8 +960,10 @@ const styles = StyleSheet.create({
   },
   summaryItem: {
     alignItems: 'center',
-    backgroundColor: colors.accentSoft,
+    backgroundColor: scene.creamLift,
+    borderColor: 'rgba(196,163,90,0.4)',
     borderRadius: 16,
+    borderWidth: 1,
     flex: 1,
     gap: 2,
     paddingHorizontal: spacing.xs,
@@ -1117,15 +1136,19 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   eventCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 22,
+    backgroundColor: scene.creamLift,
+    borderColor: 'rgba(196,163,90,0.4)',
+    borderRadius: 26,
     borderWidth: 1,
     flexDirection: 'row-reverse',
     overflow: 'hidden',
   },
+  eventStage: {
+    borderColor: scene.gold,
+    borderWidth: 2,
+  },
   eventCardHappy: {
-    backgroundColor: '#FFFBF4',
+    backgroundColor: '#F7EED8',
   },
   eventCardHealth: {
     backgroundColor: '#F6FAFC',
@@ -1262,5 +1285,36 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.72,
+  },
+  featured: {
+    alignItems: 'flex-end',
+    gap: 6,
+    paddingBottom: spacing.sm,
+  },
+  featuredPerson: {
+    color: scene.creamLift,
+    fontSize: 32,
+    fontWeight: '800',
+    lineHeight: 42,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  featuredTitle: {
+    color: scene.gold,
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  featuredDate: {
+    color: scene.goldSoft,
+    fontSize: 13,
+    writingDirection: 'rtl',
+  },
+  featuredEmpty: {
+    color: scene.goldSoft,
+    fontSize: 15,
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
 });

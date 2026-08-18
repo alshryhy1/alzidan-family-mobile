@@ -7,6 +7,7 @@
  */
 
 import type { TreeChild } from '../types';
+import { isPublicLineageHiddenPerson } from './personVisibility';
 
 const PARENTS_BY_BRANCH: Record<string, string[]> = {
   زيدان: ['خميس بن زيدان بن مطلق', 'عبدالله بن زيدان بن مطلق'],
@@ -120,6 +121,7 @@ function mergeChildMeta(prev: TreeChild, next: TreeChild): TreeChild {
     city: preferred.city ?? other.city,
     area: preferred.area ?? other.area,
     isDeceased: preferred.isDeceased === true || other.isDeceased === true ? true : preferred.isDeceased ?? other.isDeceased,
+    photoUrl: preferred.photoUrl || other.photoUrl || null,
   };
 }
 
@@ -127,6 +129,9 @@ function mergeChildMeta(prev: TreeChild, next: TreeChild): TreeChild {
  * Groups branch child rows under canonical parent path keys, matching web merge behavior.
  */
 export function groupChildrenRows(rows: TreeChild[], branchKey: string): Map<string, TreeChild[]> {
+  const publicRows = (Array.isArray(rows) ? rows : []).filter(
+    (row) => !isPublicLineageHiddenPerson(row),
+  );
   const key = normalizePersonName(branchKey || '');
   const branchRoot = key ? getBranchRootName(key) : '';
   const byParent = new Map<string, TreeChild[]>();
@@ -299,7 +304,7 @@ export function groupChildrenRows(rows: TreeChild[], branchKey: string): Map<str
   };
 
   // Pass 1: index path-bearing ids so short parents can resolve when unique.
-  for (const row of rows) {
+  for (const row of publicRows) {
     const parentRaw = normalizeParentName(row.parentName || '', key);
     const childRaw = normalizePersonName(row.name || '');
     if (parentRaw.includes('/')) indexKnownId(parentRaw);
@@ -307,7 +312,7 @@ export function groupChildrenRows(rows: TreeChild[], branchKey: string): Map<str
     if (parentRaw) indexKnownId(parentRaw);
   }
 
-  for (const row of rows) {
+  for (const row of publicRows) {
     const parentRaw = normalizeParentName(row.parentName || '', key);
     const childRaw = normalizePersonName(row.name || '');
     if (!parentRaw || !childRaw) continue;

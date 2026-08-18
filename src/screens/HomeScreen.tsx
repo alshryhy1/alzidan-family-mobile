@@ -3,8 +3,9 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DataState } from '../components/DataState';
 import { ImageViewerModal } from '../components/ImageViewerModal';
-import { Screen } from '../components/Screen';
-import { colors, spacing, typography } from '../theme';
+import { PersonPhoto } from '../components/PersonPhoto';
+import { GoldDivider, SceneShell } from '../components/scene';
+import { colors, scene, spacing, typography } from '../theme';
 import type { FamilyEvent, TreeChild } from '../types';
 import { eventTypeArabicLabel } from '../utils/eventTypeLabels';
 import { isFamilyEventPubliclyVisible } from '../utils/eventVisibility';
@@ -12,6 +13,8 @@ import { isFamilyEventPubliclyVisible } from '../utils/eventVisibility';
 type HomeScreenProps = {
   memberGreeting?: string | null;
   memberBranchKey?: string | null;
+  memberPhotoUrl?: string | null;
+  memberTreeChildId?: number | null;
   /** Loaded tree children — presence marks use the member's branch only. */
   branchChildren?: TreeChild[];
   error: string | null;
@@ -19,7 +22,7 @@ type HomeScreenProps = {
   loading: boolean;
   onRetry: () => void;
   onOpenEvents?: () => void;
-  onOpenFamilyLab?: () => void;
+  onOpenMyCard?: () => void;
 };
 
 function stripMarkdownNoise(value?: string | null) {
@@ -60,7 +63,6 @@ function samePerson(a?: string | null, b?: string | null) {
   const leftFirst = firstNameOnly(left);
   const rightFirst = firstNameOnly(right);
   if (leftFirst.length >= 2 && leftFirst === rightFirst) {
-    // Soft match only when one name is a prefix of the other (مزيد / مزيد خميس).
     return left.startsWith(right) || right.startsWith(left);
   }
   return left.includes(right) || right.includes(left);
@@ -126,10 +128,6 @@ function kinshipHint(
 const PRESENCE_MAX = 5;
 const PRESENCE_MIN_OTHERS = 2;
 
-/**
- * Quiet presence marks from real branch people.
- * Returns lit index + count, or null when data is insufficient (no fake row).
- */
 function buildPresenceMarks(input: {
   branchKey: string | null | undefined;
   momentPerson: string;
@@ -165,7 +163,6 @@ function buildPresenceMarks(input: {
   const slots = Math.min(PRESENCE_MAX, others.length + 1);
   const otherSlots = slots - 1;
   const pickedOthers = others.slice(0, otherSlots);
-  // Lit mark near the middle — moment person; Hassan never appears here.
   const litIndex = Math.min(Math.floor(slots / 2), pickedOthers.length);
   return { count: pickedOthers.length + 1, litIndex };
 }
@@ -177,20 +174,18 @@ function buildPresenceMarks(input: {
 export function HomeScreen({
   memberGreeting,
   memberBranchKey,
+  memberPhotoUrl,
+  memberTreeChildId,
   branchChildren = [],
   error,
   latestEvents = [],
   loading,
   onRetry,
   onOpenEvents,
-  onOpenFamilyLab,
+  onOpenMyCard,
 }: HomeScreenProps) {
   const [posterOpen, setPosterOpen] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
-
-  // TEMP: Pulse case B — hide attachment so we judge place without media.
-  // Flip to false after the user verdict (do not ship).
-  const FORCE_PULSE_CASE_B = true;
 
   const publicEvents = useMemo(
     () =>
@@ -247,13 +242,13 @@ export function HomeScreen({
   const otherMoments = rankedMoments.filter((event) => event.id !== moment?.id);
   const totalMoments = rankedMoments.length;
 
-  const greetingFirst = firstNameOnly(memberGreeting) || 'بك';
+  const loggedIn = Boolean(String(memberGreeting || '').trim());
+  const greetingFirst = firstNameOnly(memberGreeting);
   const heroPerson = moment ? personShortName(moment.person) || moment.person : '';
   const heroBlessing = moment ? blessingLine(moment) : '';
-  const posterUrl = FORCE_PULSE_CASE_B
-    ? ''
-    : String(moment?.imageUrl || '').trim();
+  const posterUrl = String(moment?.imageUrl || '').trim();
   const kinship = moment ? kinshipHint(moment, memberGreeting, branchKeyNorm) : '';
+  const canOpenCard = Boolean(memberTreeChildId && onOpenMyCard);
 
   const presence = useMemo(() => {
     if (!moment) return null;
@@ -266,13 +261,11 @@ export function HomeScreen({
   }, [moment, memberBranchKey, memberGreeting, branchChildren]);
 
   const moreLabel =
-    FORCE_PULSE_CASE_B
-      ? ''
-      : totalMoments === 2 && otherMoments[0]
-        ? `أيضًا في أهلك · ${personShortName(otherMoments[0].person) || otherMoments[0].person}`
-        : totalMoments >= 3
-          ? `${totalMoments} لحظات جديدة في أهلك`
-          : '';
+    totalMoments === 2 && otherMoments[0]
+      ? `أيضًا في أهلك · ${personShortName(otherMoments[0].person) || otherMoments[0].person}`
+      : totalMoments >= 3
+        ? `${totalMoments} لحظات جديدة في أهلك`
+        : '';
 
   function onPressMore() {
     if (totalMoments === 2 && otherMoments[0]) {
@@ -292,22 +285,32 @@ export function HomeScreen({
   }
 
   return (
-    <Screen title="" onRefresh={onRetry} refreshing={loading}>
-      <View style={styles.space}>
-        <View style={styles.hello}>
-          <Text style={styles.salam}>السلام عليكم، {greetingFirst}</Text>
-          <Text style={styles.welcome}>أهلاً بك بين أهلك.</Text>
+    <SceneShell
+      english="FAMILY PULSE"
+      eyebrow="حضور العائلة"
+      heroLead={
+        <View style={styles.greetRow}>
+          {loggedIn ? (
+            <PersonPhoto
+              name={greetingFirst}
+              showFallback
+              size="sm"
+              uri={memberPhotoUrl}
+            />
+          ) : null}
+          <Text style={styles.greetText}>
+            {loggedIn && greetingFirst ? `السلام عليكم، ${greetingFirst}` : 'السلام عليكم'}
+          </Text>
         </View>
-
-        <DataState error={error} loading={loading} onRetry={onRetry} />
-
-        {!loading && !error ? (
+      }
+      heroExtra={
+        !loading && !error ? (
           moment ? (
             <View style={styles.moment}>
               <Text style={styles.person}>{heroPerson}</Text>
+              <GoldDivider />
               {kinship ? <Text style={styles.kinship}>{kinship}</Text> : null}
               <Text style={styles.blessing}>{heroBlessing}</Text>
-
               {presence ? (
                 <View
                   accessibilityElementsHidden
@@ -326,36 +329,6 @@ export function HomeScreen({
                   })}
                 </View>
               ) : null}
-
-              {posterUrl ? (
-                <Pressable
-                  accessibilityHint="فتح بطاقة التهنئة"
-                  accessibilityRole="button"
-                  onPress={() => setPosterOpen(true)}
-                  style={({ pressed }) => [styles.attachment, pressed && styles.pressed]}
-                >
-                  <Image
-                    accessibilityIgnoresInvertColors
-                    resizeMode="cover"
-                    source={{ uri: posterUrl }}
-                    style={styles.attachmentThumb}
-                  />
-                  <View style={styles.attachmentText}>
-                    <Text style={styles.attachmentLabel}>بطاقة التهنئة</Text>
-                    <Text style={styles.attachmentAction}>فتح</Text>
-                  </View>
-                </Pressable>
-              ) : null}
-
-              {moreLabel ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={onPressMore}
-                  style={({ pressed }) => [styles.moreLink, pressed && styles.pressed]}
-                >
-                  <Text style={styles.moreText}>{moreLabel}</Text>
-                </Pressable>
-              ) : null}
             </View>
           ) : (
             <View style={styles.emptyMoment}>
@@ -363,80 +336,122 @@ export function HomeScreen({
               <Text style={styles.emptyBody}>لا لحظة جديدة اليوم — وهذا طبيعي.</Text>
             </View>
           )
-        ) : null}
-      </View>
+        ) : null
+      }
+      onRefresh={onRetry}
+      refreshing={loading}
+      title="أهلاً بك بين أهلك"
+      variant="pulse"
+    >
+      <DataState error={error} loading={loading} onRetry={onRetry} />
+
+      {!moment && !loading && !error && loggedIn && (memberBranchKey || canOpenCard) ? (
+        <View style={styles.placeRow}>
+          {memberBranchKey ? <Text style={styles.placeBranch}>فرع {memberBranchKey}</Text> : null}
+          {memberBranchKey && canOpenCard ? <Text style={styles.placeSep}>·</Text> : null}
+          {canOpenCard ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={onOpenMyCard}
+              style={({ pressed }) => [pressed && styles.pressed]}
+            >
+              <Text style={styles.placeCard}>فتح بطاقتك</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
+      {posterUrl ? (
+        <Pressable
+          accessibilityHint="فتح بطاقة التهنئة"
+          accessibilityRole="button"
+          onPress={() => setPosterOpen(true)}
+          style={({ pressed }) => [styles.attachment, pressed && styles.pressed]}
+        >
+          <Image
+            accessibilityIgnoresInvertColors
+            resizeMode="cover"
+            source={{ uri: posterUrl }}
+            style={styles.attachmentThumb}
+          />
+          <View style={styles.attachmentText}>
+            <Text style={styles.attachmentLabel}>بطاقة التهنئة</Text>
+            <Text style={styles.attachmentAction}>فتح</Text>
+          </View>
+        </Pressable>
+      ) : null}
+
+      {moreLabel ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onPressMore}
+          style={({ pressed }) => [styles.moreLink, pressed && styles.pressed]}
+        >
+          <Text style={styles.moreText}>{moreLabel}</Text>
+        </Pressable>
+      ) : null}
+
+      {onOpenEvents ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenEvents}
+          style={({ pressed }) => [styles.enterOccasion, pressed && styles.pressed]}
+        >
+          <Text style={styles.enterOccasionText}>دخول مجلس المناسبات</Text>
+        </Pressable>
+      ) : null}
 
       <ImageViewerModal
         onClose={() => setPosterOpen(false)}
         uri={posterUrl}
         visible={posterOpen && Boolean(posterUrl)}
       />
-
-      {onOpenFamilyLab ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onOpenFamilyLab}
-          style={({ pressed }) => [styles.labLink, pressed && styles.pressed]}
-        >
-          <Text style={styles.labLinkText}>اختبار مساحة العائلة</Text>
-        </Pressable>
-      ) : null}
-    </Screen>
+    </SceneShell>
   );
 }
 
 const styles = StyleSheet.create({
-  space: {
-    gap: spacing.md,
-    paddingBottom: spacing.xxl,
-    paddingTop: spacing.xs,
+  greetRow: {
+    alignItems: 'center',
+    flexDirection: 'row-reverse',
+    gap: 10,
+    justifyContent: 'flex-start',
   },
-  hello: {
-    gap: 4,
-  },
-  salam: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 32,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  welcome: {
-    color: colors.textMuted,
+  greetText: {
+    color: 'rgba(232,213,168,0.92)',
+    flexShrink: 1,
     fontSize: typography.body,
-    fontWeight: '500',
+    fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   moment: {
     alignItems: 'center',
-    gap: 4,
-    paddingTop: spacing.md,
+    gap: 6,
+    paddingBottom: spacing.md,
+    paddingTop: spacing.sm,
   },
   person: {
-    color: colors.primaryDark,
-    fontSize: 24,
-    fontWeight: '700',
-    lineHeight: 32,
+    color: scene.creamLift,
+    fontSize: 36,
+    fontWeight: '800',
+    lineHeight: 46,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   kinship: {
-    color: colors.textMuted,
+    color: scene.goldSoft,
     fontSize: 13,
-    fontWeight: '500',
     fontStyle: 'italic',
-    opacity: 0.78,
+    fontWeight: '600',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   blessing: {
-    color: colors.textMuted,
-    fontSize: typography.title,
-    fontWeight: '500',
-    lineHeight: 26,
-    marginTop: 2,
+    color: scene.gold,
+    fontSize: 20,
+    fontWeight: '700',
+    lineHeight: 30,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
@@ -445,32 +460,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
     justifyContent: 'center',
-    marginTop: 14,
-    opacity: 0.9,
+    marginTop: 10,
   },
   presenceDot: {
-    backgroundColor: colors.textMuted,
+    backgroundColor: scene.goldSoft,
     borderRadius: 999,
-    height: 4,
-    opacity: 0.22,
-    width: 4,
+    height: 5,
+    opacity: 0.28,
+    width: 5,
   },
   presenceDotLit: {
-    backgroundColor: colors.primaryDark,
-    height: 5,
-    opacity: 0.42,
-    width: 5,
+    backgroundColor: scene.gold,
+    height: 8,
+    opacity: 0.95,
+    width: 8,
+  },
+  emptyMoment: {
+    alignItems: 'center',
+    gap: 6,
+    paddingBottom: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  emptyTitle: {
+    color: scene.goldSoft,
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  emptyBody: {
+    color: 'rgba(232,213,168,0.8)',
+    fontSize: typography.body,
+    textAlign: 'center',
+    writingDirection: 'rtl',
   },
   attachment: {
     alignItems: 'center',
     flexDirection: 'row-reverse',
     gap: 10,
-    marginTop: spacing.md,
     paddingVertical: 4,
   },
   attachmentThumb: {
     backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
+    borderColor: scene.gold,
     borderRadius: 7,
     borderWidth: 1,
     height: 48,
@@ -493,7 +525,6 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   moreLink: {
-    marginTop: spacing.md,
     paddingVertical: 4,
   },
   moreText: {
@@ -503,40 +534,48 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     writingDirection: 'rtl',
   },
-  pressed: {
-    opacity: 0.72,
-  },
-  emptyMoment: {
+  enterOccasion: {
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingTop: spacing.xl,
+    alignSelf: 'center',
+    borderColor: scene.gold,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: spacing.sm,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
   },
-  emptyTitle: {
-    color: colors.primaryDark,
-    fontSize: typography.heading,
+  enterOccasionText: {
+    color: scene.green,
+    fontSize: 14,
     fontWeight: '800',
-    textAlign: 'center',
     writingDirection: 'rtl',
   },
-  emptyBody: {
+  placeRow: {
+    alignItems: 'center',
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+    paddingBottom: spacing.sm,
+  },
+  placeBranch: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: '700',
+    writingDirection: 'rtl',
+  },
+  placeSep: {
     color: colors.textMuted,
     fontSize: typography.body,
-    lineHeight: 24,
-    textAlign: 'center',
+    fontWeight: '700',
+  },
+  placeCard: {
+    color: colors.primary,
+    fontSize: typography.body,
+    fontWeight: '800',
     writingDirection: 'rtl',
   },
-  labLink: {
-    alignSelf: 'center',
-    marginBottom: spacing.lg,
-    marginTop: spacing.md,
-    paddingVertical: 8,
-  },
-  labLinkText: {
-    color: colors.textMuted,
-    fontSize: typography.caption,
-    fontWeight: '600',
-    opacity: 0.55,
-    textAlign: 'center',
-    writingDirection: 'rtl',
+  pressed: {
+    opacity: 0.72,
   },
 });

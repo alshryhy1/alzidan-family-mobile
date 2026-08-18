@@ -21,8 +21,8 @@ export function SectionCard({ children, eyebrow, title }: SectionCardProps) {
 const styles = StyleSheet.create({
   card: {
     ...shadows.card,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: '#FFF8EC',
+    borderColor: 'rgba(196,163,90,0.38)',
     borderRadius: 22,
     borderWidth: 1,
     gap: spacing.sm,

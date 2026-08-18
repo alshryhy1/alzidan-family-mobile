@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
+import { PersonPhoto } from '../components/PersonPhoto';
 import { PhoneField } from '../components/PhoneField';
-import { Screen } from '../components/Screen';
-import { SectionCard } from '../components/SectionCard';
+import { SceneSection, SceneShell } from '../components/scene';
+import { saveMemberPhoto, uploadMemberPhoto } from '../services/personPhoto';
 import { clearPushPhone, rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { callPublicRpc, selectPublicRows } from '../services/supabase';
-import { colors, spacing, typography } from '../theme';
+import { colors, scene, spacing, typography } from '../theme';
 import type { Branch, TreeChild } from '../types';
 import {
   DEFAULT_PHONE_COUNTRY_ID,
@@ -25,8 +27,12 @@ import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '
 type ProfileScreenProps = {
   branches: Branch[];
   childrenRows: TreeChild[];
+  viewerPerson?: TreeChild | null;
   onOpenMemberCard: (branchKey: string, treeChildId: number) => void;
   onMemberSessionChange?: (phone: string | null) => void;
+  onPhotoSaved?: () => void;
+  onRefresh?: () => void | Promise<void>;
+  refreshing?: boolean;
 };
 
 const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
@@ -80,7 +86,16 @@ function tripleNameFromPath(value: string) {
   return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : displayPersonName(value);
 }
 
-export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemberSessionChange }: ProfileScreenProps) {
+export function ProfileScreen({
+  branches,
+  childrenRows,
+  viewerPerson,
+  onOpenMemberCard,
+  onMemberSessionChange,
+  onPhotoSaved,
+  onRefresh,
+  refreshing = false,
+}: ProfileScreenProps) {
   const [countryId, setCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
   const [national, setNational] = useState('');
   const [savedPhone, setSavedPhone] = useState('');
@@ -92,11 +107,22 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
     text: '',
   });
   const [loading, setLoading] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [localPhotoUrl, setLocalPhotoUrl] = useState<string | null>(null);
 
-  const memberTreeRow = useMemo(
-    () => childrenRows.find((row) => row.id === member?.tree_child_id) ?? null,
-    [childrenRows, member?.tree_child_id],
-  );
+  const memberTreeRow = useMemo(() => {
+    const id = Number(member?.tree_child_id || 0);
+    if (!id) return null;
+    const fromPublic = childrenRows.find((row) => Number(row.id) === id) || null;
+    const fromViewer = viewerPerson && Number(viewerPerson.id) === id ? viewerPerson : null;
+    if (fromPublic && fromViewer) {
+      return {
+        ...fromPublic,
+        photoUrl: fromPublic.photoUrl || fromViewer.photoUrl || null,
+      };
+    }
+    return fromPublic || fromViewer;
+  }, [childrenRows, member?.tree_child_id, viewerPerson]);
 
   const branchName = useMemo(
     () => branches.find((branch) => branch.id === member?.branch_key)?.name ?? member?.branch_key ?? '',
@@ -105,6 +131,12 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
 
   const isDelegateSession = member?.role === 'delegate' || member?.role === 'both';
   const canOpenCard = Boolean(member?.tree_child_id && member?.branch_key);
+  const canManagePhoto = Number(member?.tree_child_id || 0) > 0;
+  const photoUrl = localPhotoUrl || memberTreeRow?.photoUrl || null;
+
+  useEffect(() => {
+    setLocalPhotoUrl(memberTreeRow?.photoUrl || null);
+  }, [memberTreeRow?.photoUrl, member?.tree_child_id]);
 
   const memberName = useMemo(() => {
     if (memberTreeRow?.name) return tripleNameFromPath(memberTreeRow.name);
@@ -244,6 +276,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
     setSavedPhone('');
     setNational('');
     onMemberSessionChange?.(null);
+    setLocalPhotoUrl(null);
     setStatus({ kind: 'idle', text: '' });
   };
 
@@ -255,36 +288,160 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
     loadMember(toE164(countryId, national)).catch(() => {});
   };
 
+  const pickMemberPhoto = async () => {
+    const personId = Number(member?.tree_child_id || 0);
+    const phone = canonicalizePhone(member?.phone || savedPhone || '');
+    if (!personId || !phone) {
+      setStatus({ kind: 'error', text: 'تعذر تحديد عضويتك لحفظ الصورة.' });
+      return;
+    }
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setStatus({ kind: 'error', text: 'يلزم السماح بالوصول للصور.' });
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      mediaTypes: ['images'],
+      presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN,
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets.length) return;
+    setPhotoBusy(true);
+    setStatus({ kind: 'idle', text: 'جاري حفظ الصورة...' });
+    try {
+      const url = await uploadMemberPhoto(result.assets[0], personId);
+      await saveMemberPhoto(phone, url);
+      setLocalPhotoUrl(url);
+      onPhotoSaved?.();
+      setStatus({ kind: 'success', text: 'تم حفظ صورتك.' });
+    } catch (error) {
+      setStatus({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'تعذر حفظ الصورة.',
+      });
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const removeMemberPhoto = async () => {
+    const phone = canonicalizePhone(member?.phone || savedPhone || '');
+    if (!phone) {
+      setStatus({ kind: 'error', text: 'تعذر حذف الصورة الآن.' });
+      return;
+    }
+    setPhotoBusy(true);
+    setStatus({ kind: 'idle', text: 'جاري حذف الصورة...' });
+    try {
+      await saveMemberPhoto(phone, '');
+      setLocalPhotoUrl(null);
+      onPhotoSaved?.();
+      setStatus({ kind: 'success', text: 'تم حذف صورتك.' });
+    } catch (error) {
+      setStatus({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'تعذر حذف الصورة.',
+      });
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const confirmRemoveMemberPhoto = () => {
+    if (photoBusy) return;
+    Alert.alert('حذف الصورة الشخصية؟', 'ستعود صورتك إلى الصورة الافتراضية.', [
+      { text: 'إلغاء', style: 'cancel' },
+      { text: 'حذف الصورة', style: 'destructive', onPress: () => void removeMemberPhoto() },
+    ]);
+  };
+
+  const refreshProfile = async () => {
+    try {
+      await onRefresh?.();
+      const phone = canonicalizePhone(member?.phone || savedPhone || '');
+      if (phone) {
+        const rows = await fetchOccasionInbox(phone);
+        setInbox(rows);
+      }
+    } catch {
+      // parent refresh already reports load errors
+    }
+  };
+
   return (
-    <Screen
-      title="ملفي"
-      description="ادخل برقم الجوال المسجل لتفعيل البطاقة أو إشعارات المندوب على هذا الجهاز."
+    <SceneShell
+      english="MY PLACE"
+      eyebrow={member ? (isDelegateSession ? 'مندوب مسجل' : 'عضو مسجل') : 'دخول العائلة'}
+      heroExtra={
+        member ? (
+          <View style={styles.identityHero}>
+            <Pressable
+              accessibilityLabel={photoUrl ? 'تغيير صورتك' : 'أضف صورتك'}
+              disabled={!canManagePhoto || photoBusy}
+              onPress={() => {
+                if (canManagePhoto && !photoBusy) void pickMemberPhoto();
+              }}
+              style={styles.photoFrame}
+            >
+              <PersonPhoto framed name={memberName} showFallback size="lg" uri={photoUrl} />
+            </Pressable>
+            {branchName ? <Text style={styles.heroBranch}>فرع {branchName}</Text> : null}
+            <Text style={styles.heroPhone}>{formatPhoneDisplay(member.phone || savedPhone)}</Text>
+          </View>
+        ) : (
+          <Text style={styles.heroInvite}>ادخل برقمك المسجل لتفتح مكانك في العائلة.</Text>
+        )
+      }
+      onRefresh={() => {
+        void refreshProfile();
+      }}
+      refreshing={refreshing}
+      subtitle={member ? 'مكانك في العائلة' : 'تفعيل البطاقة وإشعارات الجهاز'}
+      title={member ? memberName : 'ملفي'}
+      variant="identity"
     >
       {member ? (
-        <SectionCard
-          eyebrow={isDelegateSession ? 'مندوب مسجل' : 'عضو مسجل'}
-          title="مرحباً بك"
-        >
-          <View style={styles.profileHeader}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{memberName.slice(0, 1)}</Text>
-            </View>
-            <View style={styles.profileText}>
-              <Text style={styles.profileName}>{memberName}</Text>
-              {branchName ? <Text style={styles.profileMeta}>فرع {branchName}</Text> : null}
-              <Text style={styles.profileMeta}>الجوال: {formatPhoneDisplay(member.phone || savedPhone)}</Text>
-              {isDelegateSession ? (
-                <Text style={styles.profileMeta}>إشعارات طلبات الفرع مفعّلة على هذا الجهاز</Text>
-              ) : null}
-            </View>
-          </View>
-
+        <SceneSection>
           {canOpenCard ? (
             <ActionButton
               label="فتح بطاقتي في الشجرة"
               onPress={() => onOpenMemberCard(member.branch_key, member.tree_child_id)}
             />
           ) : null}
+
+          {canManagePhoto ? (
+            <View style={styles.photoActions}>
+              <ActionButton
+                label={
+                  photoBusy
+                    ? 'جاري الحفظ...'
+                    : photoUrl
+                      ? 'تغيير صورتك'
+                      : 'أضف صورتك'
+                }
+                onPress={() => {
+                  if (!photoBusy) void pickMemberPhoto();
+                }}
+                variant="secondary"
+              />
+              {photoUrl ? (
+                <Pressable
+                  disabled={photoBusy}
+                  onPress={confirmRemoveMemberPhoto}
+                  style={styles.photoDeleteBtn}
+                >
+                  <Text style={styles.photoDeleteText}>
+                    {photoBusy ? 'جاري الحذف...' : 'حذف صورتك'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={styles.logoutSplit} />
 
           <Pressable onPress={logout} style={styles.logoutButton}>
             <Text style={styles.logoutText}>تسجيل خروج</Text>
@@ -295,9 +452,9 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
               ? 'بعد هذا التسجيل ستصلك إشعارات طلبات فرعك الجديدة على الجهاز.'
               : 'هذا الدخول للتعريف وفتح البطاقة فقط، ولا يمنح صلاحيات تعديل أو حذف.'}
           </Text>
-        </SectionCard>
+        </SceneSection>
       ) : (
-        <SectionCard eyebrow="دخول" title="ادخل برقم الجوال المسجل">
+        <SceneSection title="ادخل برقم الجوال المسجل">
           <PhoneField
             countryId={countryId}
             national={national}
@@ -312,19 +469,11 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
           <Text style={styles.note}>
             الأعضاء والمناديب: بعد الدخول يُربط الجهاز بإشعارات طلبات الفرع تلقائياً.
           </Text>
-        </SectionCard>
+        </SceneSection>
       )}
 
-      
       {member ? (
-        <SectionCard
-          eyebrow={
-            inbox.reduce((n, it) => n + (Array.isArray(it.messages) ? it.messages.length : Number(it.total || 0)), 0)
-              ? `${inbox.reduce((n, it) => n + (Array.isArray(it.messages) ? Math.min(8, it.messages.length) : Number(it.total || 0)), 0)} رسالة`
-              : 'خاص'
-          }
-          title="وصلك من العائلة"
-        >
+        <SceneSection title="وصلك من العائلة">
           {inbox.length === 0 ? (
             <Text style={styles.note}>
               لا تفاعلات خاصة بعد. عندما يشاركك أحد مناسبة تخصك تظهر هنا فقط لك.
@@ -404,7 +553,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
               );
             })
           )}
-        </SectionCard>
+        </SceneSection>
       ) : null}
 
       {status.text ? (
@@ -412,7 +561,7 @@ export function ProfileScreen({ branches, childrenRows, onOpenMemberCard, onMemb
           <Text style={styles.statusText}>{status.text}</Text>
         </View>
       ) : null}
-    </Screen>
+    </SceneShell>
   );
 }
 
@@ -578,11 +727,86 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     alignItems: 'center',
-    borderColor: colors.border,
+    borderColor: scene.gold,
     borderRadius: 16,
     borderWidth: 1,
     marginTop: spacing.sm,
     paddingVertical: 12,
+  },
+  photoActions: {
+    gap: spacing.sm,
+  },
+  photoDeleteBtn: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  photoDeleteText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
+    writingDirection: 'rtl',
+  },
+  logoutSplit: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(196,163,90,0.35)',
+    height: 1,
+    marginVertical: spacing.xs,
+    width: 48,
+  },
+  identityHero: {
+    alignItems: 'flex-end',
+    gap: 10,
+    paddingBottom: spacing.xs,
+    paddingTop: 2,
+  },
+  photoFrame: {
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    justifyContent: 'center',
+  },
+  heroBranch: {
+    color: scene.gold,
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  heroPhone: {
+    color: scene.goldSoft,
+    fontSize: 13,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  monogramOuter: {
+    alignItems: 'center',
+    borderColor: scene.gold,
+    borderRadius: 52,
+    borderWidth: 1,
+    height: 92,
+    justifyContent: 'center',
+    width: 92,
+  },
+  monogramInner: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(196,163,90,0.16)',
+    borderColor: scene.goldSoft,
+    borderRadius: 40,
+    borderWidth: 1,
+    height: 76,
+    justifyContent: 'center',
+    width: 76,
+  },
+  monogramLetter: {
+    color: scene.goldSoft,
+    fontSize: 34,
+    fontWeight: '800',
+  },
+  heroInvite: {
+    color: 'rgba(232,213,168,0.88)',
+    fontSize: 15,
+    lineHeight: 24,
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   logoutText: {
     color: colors.text,

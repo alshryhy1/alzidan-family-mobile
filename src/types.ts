@@ -39,6 +39,8 @@ export type TreeChild = {
   city: string | null;
   area: string | null;
   isDeceased: boolean | null;
+  gender?: string | null;
+  photoUrl?: string | null;
 };
 
 export type TreePerson = {
@@ -54,6 +56,7 @@ export type TreePerson = {
   city?: string | null;
   area?: string | null;
   isDeceased?: boolean | null;
+  photoUrl?: string | null;
   meta?: string;
   children?: TreePerson[];
 };

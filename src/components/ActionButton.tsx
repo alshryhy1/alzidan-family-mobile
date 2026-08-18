@@ -38,7 +38,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   primary: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.accent,
+    borderWidth: 1,
   },
   secondary: {
     backgroundColor: colors.primarySoft,
