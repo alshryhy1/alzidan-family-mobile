@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useTheme, useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import {
   ctaTitleForType,
   fetchMyOccasionInteraction,
@@ -11,6 +13,7 @@ import {
   trackTitle,
   type OccasionInteractionType,
 } from '../services/occasionInteractions';
+import { notifyInboxShare } from '../services/eventOutboundNotify';
 
 const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
 
@@ -21,6 +24,9 @@ type Props = {
 };
 
 export function OccasionInteractCard({ occasionId, eventType, person }: Props) {
+  const { occasionSocialEnabled } = useTheme();
+  const p = useThemePalette();
+  const styles = useThemedStyles(occasionInteractStyles);
   const [catalog, setCatalog] = useState<OccasionInteractionType[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -31,6 +37,7 @@ export function OccasionInteractCard({ occasionId, eventType, person }: Props) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    if (!occasionSocialEnabled) return;
     let alive = true;
     AsyncStorage.getItem(MEMBER_PHONE_KEY)
       .then((v) => {
@@ -55,9 +62,9 @@ export function OccasionInteractCard({ occasionId, eventType, person }: Props) {
     return () => {
       alive = false;
     };
-  }, [eventType, occasionId]);
+  }, [eventType, occasionId, occasionSocialEnabled]);
 
-  if (!catalog.length) return null;
+  if (!occasionSocialEnabled || !catalog.length) return null;
 
   const selected = catalog.find((item) => item.key === selectedKey);
 
@@ -79,6 +86,7 @@ export function OccasionInteractCard({ occasionId, eventType, person }: Props) {
         setStatus('تعذر الإرسال، حاول لاحقًا.');
         return;
       }
+      void notifyInboxShare(occasionId, phone);
       setSelectedKey(key);
       setShowMessage(false);
       setMessage('');
@@ -107,7 +115,14 @@ export function OccasionInteractCard({ occasionId, eventType, person }: Props) {
       >
         <Text style={styles.chevron}>{open ? '⌃' : '⌄'}</Text>
         <View style={styles.toggleText}>
-          <Text style={styles.title}>{ctaTitleForType(eventType, person)}</Text>
+          <Text style={styles.title}>
+            {catalog.some(
+              (item) =>
+                item.key === 'inv_yes' || item.key === 'inv_no' || item.key === 'inv_maybe',
+            )
+              ? `رد على دعوة ${String(person || '').trim() || 'صاحب المناسبة'}`
+              : ctaTitleForType(eventType, person)}
+          </Text>
           <Text style={styles.hint}>
             {open ? 'تفاعل خاص — لا يظهر للعامة' : 'اضغط للمشاركة ثم أغلق عند الانتهاء'}
           </Text>
@@ -173,7 +188,7 @@ export function OccasionInteractCard({ occasionId, eventType, person }: Props) {
             maxLength={500}
             onChangeText={setMessage}
             placeholder="رسالتك الخاصة…"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={p.textMuted}
             style={styles.input}
             textAlign="right"
             value={message}
@@ -181,7 +196,14 @@ export function OccasionInteractCard({ occasionId, eventType, person }: Props) {
           <View style={styles.msgActions}>
             <Pressable
               disabled={busy}
-              onPress={() => selectedKey && send(selectedKey, message)}
+              onPress={() => {
+                const text = message.replace(/\s+/g, ' ').trim();
+                if (!text) {
+                  setStatus('اكتب رسالتك ثم أرسل.');
+                  return;
+                }
+                if (selectedKey) send(selectedKey, text);
+              }}
               style={styles.sendBtn}
             >
               <Text style={styles.sendText}>{busy ? '…' : 'إرسال'}</Text>
@@ -216,7 +238,8 @@ export function OccasionInteractCard({ occasionId, eventType, person }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function occasionInteractStyles(p: ThemePalette) {
+  return {
   wrap: {
     marginTop: spacing.md,
     padding: spacing.md,
@@ -248,7 +271,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginTop: 4,
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     textAlign: 'right',
     writingDirection: 'rtl',
@@ -301,7 +324,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 10,
     backgroundColor: '#fff',
-    color: colors.text,
+    color: p.text,
     textAlignVertical: 'top',
   },
   msgActions: {
@@ -349,4 +372,5 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-});
+  };
+}

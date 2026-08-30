@@ -68,7 +68,7 @@ const cases = [
   {
     name: 'happy past event day hidden',
     row: {
-      type: 'marriage',
+      type: 'gathering',
       event_date: dayOffsetIso(-1),
       created_at: createdDaysAgo(1),
       details: JSON.stringify({ v: 1, kind: 'happy_notice', showDays: 7 }),
@@ -122,6 +122,32 @@ const cases = [
       event_date: null,
       created_at: createdDaysAgo(6),
       details: JSON.stringify({ v: 1, kind: 'health_notice', showDays: 5 }),
+    },
+    expect: false,
+  },
+  {
+    name: 'birth notice stays after birth day when published recently',
+    row: {
+      type: 'birth',
+      event_date: dayOffsetIso(-3),
+      created_at: createdDaysAgo(0),
+      end_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      details: JSON.stringify({
+        v: 1,
+        kind: 'happy_notice',
+        showDays: 7,
+        end_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    },
+    expect: true,
+  },
+  {
+    name: 'birth notice ends after showDays from publish',
+    row: {
+      type: 'birth',
+      event_date: dayOffsetIso(-10),
+      created_at: createdDaysAgo(8),
+      details: JSON.stringify({ v: 1, kind: 'happy_notice', showDays: 7 }),
     },
     expect: false,
   },

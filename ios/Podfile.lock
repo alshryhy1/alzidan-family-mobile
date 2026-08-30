@@ -49,6 +49,8 @@ PODS:
     - ExpoModulesCore
   - ExpoLinearGradient (56.0.4):
     - ExpoModulesCore
+  - ExpoLocalAuthentication (56.0.4):
+    - ExpoModulesCore
   - ExpoLogBox (56.0.14):
     - React-Core
   - ExpoMediaLibrary (56.0.9):
@@ -85,6 +87,8 @@ PODS:
     - ExpoModulesCore
     - ExpoModulesJSI
   - ExpoNotifications (56.0.20):
+    - ExpoModulesCore
+  - ExpoSecureStore (56.0.4):
     - ExpoModulesCore
   - ExpoSharing (56.0.21):
     - ExpoModulesCore
@@ -2007,12 +2011,14 @@ DEPENDENCIES:
   - ExpoImagePicker (from `../node_modules/expo-image-picker/ios`)
   - ExpoKeepAwake (from `../node_modules/expo/node_modules/expo-keep-awake/ios`)
   - ExpoLinearGradient (from `../node_modules/expo-linear-gradient/ios`)
+  - ExpoLocalAuthentication (from `../node_modules/expo-local-authentication/ios`)
   - "ExpoLogBox (from `../node_modules/expo/node_modules/@expo/log-box`)"
   - ExpoMediaLibrary (from `../node_modules/expo-media-library/ios/ExpoMediaLibrary.podspec`)
   - ExpoModulesCore (from `../node_modules/expo-modules-core/ExpoModulesCore.podspec`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
+  - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
   - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoVideo (from `../node_modules/expo-video/ios/ExpoVideo.podspec`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
@@ -2121,6 +2127,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo/node_modules/expo-keep-awake/ios"
   ExpoLinearGradient:
     :path: "../node_modules/expo-linear-gradient/ios"
+  ExpoLocalAuthentication:
+    :path: "../node_modules/expo-local-authentication/ios"
   ExpoLogBox:
     :path: "../node_modules/expo/node_modules/@expo/log-box"
   ExpoMediaLibrary:
@@ -2133,6 +2141,8 @@ EXTERNAL SOURCES:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
   ExpoNotifications:
     :path: "../node_modules/expo-notifications/ios"
+  ExpoSecureStore:
+    :path: "../node_modules/expo-secure-store/ios"
   ExpoSharing:
     :path: "../node_modules/expo-sharing/ios"
   ExpoVideo:
@@ -2307,12 +2317,14 @@ SPEC CHECKSUMS:
   ExpoImagePicker: 7d604d51b6cf07f3d6cbaada9a19c50e64c8c67a
   ExpoKeepAwake: 359c47a1d9ccc3a3c519bca6e39562cce230c5bb
   ExpoLinearGradient: 16c2b9c6105444883d34958d573725de1293b8d0
+  ExpoLocalAuthentication: 93f29833d2a8b957f996eddc05a632eb2bdeaa7d
   ExpoLogBox: cdad5c9402a186574fb5924ea91df1f08ba9a98a
   ExpoMediaLibrary: f8911433a87a315632d28908359460e7790084a9
   ExpoModulesCore: 101470b65f0100121e876f157dc952b1a73e5619
   ExpoModulesJSI: e62656cfaffb5aeb3fdc1dd2bc49f77e87ed2261
   ExpoModulesWorklets: bf01b3310464f105c5f6dbd887db81a51c765d05
   ExpoNotifications: 13dd7a12760ecae8ac3aad6bf7c79cf123ea56d0
+  ExpoSecureStore: f1bd083c1b7b8d4142013ffcc0082d377d9f49f4
   ExpoSharing: 405cd864050b2202541098ba02d7e5a357cbc696
   ExpoVideo: 292b8c6be12bacf0b2e5a697276788280cdccdfb
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d

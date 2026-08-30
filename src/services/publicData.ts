@@ -1,5 +1,6 @@
 import type { Branch, FamilyEvent, PublicAffinityStats, TreeChild, TreeParent } from '../types';
 import { eventTypeArabicLabel } from '../utils/eventTypeLabels';
+import { eventFamilyOf, eventTextIsTypeEcho, newsIncidentDateIsPlausible, normalizePlaceKind, parseCoordinates } from '../utils/eventRequestMessage';
 import type { MaternalKinshipLabel, MotherLinkRow, SpouseRow } from '../utils/maternalKinship';
 import {
   auntSpouseIdsForViewer,
@@ -9,6 +10,8 @@ import {
   maternalRelativesForViewer,
   wifeRoleTowardViewer,
 } from '../utils/maternalKinship';
+import { leafPersonName, nodePathId, normalizePathKey } from '../utils/personEncounter';
+import { childrenOfPersonInGraph, partnerNameForMarriage, siblingsInGraph } from '../utils/selfPath';
 import { collectBranchTreeStats, isTreePersonDeceased } from '../utils/treeStats';
 import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 import { callPublicRpc, selectPublicRows } from './supabase';
@@ -79,14 +82,16 @@ function eventTitle(type: string) {
 }
 
 function eventCategory(type: string): FamilyEvent['category'] {
-  if (type === 'death') return 'condolence';
-  if (type === 'sick' || type === 'operation' || type === 'discharge') return 'health';
+  const family = eventFamilyOf(type);
+  if (family === 'death') return 'condolence';
+  if (family === 'health') return 'health';
   return 'happy';
 }
 
-function categoryLabel(category: FamilyEvent['category']) {
+function categoryLabel(category: FamilyEvent['category'], type?: string) {
   if (category === 'condolence') return 'تعزية';
   if (category === 'health') return 'اطمئنان';
+  if (eventFamilyOf(type || '') === 'occasion') return 'دعوة';
   return 'فرح';
 }
 
@@ -94,6 +99,14 @@ type ParsedEventDetails = {
   text?: string;
   extra?: string;
   notes?: string;
+  place_kind?: string;
+  placeKind?: string;
+  place?: string;
+  placeName?: string;
+  lat?: number;
+  lng?: number;
+  coords?: string;
+  coordinates?: string;
   hospitalName?: string;
   hospital_name?: string;
   hospitalDept?: string;
@@ -128,7 +141,12 @@ function parseEventDetails(details: string | ParsedEventDetails | null | undefin
 function extractEventDetails(details: string | ParsedEventDetails | null | undefined) {
   if (details == null || details === '') return '';
   const parsed = parseEventDetails(details);
-  if (parsed) return parsed.text || parsed.extra || parsed.notes || '';
+  if (parsed) {
+    if (parsed.text) return parsed.text;
+    if (parsed.notes) return parsed.notes;
+    if (parsed.place_kind || parsed.placeKind) return '';
+    return parsed.extra || '';
+  }
   return typeof details === 'string' ? details : '';
 }
 
@@ -143,7 +161,20 @@ function extractEventVideoUrl(details: string | ParsedEventDetails | null | unde
 }
 
 function formatEventDate(row: EventRow) {
-  return row.date_label || row.event_date || '';
+  const family = eventFamilyOf(row.type);
+  const incident = String(row.date_label || row.event_date || '').trim();
+  if (family === 'news' || family === 'health') {
+    if (newsIncidentDateIsPlausible(incident, row.created_at)) return incident;
+    if (row.created_at) {
+      const ms = Date.parse(row.created_at);
+      if (Number.isFinite(ms)) {
+        const d = new Date(ms);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+    }
+    return '';
+  }
+  return incident;
 }
 
 function rootParentCount(rows: ChildRow[]) {
@@ -204,16 +235,25 @@ function mapEvent(row: EventRow): FamilyEvent {
   return {
     id: String(row.id),
     category,
-    categoryLabel: categoryLabel(category),
+    categoryLabel: categoryLabel(category, row.type),
     title: eventTitle(row.type),
     type: row.type,
     person: row.person,
     date: formatEventDate(row),
     eventDate: row.event_date ?? undefined,
-    details: extractEventDetails(row.details),
+    details: (() => {
+      const raw = extractEventDetails(row.details);
+      return eventTextIsTypeEcho(row.type, raw) ? '' : raw;
+    })(),
     imageUrl: extractEventImageUrl(row.details) || undefined,
     videoUrl: extractEventVideoUrl(row.details) || undefined,
     branch: `فرع ${row.branch_key}`,
+    branchKey: row.branch_key,
+    sourcePhone: String(
+      (parsed as { submitter_phone?: string; source_phone?: string } | null)?.submitter_phone ||
+        (parsed as { submitter_phone?: string; source_phone?: string } | null)?.source_phone ||
+        '',
+    ).trim() || null,
     hospitalName: row.hospital_name || hospitalFromDetails || undefined,
     hospitalDepartment: row.hospital_dept || deptFromDetails || undefined,
     contactMethod: row.contact_method ?? undefined,
@@ -222,6 +262,14 @@ function mapEvent(row: EventRow): FamilyEvent {
     visitDateTo: row.visit_date_to ?? undefined,
     visitTimeFrom: row.visit_time_from ?? undefined,
     visitTimeTo: row.visit_time_to ?? undefined,
+    placeKind: normalizePlaceKind(parsed?.place_kind || parsed?.placeKind) || undefined,
+    placeName: String(parsed?.extra || parsed?.place || parsed?.placeName || '').trim() || undefined,
+    lat: parseCoordinates(
+      parsed?.lat != null && parsed?.lng != null ? `${parsed.lat},${parsed.lng}` : parsed?.coords || parsed?.coordinates || '',
+    )?.lat ?? (typeof parsed?.lat === 'number' ? parsed.lat : undefined),
+    lng: parseCoordinates(
+      parsed?.lat != null && parsed?.lng != null ? `${parsed.lat},${parsed.lng}` : parsed?.coords || parsed?.coordinates || '',
+    )?.lng ?? (typeof parsed?.lng === 'number' ? parsed.lng : undefined),
     createdAt: row.created_at,
     showDays: extractShowDays(row.details),
     showAt: row.show_at || parsed?.show_at || parsed?.showAt || undefined,
@@ -229,6 +277,26 @@ function mapEvent(row: EventRow): FamilyEvent {
     showBeforeDays: row.show_before_days ?? parsed?.show_before_days ?? parsed?.showBeforeDays ?? undefined,
     manualHidden: row.manual_hidden === true || parsed?.manual_hidden === true || parsed?.manualHidden === true,
     rawDetails: row.details ?? null,
+  };
+}
+
+function mapChildRow(row: ChildRow): TreeChild {
+  return {
+    id: row.id,
+    branchKey: row.branch_key,
+    parentName: row.parent_name,
+    name: row.child_name || row.name,
+    birthOrder: row.birth_order ?? null,
+    birthDateGregorian: row.birth_date_g,
+    birthDateHijri: row.birth_date_h,
+    birthYear: row.birth_year ?? null,
+    deathDateGregorian: row.death_date_g ?? null,
+    deathDateHijri: row.death_date_h ?? null,
+    city: row.city,
+    area: row.area,
+    isDeceased: isTreePersonDeceased(row.is_deceased, row.deceased) ? true : row.is_deceased ?? row.deceased ?? null,
+    gender: row.gender ?? null,
+    photoUrl: String(row.photo_url || '').trim() || null,
   };
 }
 
@@ -281,23 +349,7 @@ export async function loadPublicData() {
     name: row.name,
   }));
 
-  const children: TreeChild[] = childRows.map((row) => ({
-    id: row.id,
-    branchKey: row.branch_key,
-    parentName: row.parent_name,
-    name: row.child_name || row.name,
-    birthOrder: row.birth_order ?? null,
-    birthDateGregorian: row.birth_date_g,
-    birthDateHijri: row.birth_date_h,
-    birthYear: row.birth_year ?? null,
-    deathDateGregorian: row.death_date_g ?? null,
-    deathDateHijri: row.death_date_h ?? null,
-    city: row.city,
-    area: row.area,
-    isDeceased: isTreePersonDeceased(row.is_deceased, row.deceased) ? true : row.is_deceased ?? row.deceased ?? null,
-    gender: row.gender ?? null,
-    photoUrl: String(row.photo_url || '').trim() || null,
-  }));
+  const children: TreeChild[] = childRows.map(mapChildRow);
 
   const branches: Branch[] = branchRows.map((row) => {
     const branchParents = parentRows.filter((parent) => parent.branch_key === row.key);
@@ -338,36 +390,75 @@ type MemberViewerRpcRow = {
   photo_url?: string | null;
 };
 
+/**
+ * Logged-in female: full tree (women and men). Male: empty — public tree stays men-only;
+ * his close circle is مسار الذات, not الفروع.
+ */
+export async function loadMemberLineageChildren(phone: string): Promise<TreeChild[]> {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 9) return [];
+  try {
+    const data = await callPublicRpc<ChildRow[] | ChildRow>(
+      'tree_member_lineage_children_v1',
+      { p_phone: phone },
+    );
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    return rows
+      .filter((row) => row && Number(row.id) > 0)
+      .map((row) => {
+        const raw = row as ChildRow & { parent?: string };
+        const parentName = String(raw.parent_name || raw.parent || '');
+        return mapChildRow({
+          id: Number(row.id),
+          branch_key: String(row.branch_key || ''),
+          parent_name: parentName,
+          name: String(row.name || row.child_name || ''),
+          child_name: row.child_name ?? row.name ?? null,
+          birth_order: row.birth_order ?? null,
+          birth_date_g: row.birth_date_g ?? null,
+          birth_date_h: row.birth_date_h ?? null,
+          birth_year: row.birth_year ?? null,
+          death_date_g: row.death_date_g ?? null,
+          death_date_h: row.death_date_h ?? null,
+          city: row.city ?? null,
+          area: row.area ?? null,
+          is_deceased: row.is_deceased ?? null,
+          deceased: row.deceased ?? null,
+          gender: row.gender ?? null,
+          photo_url: row.photo_url ?? null,
+        });
+      });
+  } catch {
+    return [];
+  }
+}
+
 export async function loadMemberViewerPerson(phone: string): Promise<TreeChild | null> {
   const digits = String(phone || '').replace(/\D/g, '');
   if (digits.length < 9) return null;
-  try {
-    const data = await callPublicRpc<MemberViewerRpcRow[] | MemberViewerRpcRow>(
-      'tree_member_viewer_v1',
-      { p_phone: phone },
-    );
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row?.id) return null;
-    const name = String(row.child_name || '').trim();
-    const parentName = String(row.parent_name || '').trim();
-    return {
-      id: Number(row.id),
-      branchKey: String(row.branch_key || ''),
-      parentName,
-      name: name || parentName,
-      birthOrder: null,
-      birthDateGregorian: null,
-      birthDateHijri: null,
-      birthYear: null,
-      city: null,
-      area: null,
-      isDeceased: null,
-      gender: row.gender ?? null,
-      photoUrl: String(row.photo_url || '').trim() || null,
-    };
-  } catch {
-    return null;
-  }
+  const data = await callPublicRpc<MemberViewerRpcRow[] | MemberViewerRpcRow>(
+    'tree_member_viewer_v1',
+    { p_phone: phone },
+  );
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.id) return null;
+  const name = String(row.child_name || '').trim();
+  const parentName = String(row.parent_name || '').trim();
+  return {
+    id: Number(row.id),
+    branchKey: String(row.branch_key || ''),
+    parentName,
+    name: name || parentName,
+    birthOrder: null,
+    birthDateGregorian: null,
+    birthDateHijri: null,
+    birthYear: null,
+    city: null,
+    area: null,
+    isDeceased: null,
+    gender: row.gender ?? null,
+    photoUrl: String(row.photo_url || '').trim() || null,
+  };
 }
 
 export async function loadKinshipRpcForViewer(
@@ -530,7 +621,7 @@ async function loadKinshipFromPublicTables(
       if (row.spouseId) relatedIds[row.spouseId] = true;
     });
     spouses.forEach((spouse) => {
-      if (wifeRoleTowardViewer(spouse, viewer)) relatedIds[spouse.id] = true;
+      if (wifeRoleTowardViewer(spouse, viewer, children)) relatedIds[spouse.id] = true;
     });
     auntSpouseIdsForViewer(Number(viewer.id), spouses, motherLinks).forEach((id) => {
       relatedIds[id] = true;
@@ -553,4 +644,347 @@ async function loadKinshipFromPublicTables(
   } catch {
     return {};
   }
+}
+
+export type SelfPathLoadedFacts = {
+  motherName: string | null;
+  spousePartnerName: string | null;
+  spouseRole: 'husband' | 'wife' | null;
+  childNames: string[];
+  daughterNames: string[];
+  sisterNames: string[];
+  externalOffspringNames: string[];
+};
+
+type SelfChildRpcRow = {
+  id?: number;
+  leaf_name?: string | null;
+  gender?: string | null;
+  birth_order?: number | null;
+};
+
+function selfChildLeafKey(name: string) {
+  return name.replace(/\s+/g, ' ').trim();
+}
+
+
+type ExternalOffspringRpcRow = {
+  id?: number;
+  offspring_id?: string | null;
+  child_name?: string | null;
+  gender?: string | null;
+  father_name?: string | null;
+};
+
+async function loadExternalOffspringByPhone(phone: string): Promise<string[]> {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 9) return [];
+  try {
+    const data = await callPublicRpc<ExternalOffspringRpcRow[] | ExternalOffspringRpcRow>(
+      'tree_external_offspring_for_self_v1',
+      { p_phone: phone },
+    );
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    const seen: Record<string, boolean> = {};
+    const names: string[] = [];
+    rows.forEach((row) => {
+      const name = leafPersonName(String(row?.child_name || ''));
+      if (!name) return;
+      const key = selfChildLeafKey(name);
+      if (seen[key]) return;
+      seen[key] = true;
+      names.push(name);
+    });
+    return names;
+  } catch {
+    return [];
+  }
+}
+
+async function loadSelfSiblingsByPhone(phone: string): Promise<SelfChildRpcRow[]> {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 9) return [];
+  try {
+    const data = await callPublicRpc<SelfChildRpcRow[] | SelfChildRpcRow>(
+      'tree_self_siblings_v1',
+      { p_phone: phone },
+    );
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    const seen: Record<string, boolean> = {};
+    return rows.filter((row) => {
+      const id = Number(row?.id || 0);
+      const name = selfChildLeafKey(String(row?.leaf_name || ''));
+      if (!id && !name) return false;
+      const key = id ? `id:${id}` : `n:${name}`;
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function loadSelfChildrenByPhone(phone: string): Promise<SelfChildRpcRow[]> {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 9) return [];
+  try {
+    const data = await callPublicRpc<SelfChildRpcRow[] | SelfChildRpcRow>(
+      'tree_self_children_v1',
+      { p_phone: phone },
+    );
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    const seen: Record<string, boolean> = {};
+    return rows.filter((row) => {
+      const id = Number(row?.id || 0);
+      const name = selfChildLeafKey(String(row?.leaf_name || ''));
+      if (!id && !name) return false;
+      const key = id ? `id:${id}` : `n:${name}`;
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  } catch {
+    return [];
+  }
+}
+
+function isActiveSpouseStatus(status: string | null | undefined) {
+  const value = String(status || '')
+    .trim()
+    .toLowerCase();
+  if (!value) return true;
+  if (
+    value === 'divorced' ||
+    value === 'inactive' ||
+    value === 'ended' ||
+    value === 'مطلقة' ||
+    value === 'مطلق' ||
+    value === 'طليق' ||
+    value.includes('طلق')
+  ) {
+    return false;
+  }
+  return value === 'active';
+}
+
+function isConfirmedMotherLink(confidence: string | null | undefined) {
+  const value = String(confidence || '').trim().toLowerCase();
+  return !value || value === 'confirmed';
+}
+
+/**
+ * Documented self-path facts after login. Gate is session + person id, not gender.
+ * Public tree/search stay unchanged (RLS + public filter). Own daughters and
+ * sisters are loaded only for this login via tree_self_children_v1 /
+ * tree_self_siblings_v1.
+ */
+export async function loadSelfPathFacts(
+  viewer: TreeChild | null | undefined,
+  children: TreeChild[],
+  phone?: string | null,
+): Promise<SelfPathLoadedFacts> {
+  const empty: SelfPathLoadedFacts = {
+    motherName: null,
+    spousePartnerName: null,
+    spouseRole: null,
+    childNames: [],
+    daughterNames: [],
+    sisterNames: [],
+    externalOffspringNames: [],
+  };
+  const id = Number(viewer?.id || 0);
+  if (!id || !viewer) return empty;
+
+  let motherName: string | null = null;
+  try {
+    const motherRows = await selectPublicRows<MotherLinkApiRow>(
+      `tree_mother_links?child_id=eq.${id}&select=child_id,spouse_id,mother_name,mother_lineage,mother_is_family_member,mother_branch_key,confidence&limit=20`,
+    );
+    const motherRaw = (Array.isArray(motherRows) ? motherRows : []).find((row) =>
+      isConfirmedMotherLink(row.confidence),
+    );
+    const motherLink = motherRaw ? mapMotherLinkRow(motherRaw) : null;
+    motherName =
+      String(
+        motherLink?.motherName ||
+          motherLink?.motherLineage ||
+          motherRaw?.mother_name ||
+          motherRaw?.mother_lineage ||
+          '',
+      ).trim() || null;
+  } catch {
+    motherName = null;
+  }
+
+  let uniqueSpouses: SpouseRow[] = [];
+  try {
+    const asHusbandRows = await selectPublicRows<SpouseApiRow>(
+      `tree_spouses?husband_id=eq.${id}&select=id,husband_id,wife_name,wife_lineage,wife_is_family_member,wife_branch_key,status&limit=40`,
+    );
+    let familyWifeRows: SpouseApiRow[] = [];
+    try {
+      familyWifeRows = await selectPublicRows<SpouseApiRow>(
+        'tree_spouses?wife_is_family_member=eq.true&select=id,husband_id,wife_name,wife_lineage,wife_is_family_member,wife_branch_key,status&limit=5000',
+      );
+    } catch {
+      familyWifeRows = [];
+    }
+    const seenSpouse: Record<number, boolean> = {};
+    uniqueSpouses = [...(Array.isArray(asHusbandRows) ? asHusbandRows : []), ...familyWifeRows]
+      .map(mapSpouseRow)
+      .filter((row): row is SpouseRow => Boolean(row))
+      .filter((row) => {
+        if (seenSpouse[row.id]) return false;
+        seenSpouse[row.id] = true;
+        return true;
+      });
+  } catch {
+    uniqueSpouses = [];
+  }
+
+  const viewerId = Number(viewer.id);
+  const ranked = uniqueSpouses
+    .map((spouse) => {
+      const partner = partnerNameForMarriage(viewer, spouse, children);
+      return partner ? { spouse, partner, active: isActiveSpouseStatus(spouse.status) } : null;
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .sort((a, b) => {
+      const aOwn = Number(a.spouse.husbandId) === viewerId ? 1 : 0;
+      const bOwn = Number(b.spouse.husbandId) === viewerId ? 1 : 0;
+      if (aOwn !== bOwn) return bOwn - aOwn;
+      return Number(b.active) - Number(a.active);
+    });
+
+  const currentMarriage = ranked.find((row) => row.active) || null;
+  const picked = currentMarriage || ranked[0] || null;
+  let husband = picked?.partner.husband || null;
+  if (picked?.partner.role === 'wife' && !husband && picked.partner.husbandId) {
+    try {
+      const rows = await selectPublicRows<ChildRow>(
+        `tree_children?id=eq.${picked.partner.husbandId}&select=id,branch_key,parent_name,name,child_name&limit=1`,
+      );
+      const row = Array.isArray(rows) ? rows[0] : null;
+      if (row?.id) {
+        husband = {
+          id: Number(row.id),
+          branchKey: row.branch_key,
+          parentName: row.parent_name || '',
+          name: row.child_name || row.name || '',
+          birthOrder: null,
+          birthDateGregorian: null,
+          birthDateHijri: null,
+          birthYear: null,
+          city: null,
+          area: null,
+          isDeceased: null,
+        };
+      }
+    } catch {
+      husband = null;
+    }
+  }
+
+  const spousePartnerName = currentMarriage
+    ? (currentMarriage.partner.name || (husband ? leafPersonName(husband.name) : '')).trim() || null
+    : null;
+
+  let childNames: string[] = [];
+  let daughterNames: string[] = [];
+  try {
+    const spouseIds = picked ? [picked.spouse.id] : [];
+    const childLinks = spouseIds.length ? await loadMotherLinksForSpouseIds(spouseIds) : [];
+    const fromLinks = childLinks
+      .filter((row) => isConfirmedMotherLink(row.confidence))
+      .map((row) => children.find((person) => Number(person.id) === Number(row.childId)))
+      .filter((row): row is TreeChild => Boolean(row));
+    const parentForChildren =
+      picked?.partner.role === 'wife' ? husband : viewer;
+    const fromGraph = parentForChildren
+      ? childrenOfPersonInGraph(parentForChildren, children)
+      : [];
+    const seenChild: Record<number, boolean> = {};
+    [...fromLinks, ...fromGraph].forEach((row) => {
+      if (seenChild[row.id]) return;
+      seenChild[row.id] = true;
+      const name = leafPersonName(row.name);
+      if (!name) return;
+      if (isPublicLineageHiddenPerson(row)) daughterNames.push(name);
+      else childNames.push(name);
+    });
+  } catch {
+    childNames = [];
+    daughterNames = [];
+  }
+
+  const rpcChildren = await loadSelfChildrenByPhone(String(phone || ''));
+  if (rpcChildren.length) {
+    const siblingKeys = new Set(
+      siblingsInGraph(viewer, children)
+        .map((row) => normalizePathKey(nodePathId(row)))
+        .filter(Boolean),
+    );
+    const viewerKey = normalizePathKey(nodePathId(viewer));
+    const husbandKey =
+      picked?.partner.role === 'husband'
+        ? viewerKey
+        : picked?.partner.husband
+          ? normalizePathKey(nodePathId(picked.partner.husband))
+          : '';
+    const sons: string[] = [];
+    const daughters: string[] = [];
+    const seenLeaf: Record<string, boolean> = {};
+    rpcChildren.forEach((row) => {
+      const person = children.find((item) => Number(item.id) === Number(row.id));
+      if (person) {
+        const parentKey = normalizePathKey(person.parentName);
+        if (parentKey && siblingKeys.has(parentKey)) return;
+        const underViewer = Boolean(viewerKey && parentKey === viewerKey);
+        const underHusband = Boolean(husbandKey && parentKey === husbandKey);
+        if (!underViewer && !underHusband) return;
+      } else if (!picked) {
+        return;
+      }
+      const name = leafPersonName(String(row.leaf_name || ''));
+      if (!name) return;
+      const key = selfChildLeafKey(name);
+      if (seenLeaf[key]) return;
+      seenLeaf[key] = true;
+      if (isPublicLineageHiddenPerson({ gender: row.gender })) daughters.push(name);
+      else sons.push(name);
+    });
+    childNames = sons;
+    daughterNames = daughters;
+  }
+
+  const daughterKeys = new Set(daughterNames.map((name) => selfChildLeafKey(name)));
+  childNames = childNames.filter((name) => !daughterKeys.has(selfChildLeafKey(name)));
+
+  let sisterNames: string[] = [];
+  const rpcSiblings = await loadSelfSiblingsByPhone(String(phone || ''));
+  if (rpcSiblings.length) {
+    const seenLeaf: Record<string, boolean> = {};
+    rpcSiblings.forEach((row) => {
+      if (!isPublicLineageHiddenPerson({ gender: row.gender })) return;
+      const name = leafPersonName(String(row.leaf_name || ''));
+      if (!name) return;
+      const key = selfChildLeafKey(name);
+      if (seenLeaf[key]) return;
+      seenLeaf[key] = true;
+      sisterNames.push(name);
+    });
+  }
+
+  const externalOffspringNames = await loadExternalOffspringByPhone(String(phone || ''));
+
+  return {
+    motherName,
+    spousePartnerName,
+    spouseRole: currentMarriage?.partner.role || null,
+    childNames,
+    daughterNames,
+    sisterNames,
+    externalOffspringNames,
+  };
 }

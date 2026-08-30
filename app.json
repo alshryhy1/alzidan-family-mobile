@@ -2,16 +2,20 @@
   "expo": {
     "name": "عائلة مطلق الزيدان",
     "slug": "alzidan-family-mobile",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "scheme": "com.alzidan.family2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.alzidan.family2",
-      "buildNumber": "56",
+      "buildNumber": "60",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "يحتاج التطبيق للوصول إلى الصور والفيديو عند إرفاق وسائط مع مناسبة عائلية أو ذكرى.",
+        "NSFaceIDUsageDescription": "يُستخدم قفل الجهاز لفتح حسابك على هذا الآيفون. لا تُرسل صورة الوجه خارج جهازك.",
+        "NSPhotoLibraryUsageDescription": "لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.",
+        "NSPhotoLibraryAddUsageDescription": "لحفظ الصور على جهازك عند الحاجة.",
+        "NSCameraUsageDescription": "لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.",
+        "NSMicrophoneUsageDescription": "لإرفاق فيديو مع مناسبة عائلية أو ذكرى.",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "remote-notification"
@@ -42,7 +46,14 @@
       ],
       "expo-sharing",
       "expo-image-picker",
-      "expo-document-picker"
+      "expo-document-picker",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "يُستخدم قفل الجهاز لفتح حسابك على هذا الآيفون. لا تُرسل صورة الوجه خارج جهازك."
+        }
+      ]
     ],
     "extra": {
       "eas": {

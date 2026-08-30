@@ -14,7 +14,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 
 type Phase = 'place' | 'extend' | 'approach' | 'path' | 'search';
 
@@ -25,6 +27,8 @@ type Props = {
 const { width: W, height: H } = Dimensions.get('window');
 
 export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
+  const p = useThemePalette();
+  const styles = useThemedStyles(motionLabStyles);
   const insets = useSafeAreaInsets();
   const [phase, setPhase] = useState<Phase>('place');
   const [query, setQuery] = useState('');
@@ -116,7 +120,7 @@ export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
             <TextInput
               autoFocus
               placeholder="اكتب اسمًا…"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={query}
@@ -254,9 +258,10 @@ export function FamilySpaceMotionLab({ onOpenPulse }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function motionLabStyles(p: ThemePalette) {
+  return {
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: p.background,
     flex: 1,
     paddingHorizontal: spacing.lg,
   },
@@ -274,16 +279,16 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   anchor: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '600',
     writingDirection: 'rtl',
   },
   anchorOn: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
   },
   cue: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     opacity: 0.5,
     writingDirection: 'rtl',
@@ -297,7 +302,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   hero: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: 34,
     fontWeight: '800',
     lineHeight: 42,
@@ -305,7 +310,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   branch: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.body,
     fontStyle: 'italic',
     marginTop: 4,
@@ -335,28 +340,28 @@ const styles = StyleSheet.create({
     top: 168,
   },
   nameL: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: 22,
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   nameM: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: 19,
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   nameS: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   kin: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontStyle: 'italic',
     marginTop: 2,
@@ -377,7 +382,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   extend: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.body,
     fontStyle: 'italic',
     opacity: 0.5,
@@ -389,7 +394,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   extendLead: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     marginBottom: spacing.sm,
     textAlign: 'right',
@@ -401,7 +406,7 @@ const styles = StyleSheet.create({
   },
   backNear: {
     alignSelf: 'center',
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     marginTop: spacing.md,
     opacity: 0.55,
@@ -419,7 +424,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   surroundName: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     writingDirection: 'rtl',
   },
@@ -428,7 +433,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   howText: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: typography.body,
     fontWeight: '600',
     textAlign: 'center',
@@ -439,14 +444,14 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   pathLine: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.title,
     fontWeight: '700',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   pathSoft: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontStyle: 'italic',
     marginBottom: 8,
@@ -457,7 +462,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   settleText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
   },
   search: {
@@ -465,7 +470,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   searchTitle: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.heading,
     fontWeight: '700',
     marginBottom: spacing.md,
@@ -473,9 +478,9 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   input: {
-    borderBottomColor: colors.border,
+    borderBottomColor: p.border,
     borderBottomWidth: 1,
-    color: colors.text,
+    color: p.text,
     fontSize: typography.title,
     marginBottom: spacing.xl,
     paddingVertical: 10,
@@ -486,13 +491,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   hitName: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: 22,
     fontWeight: '700',
     writingDirection: 'rtl',
   },
   hitKin: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontStyle: 'italic',
     writingDirection: 'rtl',
@@ -503,9 +508,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   pulseText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '600',
     writingDirection: 'rtl',
   },
-});
+  };
+}

@@ -54,16 +54,14 @@ struct FamilyEvent: Identifiable {
     }
 
     var dateLine: String {
-        if !hijriDisplay.isEmpty && !gregorianDisplay.isEmpty {
-            return "\(hijriDisplay) · \(gregorianDisplay)"
-        }
-        if !hijriDisplay.isEmpty { return hijriDisplay }
-        if !gregorianDisplay.isEmpty { return gregorianDisplay }
-        return dateText
+        EventDateFormatter.pairLine(hijri: hijriDisplay, gregorian: gregorianDisplay, fallback: dateText)
     }
 }
 
 enum EventDateFormatter {
+    /// Display contract: day-month-year, Hijri then Gregorian. `١٦-٣-١٤٤٨ هـ  ٢٨-٨-٢٠٢٦`
+    private static let riyadh = TimeZone(identifier: "Asia/Riyadh") ?? .current
+
     static func arabicDigitsToWestern(_ s: String) -> String {
         let map: [Character: Character] = [
             "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
@@ -72,10 +70,66 @@ enum EventDateFormatter {
         return String(s.map { map[$0] ?? $0 })
     }
 
+    static func westernToArabicDigits(_ s: String) -> String {
+        let map: [Character: Character] = [
+            "0": "٠", "1": "١", "2": "٢", "3": "٣", "4": "٤",
+            "5": "٥", "6": "٦", "7": "٧", "8": "٨", "9": "٩",
+        ]
+        return String(s.map { map[$0] ?? $0 })
+    }
+
+    private static func calendar(_ identifier: Calendar.Identifier) -> Calendar {
+        var cal = Calendar(identifier: identifier)
+        cal.timeZone = riyadh
+        return cal
+    }
+
+    /// Always day-month-year from components — not locale pattern order.
+    static func dayMonthYear(_ date: Date, calendar identifier: Calendar.Identifier) -> String {
+        let p = calendar(identifier).dateComponents([.day, .month, .year], from: date)
+        let day = p.day ?? 0
+        let month = p.month ?? 0
+        let year = p.year ?? 0
+        return westernToArabicDigits("\(day)-\(month)-\(year)")
+    }
+
+    static func hijriText(from date: Date) -> String {
+        dayMonthYear(date, calendar: .islamicUmmAlQura) + " هـ"
+    }
+
+    static func gregorianText(from date: Date) -> String {
+        dayMonthYear(date, calendar: .gregorian)
+    }
+
+    static func pairLine(from date: Date) -> String {
+        pairLine(hijri: hijriText(from: date), gregorian: gregorianText(from: date), fallback: "")
+    }
+
+    /// Keep day-month-year visually stable inside Arabic RTL (otherwise 29-8-2026 renders as 2026-8-29).
+    private static func ltrIsolate(_ s: String) -> String {
+        "\u{2066}\(s)\u{2069}"
+    }
+
+    static func pairLine(hijri: String, gregorian: String, fallback: String) -> String {
+        let h = hijri.trimmingCharacters(in: .whitespacesAndNewlines)
+        let g = gregorian
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " م", with: "")
+            .replacingOccurrences(of: "م", with: "")
+        if !h.isEmpty && !g.isEmpty {
+            let hijriCore = h.replacingOccurrences(of: " هـ", with: "").replacingOccurrences(of: "هـ", with: "")
+            return "\(ltrIsolate(hijriCore)) هـ  \(ltrIsolate(g))"
+        }
+        if !h.isEmpty { return h }
+        if !g.isEmpty { return ltrIsolate(g) }
+        return fallback
+    }
+
     static func parseGregorianISO(_ iso: String) -> Date? {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = riyadh
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: iso.trimmingCharacters(in: .whitespacesAndNewlines))
     }
@@ -89,32 +143,33 @@ enum EventDateFormatter {
 
         let parts = normalized.split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }
         guard parts.count == 3,
-              let day = Int(parts[0]),
-              let month = Int(parts[1]),
-              let year = Int(parts[2]) else { return nil }
+              let a = Int(parts[0]),
+              let b = Int(parts[1]),
+              let c = Int(parts[2]) else { return nil }
+
+        let day: Int
+        let month: Int
+        let year: Int
+        // Stored labels may be year-month-day (`١٤٤٨-٣-١٥`) or day-month-year (`١٥-٣-١٤٤٨`).
+        if a >= 1300 && a <= 1600 {
+            year = a; month = b; day = c
+        } else if c >= 1300 && c <= 1600 {
+            day = a; month = b; year = c
+        } else if a >= 1900 && a <= 2100 {
+            return parseGregorianISO(String(format: "%04d-%02d-%02d", a, b, c))
+        } else if c >= 1900 && c <= 2100 {
+            return parseGregorianISO(String(format: "%04d-%02d-%02d", c, b, a))
+        } else {
+            day = a; month = b; year = c
+        }
 
         var components = DateComponents()
         components.calendar = Calendar(identifier: .islamicUmmAlQura)
+        components.timeZone = riyadh
         components.day = day
         components.month = month
         components.year = year
         return components.date
-    }
-
-    static func hijriText(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .islamicUmmAlQura)
-        formatter.locale = Locale(identifier: "ar_SA")
-        formatter.dateFormat = "d/M/yyyy"
-        return formatter.string(from: date) + " هـ"
-    }
-
-    static func gregorianText(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "ar_SA")
-        formatter.dateFormat = "d/M/yyyy"
-        return formatter.string(from: date)
     }
 
     static func daysLeft(from date: Date) -> Int {
@@ -130,13 +185,13 @@ enum EventDateFormatter {
         if let gregorianDate = parseGregorianISO(iso) {
             let hijri = hijriText(from: gregorianDate)
             let gregorian = gregorianText(from: gregorianDate)
-            return (gregorianDate, hijri, gregorian, "\(hijri) · \(gregorian)", daysLeft(from: gregorianDate))
+            return (gregorianDate, hijri, gregorian, pairLine(hijri: hijri, gregorian: gregorian, fallback: ""), daysLeft(from: gregorianDate))
         }
 
         if !label.isEmpty, let hijriDate = parseHijriLabel(label) {
             let hijri = hijriText(from: hijriDate)
             let gregorian = gregorianText(from: hijriDate)
-            return (hijriDate, hijri, gregorian, "\(hijri) · \(gregorian)", daysLeft(from: hijriDate))
+            return (hijriDate, hijri, gregorian, pairLine(hijri: hijri, gregorian: gregorian, fallback: ""), daysLeft(from: hijriDate))
         }
 
         if !label.isEmpty {
@@ -149,74 +204,220 @@ enum EventDateFormatter {
 }
 
 enum EventArabic {
-    private static let labels: [String: String] = [
-        "birth": "عقيقة مولود",
+    /// Canonical labels — same catalog as app `MOBILE_EVENT_TYPES` and web `event-types.js`.
+    private static let catalog: [String: String] = [
+        "promotion_notice": "ترقية",
+        "graduation_notice": "تخرج",
+        "success": "نجاح",
         "marriage": "زواج",
-        "wedding": "زواج",
-        "graduation": "حفل تخرج",
-        "promotion": "حفل ترقية",
-        "promotion_notice": "تهنئة ترقية",
-        "congratulation": "تهنئة عائلية",
-        "invitation": "دعوة عائلية",
+        "birth": "مولود جديد",
+        "achievement": "تكريم وإنجاز",
+        "appointment": "تعيين / منصب",
+        "retirement_notice": "تقاعد",
+        "certification": "شهادة / اعتماد",
         "new_house": "منزل جديد",
-        "gathering": "اجتماع عائلي",
-        "meeting": "اجتماع عائلي",
-        "success": "نجاح / تفوق",
-        "travel": "سفر",
-        "engagement": "خطوبة",
-        "contract": "عقد قران",
+        "family_news": "خبر عائلي",
         "sick": "مريض",
         "operation": "عملية",
+        "healing": "شفاء",
         "discharge": "خروج من المستشفى",
-        "death": "وفاة",
+        "safety": "سلامة",
+        "death": "إعلان وفاة",
+        "condolence": "تعزية",
+        "wedding": "حفل زواج",
+        "contract": "عقد قران",
+        "graduation": "حفل تخرج",
+        "aqiqa": "عقيقة",
+        "feast": "وليمة",
+        "gathering": "اجتماع عائلي",
+        "family_meetup": "لقاء عائلي",
+        "promotion": "حفل ترقية",
+        "retirement": "حفل تقاعد",
+        "dinner": "دعوة عشاء",
+        "lunch": "دعوة غداء",
+        "finjal_asr": "فنجال بعد صلاة العصر",
+        "finjal_isha": "فنجال بعد صلاة العشاء",
+        "finjal_hawlna": "فنجال والم اللي حولنا",
         "general": "مناسبة عامة",
-        "happy": "فرح",
     ]
 
+    /// Same aliases as mobile `TYPE_ALIASES` + web `TYPE_MAP`.
+    private static let aliases: [String: String] = [
+        "invitation": "dinner",
+        "meeting": "gathering",
+        "engagement": "marriage",
+        "congratulation": "family_news",
+        "travel": "family_news",
+        "happy": "family_news",
+        "other": "general",
+        "اجتماع عائلي": "gathering",
+        "اجتماع": "gathering",
+        "لقاء عائلي": "family_meetup",
+        "دعوة عائلية": "dinner",
+        "دعوة": "dinner",
+        "دعوة عشاء": "dinner",
+        "دعوة غداء": "lunch",
+        "وليمة": "feast",
+        "فنجال بعد صلاة العصر": "finjal_asr",
+        "فنجال العصر": "finjal_asr",
+        "فنجال بعد صلاة العشاء": "finjal_isha",
+        "فنجال بعد صلاه العشاء": "finjal_isha",
+        "فنجال العشاء": "finjal_isha",
+        "فنجال والم اللي حولنا": "finjal_hawlna",
+        "فنجال والم الي حولنا": "finjal_hawlna",
+        "مناسبة عامة": "general",
+        "حفل زواج": "wedding",
+        "عقد قران": "contract",
+        "زواج": "marriage",
+        "مولود جديد": "birth",
+        "مولود": "birth",
+        "عقيقة مولود": "birth",
+        "حفل تخرج": "graduation",
+        "تخرج": "graduation_notice",
+        "حفل ترقية": "promotion",
+        "ترقية": "promotion_notice",
+        "ترقية / وظيفة": "promotion_notice",
+        "تهنئة ترقية": "promotion_notice",
+        "ترقية مباركة": "promotion_notice",
+        "حفل تقاعد": "retirement",
+        "تقاعد": "retirement_notice",
+        "عقيقة": "aqiqa",
+        "وفاة": "death",
+        "إعلان وفاة": "death",
+        "تعزية": "condolence",
+        "خطوبة": "marriage",
+        "تهنئة": "family_news",
+        "تهنئة عائلية": "family_news",
+        "خبر عائلي": "family_news",
+        "مريض": "sick",
+        "عملية": "operation",
+        "شفاء": "healing",
+        "خروج من المستشفى": "discharge",
+        "خروج من المستشفي": "discharge",
+        "خروج": "discharge",
+        "سلامة": "safety",
+        "نجاح": "success",
+        "تكريم": "achievement",
+        "إنجاز": "achievement",
+        "تكريم وإنجاز": "achievement",
+        "تعيين": "appointment",
+        "منصب": "appointment",
+        "تعيين / منصب": "appointment",
+        "شهادة": "certification",
+        "اعتماد": "certification",
+        "شهادة / اعتماد": "certification",
+        "منزل جديد": "new_house",
+        "سفر": "family_news",
+        "فرح": "family_news",
+    ]
+
+    private static let noticeNews: Set<String> = [
+        "promotion_notice", "graduation_notice", "graduation", "success", "marriage", "birth",
+        "achievement", "appointment", "retirement_notice", "certification",
+        "new_house", "family_news", "news", "general",
+    ]
+    private static let healthKeys: Set<String> = [
+        "sick", "operation", "healing", "discharge", "safety",
+    ]
+    private static let deathKeys: Set<String> = [
+        "death", "condolence",
+    ]
+
+    static func normalizedKey(_ type: String) -> String {
+        let raw = type.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty { return "general" }
+        if let mapped = aliases[raw] { return mapped }
+        let lower = raw.lowercased()
+        if let mapped = aliases[lower] { return mapped }
+        if catalog[lower] != nil { return lower }
+        if let match = catalog.first(where: { $0.value == raw }) { return match.key }
+        return lower
+    }
+
     static func typeLabel(_ type: String) -> String {
-        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if key.isEmpty { return "مناسبة" }
-        if let exact = labels[key] { return exact }
-        if key.contains("marriage") || key.contains("wedding") || key.contains("زواج") { return "زواج" }
-        if key.contains("graduation") || key.contains("تخرج") { return "حفل تخرج" }
-        if key.contains("birth") || key.contains("baby") || key.contains("عقيقة") || key.contains("مولود") { return "عقيقة مولود" }
-        if key.contains("promotion") || key.contains("ترقية") { return "حفل ترقية" }
-        if key.contains("house") || key.contains("منزل") { return "منزل جديد" }
-        if key.contains("gathering") || key.contains("meeting") || key.contains("اجتماع") { return "اجتماع عائلي" }
-        if key.contains("success") || key.contains("نجاح") { return "نجاح / تفوق" }
-        if key.contains("travel") || key.contains("سفر") { return "سفر" }
-        if key.contains("engagement") || key.contains("خطوبة") { return "خطوبة" }
-        if key.contains("contract") || key.contains("عقد") { return "عقد قران" }
-        if key.contains("sick") || key.contains("مريض") { return "مريض" }
-        if key.contains("operation") || key.contains("عملية") { return "عملية" }
-        if key.contains("discharge") { return "خروج من المستشفى" }
-        if key.contains("death") || key.contains("وفاة") { return "وفاة" }
-        if key.contains("general") { return "مناسبة عامة" }
-        return "مناسبة عامة"
+        let raw = type.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty { return "مناسبة عامة" }
+        let key = normalizedKey(raw)
+        return catalog[key] ?? raw
+    }
+
+    static func isNewsNotice(_ type: String) -> Bool {
+        noticeNews.contains(normalizedKey(type))
+    }
+
+    static func isHealth(_ type: String) -> Bool {
+        healthKeys.contains(normalizedKey(type))
+    }
+
+    static func isDeath(_ type: String) -> Bool {
+        deathKeys.contains(normalizedKey(type))
     }
 
     static func icon(for type: String) -> String {
-        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if key == "marriage" || key.contains("marriage") || key.contains("wedding") || key.contains("زواج") { return "💍" }
-        if key.contains("graduation") || key.contains("تخرج") { return "🎓" }
-        if key.contains("baby") || key.contains("birth") || key.contains("عقيقة") || key.contains("مولود") { return "👶" }
-        if key.contains("meeting") || key.contains("gathering") || key.contains("اجتماع") { return "🎉" }
-        if key.contains("promotion") || key.contains("ترقية") { return "⭐️" }
-        if key.contains("house") || key.contains("منزل") { return "🏠" }
-        if key.contains("death") || key.contains("وفاة") { return "🕊️" }
-        if key.contains("sick") || key.contains("operation") || key.contains("مريض") { return "🤲" }
+        let key = normalizedKey(type)
+        if key == "aqiqa" || key == "birth" { return "👶" }
+        if key == "marriage" || key == "wedding" || key == "contract" { return "💍" }
+        if key == "graduation" || key == "graduation_notice" { return "🎓" }
+        if key == "gathering" || key == "family_meetup" || key == "feast"
+            || key == "dinner" || key == "lunch"
+            || key.hasPrefix("finjal_") { return "🎉" }
+        if key == "promotion" || key == "promotion_notice" || key == "success"
+            || key == "achievement" || key == "appointment" { return "⭐️" }
+        if key == "new_house" { return "🏠" }
+        if key == "death" || key == "condolence" { return "🕊️" }
+        if healthKeys.contains(key) { return "🤲" }
         return "📌"
     }
 }
 
+enum AppGroupTheme {
+    static let suite = "group.com.alzidan.family2"
+    static let key = "alzidan_theme_id"
+
+    static func readId() -> String {
+        let raw = UserDefaults(suiteName: suite)?.string(forKey: key) ?? "heritage"
+        return raw == "feminine" ? "feminine" : "heritage"
+    }
+}
+
+struct FamilyChrome {
+    let heroDeep: Color
+    let heroMid: Color
+    let heroLift: Color
+    let cream: Color
+    let gold: Color
+    let goldSoft: Color
+
+    static let heritage = FamilyChrome(
+        heroDeep: Color(red: 15 / 255, green: 42 / 255, blue: 36 / 255),
+        heroMid: Color(red: 23 / 255, green: 63 / 255, blue: 53 / 255),
+        heroLift: Color(red: 36 / 255, green: 88 / 255, blue: 76 / 255),
+        cream: Color(red: 243 / 255, green: 235 / 255, blue: 217 / 255),
+        gold: Color(red: 196 / 255, green: 163 / 255, blue: 90 / 255),
+        goldSoft: Color(red: 232 / 255, green: 213 / 255, blue: 168 / 255)
+    )
+
+    static let feminine = FamilyChrome(
+        heroDeep: Color(red: 68 / 255, green: 51 / 255, blue: 60 / 255),
+        heroMid: Color(red: 74 / 255, green: 55 / 255, blue: 64 / 255),
+        heroLift: Color(red: 81 / 255, green: 61 / 255, blue: 72 / 255),
+        cream: Color(red: 243 / 255, green: 235 / 255, blue: 217 / 255),
+        gold: Color(red: 196 / 255, green: 163 / 255, blue: 90 / 255),
+        goldSoft: Color(red: 232 / 255, green: 213 / 255, blue: 168 / 255)
+    )
+
+    static func current(_ id: String) -> FamilyChrome {
+        id == "feminine" ? feminine : heritage
+    }
+}
+
 struct WidgetBackgroundView: View {
+    var themeId: String = "heritage"
+
     var body: some View {
+        let chrome = FamilyChrome.current(themeId)
         LinearGradient(
-            colors: [
-                Color(red: 15 / 255, green: 42 / 255, blue: 36 / 255),
-                Color(red: 23 / 255, green: 63 / 255, blue: 53 / 255),
-                Color(red: 36 / 255, green: 88 / 255, blue: 76 / 255),
-            ],
+            colors: [chrome.heroDeep, chrome.heroMid, chrome.heroLift],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -225,11 +426,12 @@ struct WidgetBackgroundView: View {
 }
 
 struct WidgetRoot<Content: View>: View {
+    var themeId: String = "heritage"
     @ViewBuilder var content: Content
 
     var body: some View {
         ZStack {
-            WidgetBackgroundView()
+            WidgetBackgroundView(themeId: themeId)
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
@@ -338,19 +540,19 @@ enum EventVisibility {
     }
 
     static func isDeath(_ type: String) -> Bool {
-        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return key == "death" || key.contains("death") || key.contains("وفاة")
+        EventArabic.normalizedKey(type) == "death"
     }
 
     static func isHappy(_ type: String) -> Bool {
-        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if key.isEmpty { return true }
-        return !["death", "sick", "operation", "discharge"].contains(key)
+        !EventArabic.isDeath(type) && !EventArabic.isHealth(type)
+    }
+
+    static func isNewsNotice(_ type: String) -> Bool {
+        EventArabic.isNewsNotice(type)
     }
 
     static func isHealth(_ type: String) -> Bool {
-        let key = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return ["sick", "operation", "discharge"].contains(key)
+        EventArabic.isHealth(type)
     }
 
     static func daysFromEventDay(_ event: FamilyEvent, now: Date = Date()) -> Int? {
@@ -385,7 +587,7 @@ enum EventVisibility {
         if isDeath(event.rawType) {
             return isWithinDaysFromEventDay(event, keepDays: deathKeepDays, now: now)
         }
-        if isHealth(event.rawType) {
+        if isHealth(event.rawType) || isNewsNotice(event.rawType) {
             return isCreatedWithinShowWindow(event, now: now)
         }
 
@@ -403,13 +605,13 @@ enum EventVisibility {
         return isCreatedWithinShowWindow(event, now: now)
     }
 
-    /// أعد الجلب خلال 15 دقيقة حتى يختفي المحذوف، ومع منتصف الليل لنوافذ الظهور.
+    /// جدّد خلال دقيقتين حتى يطابق «متواجدون الآن» نافذة الثلاث دقائق، ومع منتصف الليل لنوافذ الظهور.
     static func nextRefreshDate(from now: Date = Date()) -> Date {
         let cal = Calendar.current
         let start = cal.startOfDay(for: now)
         let midnight = cal.date(byAdding: .second, value: 24 * 60 * 60 + 5, to: start) ?? now.addingTimeInterval(3600)
-        let soon = now.addingTimeInterval(15 * 60)
-        return min(soon, midnight)
+        let presence = now.addingTimeInterval(2 * 60)
+        return min(presence, midnight)
     }
 }
 
@@ -417,15 +619,11 @@ enum WidgetDeepLink {
     static let events = URL(string: "com.alzidan.family2://events")!
 }
 
-struct SceneInk {
-    static let cream = Color(red: 1.0, green: 0.973, blue: 0.925)
-    static let gold = Color(red: 196 / 255, green: 163 / 255, blue: 90 / 255)
-    static let goldSoft = Color(red: 232 / 255, green: 213 / 255, blue: 168 / 255)
-}
-
 struct PrayerEntry: TimelineEntry {
     let date: Date
     let events: [FamilyEvent]
+    let themeId: String
+    let online: Int?
 }
 
 struct Provider: TimelineProvider {
@@ -435,25 +633,25 @@ struct Provider: TimelineProvider {
     ]
 
     func placeholder(in context: Context) -> PrayerEntry {
-        PrayerEntry(date: Date(), events: Self.sampleEvents)
+        PrayerEntry(date: Date(), events: Self.sampleEvents, themeId: AppGroupTheme.readId(), online: 3)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (PrayerEntry) -> Void) {
         if context.isPreview {
-            completion(PrayerEntry(date: Date(), events: Self.sampleEvents))
+            completion(PrayerEntry(date: Date(), events: Self.sampleEvents, themeId: AppGroupTheme.readId(), online: 3))
             return
         }
-        fetchEvents { events in
+        fetchSnapshot { events, online in
             DispatchQueue.main.async {
-                completion(PrayerEntry(date: Date(), events: events))
+                completion(PrayerEntry(date: Date(), events: events, themeId: AppGroupTheme.readId(), online: online))
             }
         }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<PrayerEntry>) -> Void) {
         let now = Date()
-        fetchEvents { events in
-            let entry = PrayerEntry(date: now, events: events)
+        fetchSnapshot { events, online in
+            let entry = PrayerEntry(date: now, events: events, themeId: AppGroupTheme.readId(), online: online)
             let refresh = EventVisibility.nextRefreshDate(from: now)
             DispatchQueue.main.async {
                 completion(Timeline(entries: [entry], policy: .after(refresh)))
@@ -461,9 +659,105 @@ struct Provider: TimelineProvider {
         }
     }
 
+    private func fetchSnapshot(completion: @escaping ([FamilyEvent], Int?) -> Void) {
+        let group = DispatchGroup()
+        var events: [FamilyEvent] = []
+        var online: Int?
+
+        group.enter()
+        fetchEvents { rows in
+            events = Self.composePulse(rows)
+            group.leave()
+        }
+
+        group.enter()
+        fetchOnlineCount { count in
+            online = count
+            group.leave()
+        }
+
+        group.notify(queue: .global()) {
+            completion(events, online)
+        }
+    }
+
+    /// One family news item and one occasion when both exist, so news is not buried under a distant date.
+    private static func composePulse(_ all: [FamilyEvent]) -> [FamilyEvent] {
+        func isNewsLane(_ event: FamilyEvent) -> Bool {
+            EventVisibility.isNewsNotice(event.rawType)
+                || EventVisibility.isHealth(event.rawType)
+                || EventVisibility.isDeath(event.rawType)
+        }
+        let news = all.filter(isNewsLane).sorted {
+            ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast)
+        }
+        let occasions = all.filter { !isNewsLane($0) }.sorted(by: sortEvents)
+        var out: [FamilyEvent] = []
+        if let firstNews = news.first { out.append(firstNews) }
+        if let firstOccasion = occasions.first { out.append(firstOccasion) }
+        if out.isEmpty { return Array(all.prefix(2)) }
+        return out
+    }
+
+    private func fetchOnlineCount(completion: @escaping (Int?) -> Void) {
+        let baseUrl = "https://wbskjfdqpugnwvrykqcn.supabase.co"
+        guard let requestUrl = URL(string: baseUrl + "/rest/v1/rpc/pulse_online_count_v1") else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: requestUrl)
+        request.httpMethod = "POST"
+        request.setValue(Self.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(Self.anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{}".utf8)
+
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard let data else {
+                completion(nil)
+                return
+            }
+            completion(Self.parseOnlineCount(data))
+        }.resume()
+    }
+
+    /// PostgREST may return `{ok,online}`, a JSON string of that object, or a one-row array.
+    private static func parseOnlineCount(_ data: Data) -> Int? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        return extractOnline(obj)
+    }
+
+    private static func extractOnline(_ obj: Any) -> Int? {
+        if let n = obj as? Int { return max(0, n) }
+        if let n = obj as? Double { return max(0, Int(n.rounded())) }
+        if let n = obj as? NSNumber { return max(0, n.intValue) }
+        if let s = obj as? String {
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let n = Int(trimmed) { return max(0, n) }
+            if let innerData = trimmed.data(using: .utf8),
+               let inner = try? JSONSerialization.jsonObject(with: innerData) {
+                return extractOnline(inner)
+            }
+            return nil
+        }
+        if let dict = obj as? [String: Any] {
+            if let ok = dict["ok"] as? Bool, ok == false { return nil }
+            if let raw = dict["online"] ?? dict["pulse_online_count_v1"] {
+                return extractOnline(raw)
+            }
+            return nil
+        }
+        if let arr = obj as? [Any], let first = arr.first {
+            return extractOnline(first)
+        }
+        return nil
+    }
+
+    private static let anonKey = "sb_publishable_JhgwBIXhs6z4yBZOoE2EqA_UlzjzW9c"
+
     private func fetchEvents(completion: @escaping ([FamilyEvent]) -> Void) {
         let baseUrl = "https://wbskjfdqpugnwvrykqcn.supabase.co"
-        let anonKey = "sb_publishable_JhgwBIXhs6z4yBZOoE2EqA_UlzjzW9c"
 
         // عيّنة حديثة + فلتر محلي موحّد (لا تعتمد على event_date.gte وحده)
         let query = "/rest/v1/family_events?select=id,type,person,date_label,event_date,created_at,details,show_at,show_before_days,end_at,manual_hidden&order=created_at.desc&limit=40"
@@ -475,8 +769,8 @@ struct Provider: TimelineProvider {
         }
 
         var request = URLRequest(url: requestUrl)
-        request.setValue(anonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(Self.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(Self.anonKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         URLSession.shared.dataTask(with: request) { data, _, _ in
@@ -597,8 +891,11 @@ enum ArabicRelativeDays {
 
 extension FamilyEvent {
     var statusText: String {
+        if EventVisibility.isNewsNotice(rawType) || EventVisibility.isHealth(rawType) || EventVisibility.isDeath(rawType) {
+            return typeLabel
+        }
         guard let days = daysLeft else {
-            return "\(typeLabel) — قريباً"
+            return typeLabel
         }
         return "\(typeLabel) — \(ArabicRelativeDays.untilEvent(days))"
     }
@@ -764,7 +1061,8 @@ struct PrayerProgressRing: View {
     let progress: Double
     let nextName: String
     let remainingRange: ClosedRange<Date>
-    var ringColor = SceneInk.gold
+    var ringColor: Color? = nil
+    var chrome: FamilyChrome = .heritage
     var size: CGFloat = 108
 
     private var timerFontSize: CGFloat { size < 90 ? 9 : 11 }
@@ -773,12 +1071,12 @@ struct PrayerProgressRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(SceneInk.cream.opacity(0.18), lineWidth: 8)
+                .stroke(chrome.cream.opacity(0.18), lineWidth: 8)
 
             Circle()
                 .trim(from: 0, to: progress)
-                .stroke(
-                    ringColor,
+                    .stroke(
+                    ringColor ?? chrome.gold,
                     style: StrokeStyle(lineWidth: 8, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -786,7 +1084,7 @@ struct PrayerProgressRing: View {
             VStack(alignment: .center, spacing: size < 90 ? 2 : 3) {
                 Text(nextName)
                     .font(.system(size: size < 90 ? 9 : 11, weight: .bold))
-                    .foregroundStyle(SceneInk.cream)
+                    .foregroundStyle(chrome.cream)
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -794,7 +1092,7 @@ struct PrayerProgressRing: View {
 
                 Text("المتبقي")
                     .font(.system(size: size < 90 ? 7 : 8, weight: .medium))
-                    .foregroundStyle(SceneInk.goldSoft)
+                    .foregroundStyle(chrome.goldSoft)
                     .opacity(0.85)
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
@@ -803,7 +1101,7 @@ struct PrayerProgressRing: View {
                 Text(timerInterval: remainingRange, countsDown: true)
                     .environment(\.locale, Locale(identifier: "ar_SA"))
                     .font(.system(size: timerFontSize, weight: .bold, design: .monospaced))
-                    .foregroundStyle(SceneInk.cream)
+                    .foregroundStyle(chrome.cream)
                     .monospacedDigit()
                     .multilineTextAlignment(.center)
                     .frame(minWidth: timerMinWidth, alignment: .center)
@@ -826,16 +1124,17 @@ struct AlzidanFamilyWidgetEntryView: View {
 
     private let contentPadding: CGFloat = 8
     private let maxEvents = 2
+    private var chrome: FamilyChrome { FamilyChrome.current(entry.themeId) }
 
     var body: some View {
         switch family {
         case .systemSmall:
             smallEventView
-                .foregroundStyle(SceneInk.cream)
+                .foregroundStyle(chrome.cream)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         case .systemMedium:
             mediumEventView
-                .foregroundStyle(SceneInk.cream)
+                .foregroundStyle(chrome.cream)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         case .accessoryCircular:
             lockCircularView
@@ -845,7 +1144,7 @@ struct AlzidanFamilyWidgetEntryView: View {
             lockInlineView
         default:
             largePrayerAndEventsView
-                .foregroundStyle(SceneInk.cream)
+                .foregroundStyle(chrome.cream)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -860,7 +1159,15 @@ struct AlzidanFamilyWidgetEntryView: View {
     }
 
     private var pulseMoment: FamilyEvent? {
-        entry.events.first { !EventVisibility.isDeath($0.rawType) }
+        entry.events.first
+    }
+
+    private var presenceLine: String? {
+        guard let n = entry.online, n > 0 else { return nil }
+        let count = EventDateFormatter.westernToArabicDigits(String(n))
+        if n == 1 { return "متواجد الآن \(count)" }
+        if n == 2 { return "متواجدان الآن \(count)" }
+        return "متواجدون الآن \(count)"
     }
 
     @ViewBuilder
@@ -868,16 +1175,16 @@ struct AlzidanFamilyWidgetEntryView: View {
         HStack(spacing: 6) {
             Text("عائلة الزيدان")
                 .font(titleSize)
-                .foregroundStyle(SceneInk.goldSoft)
+                .foregroundStyle(chrome.goldSoft)
                 .lineLimit(1)
             ZStack {
                 Circle()
-                    .fill(SceneInk.gold.opacity(0.18))
+                    .fill(chrome.gold.opacity(0.18))
                 Circle()
-                    .stroke(SceneInk.gold, lineWidth: 1)
+                    .stroke(chrome.gold, lineWidth: 1)
                 Text("ز")
                     .font(.system(size: mark * 0.52, weight: .heavy))
-                    .foregroundStyle(SceneInk.goldSoft)
+                    .foregroundStyle(chrome.goldSoft)
             }
             .frame(width: mark, height: mark)
         }
@@ -908,7 +1215,7 @@ struct AlzidanFamilyWidgetEntryView: View {
             Text("عائلتك معك")
                 .font(compact ? .caption : .subheadline)
                 .fontWeight(.bold)
-                .foregroundStyle(SceneInk.goldSoft)
+                .foregroundStyle(chrome.goldSoft)
                 .lineLimit(1)
             Text(dailyAdhkarText)
                 .font(compact ? .caption2 : .caption)
@@ -930,10 +1237,7 @@ struct AlzidanFamilyWidgetEntryView: View {
     }
 
     private var compactDatePair: String {
-        let hijri = compactHijriDate(entry.date)
-        let gregorian = compactGregorianDate(entry.date)
-        let miladi = gregorian.contains("م") ? gregorian : "\(gregorian) م"
-        return "\(hijri) · \(miladi)"
+        EventDateFormatter.pairLine(from: entry.date)
     }
 
     @ViewBuilder
@@ -942,7 +1246,7 @@ struct AlzidanFamilyWidgetEntryView: View {
             Text(event.statusText)
                 .font(titleSize)
                 .fontWeight(.bold)
-                .foregroundStyle(SceneInk.gold)
+                .foregroundStyle(chrome.gold)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -967,6 +1271,12 @@ struct AlzidanFamilyWidgetEntryView: View {
     var smallEventView: some View {
         VStack(alignment: .trailing, spacing: 8) {
             familyBrand(titleSize: .caption2.weight(.bold), mark: 22)
+            if let presenceLine {
+                Text(presenceLine)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(chrome.gold)
+                    .lineLimit(1)
+            }
 
             if let event = pulseMoment {
                 Spacer(minLength: 4)
@@ -978,14 +1288,14 @@ struct AlzidanFamilyWidgetEntryView: View {
                 Text(event.statusText)
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundStyle(SceneInk.gold)
+                    .foregroundStyle(chrome.gold)
                     .multilineTextAlignment(.trailing)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
                 if !event.dateLine.isEmpty {
                     Text(event.dateLine)
                         .font(.system(size: 9))
-                        .foregroundStyle(SceneInk.goldSoft)
+                        .foregroundStyle(chrome.goldSoft)
                         .opacity(0.85)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -1009,6 +1319,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                     progress: progress,
                     nextName: liveInfo.nextName,
                     remainingRange: safeTimerRange(from: now, until: liveInfo.nextTime),
+                    chrome: chrome,
                     size: 76
                 )
             }
@@ -1023,10 +1334,17 @@ struct AlzidanFamilyWidgetEntryView: View {
 
                 Text(compactDatePair)
                     .font(.system(size: 9))
-                    .foregroundStyle(SceneInk.goldSoft)
+                    .foregroundStyle(chrome.goldSoft)
                     .opacity(0.9)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+
+                if let presenceLine {
+                    Text(presenceLine)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(chrome.gold)
+                        .lineLimit(1)
+                }
 
                 if let event = pulseMoment {
                     widgetEventBlock(
@@ -1067,6 +1385,14 @@ struct AlzidanFamilyWidgetEntryView: View {
                 familyBrand(titleSize: .subheadline.weight(.bold), mark: 24)
             }
 
+            if let presenceLine {
+                Text(presenceLine)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(chrome.gold)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.top, 4)
+            }
+
             TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
                 let now = timeline.date
                 let liveInfo = HailPrayerCalculator.prayerInfo(now: now)
@@ -1075,7 +1401,8 @@ struct AlzidanFamilyWidgetEntryView: View {
                 PrayerProgressRing(
                     progress: progress,
                     nextName: liveInfo.nextName,
-                    remainingRange: safeTimerRange(from: now, until: liveInfo.nextTime)
+                    remainingRange: safeTimerRange(from: now, until: liveInfo.nextTime),
+                    chrome: chrome
                 )
             }
             .frame(maxWidth: .infinity)
@@ -1096,7 +1423,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                         }
                         .padding(.vertical, 1)
                         .padding(.horizontal, 4)
-                        .background(p.name == info.nextName ? SceneInk.gold.opacity(0.28) : Color.clear)
+                        .background(p.name == info.nextName ? chrome.gold.opacity(0.28) : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
@@ -1155,6 +1482,12 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .font(.headline.weight(.heavy))
             }
 
+            if let presenceLine {
+                Text(presenceLine)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+            }
+
             if let event = pulseMoment {
                 Text(event.name)
                     .font(.subheadline.weight(.semibold))
@@ -1189,6 +1522,9 @@ struct AlzidanFamilyWidgetEntryView: View {
             let first = event.name.split(separator: " ").first.map(String.init) ?? event.name
             return "\(first) · \(event.typeLabel)"
         }
+        if let presenceLine {
+            return "عائلة الزيدان · \(presenceLine)"
+        }
         let info = HailPrayerCalculator.prayerInfo(now: entry.date)
         return "عائلتك معك · \(info.nextName)"
     }
@@ -1218,20 +1554,21 @@ struct AlzidanFamilyWidget: Widget {
         let configuration = StaticConfiguration(kind: kind, provider: Provider()) { entry in
             if #available(iOS 17.0, *) {
                 AlzidanFamilyWidgetEntryView(entry: entry)
+                    .environment(\.locale, Locale(identifier: "ar_SA"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .widgetURL(WidgetDeepLink.events)
                     .containerBackground(for: .widget) {
-                        WidgetBackgroundView()
+                        WidgetBackgroundView(themeId: entry.themeId)
                     }
             } else {
-                WidgetRoot {
+                WidgetRoot(themeId: entry.themeId) {
                     AlzidanFamilyWidgetEntryView(entry: entry)
                 }
                 .widgetURL(WidgetDeepLink.events)
             }
         }
         .configurationDisplayName("عائلة الزيدان")
-        .description("لحظة من أهلك، وأوقات الصلاة في حائل.")
+        .description("أخبار العائلة ومناسباتها، ومن معنا الآن، وأوقات الصلاة في حائل.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
 
         if #available(iOS 17.0, *) {
@@ -1250,7 +1587,7 @@ struct AlzidanFamilyLockWidget: Widget {
                 .widgetURL(WidgetDeepLink.events)
         }
         .configurationDisplayName("عائلة الزيدان — القفل")
-        .description("لحظة من أهلك أو الصلاة القادمة على شاشة القفل.")
+        .description("لحظة من أهلك أو من معنا الآن على شاشة القفل.")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }

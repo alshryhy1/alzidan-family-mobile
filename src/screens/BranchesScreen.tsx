@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DataState } from '../components/DataState';
 import { SceneShell } from '../components/scene';
-import { scene, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
 import type { Branch } from '../types';
 
 type BranchesScreenProps = {
@@ -13,6 +15,83 @@ type BranchesScreenProps = {
   onRetry: () => void;
 };
 
+function branchStyles(p: ThemePalette) {
+  return StyleSheet.create({
+    heroCount: {
+      color: p.goldSoft,
+      fontSize: 14,
+      fontWeight: '700',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    house: {
+      backgroundColor: p.creamLift,
+      borderColor: 'rgba(196,163,90,0.45)',
+      borderRadius: 28,
+      borderWidth: 1,
+      gap: spacing.sm,
+      overflow: 'hidden',
+      padding: spacing.lg,
+    },
+    houseHead: {
+      alignItems: 'center',
+      flexDirection: 'row-reverse',
+      justifyContent: 'space-between',
+    },
+    houseIndex: {
+      color: p.gold,
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    houseMark: {
+      color: p.gold,
+      fontSize: 16,
+    },
+    houseName: {
+      color: p.green,
+      fontSize: 24,
+      fontWeight: '800',
+      lineHeight: 34,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    houseSummary: {
+      color: p.ink,
+      fontSize: typography.body,
+      lineHeight: 24,
+      opacity: 0.78,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    houseMetrics: {
+      alignItems: 'center',
+      flexDirection: 'row-reverse',
+      gap: spacing.xs,
+    },
+    metric: {
+      color: p.greenMid,
+      fontSize: typography.caption,
+      fontWeight: '800',
+      writingDirection: 'rtl',
+    },
+    dot: {
+      color: p.gold,
+    },
+    enter: {
+      color: p.gold,
+      fontSize: 13,
+      fontWeight: '800',
+      marginTop: 4,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    pressed: {
+      opacity: 0.78,
+    },
+  });
+}
+
 export function BranchesScreen({
   branches,
   error,
@@ -20,6 +99,8 @@ export function BranchesScreen({
   onOpenTree,
   onRetry,
 }: BranchesScreenProps) {
+  const p = useThemePalette();
+  const styles = useMemo(() => branchStyles(p), [p]);
   return (
     <SceneShell
       english="FAMILY HOUSES"
@@ -68,78 +149,3 @@ export function BranchesScreen({
     </SceneShell>
   );
 }
-
-const styles = StyleSheet.create({
-  heroCount: {
-    color: scene.goldSoft,
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  house: {
-    backgroundColor: scene.creamLift,
-    borderColor: 'rgba(196,163,90,0.45)',
-    borderRadius: 28,
-    borderWidth: 1,
-    gap: spacing.sm,
-    overflow: 'hidden',
-    padding: spacing.lg,
-  },
-  houseHead: {
-    alignItems: 'center',
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-  },
-  houseIndex: {
-    color: scene.gold,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  houseMark: {
-    color: scene.gold,
-    fontSize: 16,
-  },
-  houseName: {
-    color: scene.green,
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 34,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  houseSummary: {
-    color: scene.ink,
-    fontSize: typography.body,
-    lineHeight: 24,
-    opacity: 0.78,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  houseMetrics: {
-    alignItems: 'center',
-    flexDirection: 'row-reverse',
-    gap: spacing.xs,
-  },
-  metric: {
-    color: scene.greenMid,
-    fontSize: typography.caption,
-    fontWeight: '800',
-    writingDirection: 'rtl',
-  },
-  dot: {
-    color: scene.gold,
-  },
-  enter: {
-    color: scene.gold,
-    fontSize: 13,
-    fontWeight: '800',
-    marginTop: 4,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  pressed: {
-    opacity: 0.78,
-  },
-});

@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from './ActionButton';
 import { PhoneField } from './PhoneField';
@@ -11,8 +11,11 @@ import {
   type MemoryPickedFile,
   type MemoryUiKind,
 } from '../services/memorySubmit';
+import { notifyAdminOfNewRequest } from '../services/eventOutboundNotify';
 import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch } from '../types';
 import { DEFAULT_PHONE_COUNTRY_ID, isValidPhone, toE164 } from '../utils/phone';
 
@@ -30,6 +33,8 @@ type MemorySubmitPanelProps = {
 };
 
 export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanelProps) {
+  const p = useThemePalette();
+  const styles = useThemedStyles(memorySubmitStyles);
   const [branch, setBranch] = useState(defaultBranch ?? branches[0]?.id ?? 'زيدان');
   const [memoryType, setMemoryType] = useState<(typeof memoryTypes)[number]['key']>('image');
   const [memoryPerson, setMemoryPerson] = useState('');
@@ -146,6 +151,14 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         name: memoryPerson.trim() || memoryTitle.trim(),
         phone,
       });
+      await notifyAdminOfNewRequest({
+        request_id: String(result?.requestId || result?.id || `MEM-${Date.now()}`),
+        kind: 'memory_card',
+        branch_key: branch,
+        status: 'pending',
+        name: memoryPerson.trim() || memoryTitle.trim(),
+        phone,
+      });
 
       setMemoryPerson('');
       setMemoryLineage('');
@@ -210,7 +223,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         <TextInput
           onChangeText={setSubmitterName}
           placeholder="اسم المرسل *"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={submitterName}
@@ -226,7 +239,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         <TextInput
           onChangeText={setMemoryPerson}
           placeholder="اسم الشخص المرتبط بالذكرى *"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={memoryPerson}
@@ -234,7 +247,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         <TextInput
           onChangeText={setMemoryLineage}
           placeholder="النسب/المسار (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={memoryLineage}
@@ -242,7 +255,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         <TextInput
           onChangeText={setMemoryTitle}
           placeholder="عنوان الذكرى *"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={memoryTitle}
@@ -251,7 +264,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
           multiline
           onChangeText={setMemoryDescription}
           placeholder="وصف مختصر (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={[styles.input, styles.textArea]}
           textAlign="right"
           value={memoryDescription}
@@ -261,7 +274,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
             multiline
             onChangeText={setMemoryStory}
             placeholder="نص القصة *"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={p.textMuted}
             style={[styles.input, styles.textArea]}
             textAlign="right"
             value={memoryStory}
@@ -270,7 +283,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         <TextInput
           onChangeText={setMemoryDate}
           placeholder="تاريخ/وصف زمني (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={memoryDate}
@@ -278,7 +291,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         <TextInput
           onChangeText={setMemoryYear}
           placeholder="السنة (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={memoryYear}
@@ -318,9 +331,10 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
   );
 }
 
-const styles = StyleSheet.create({
+function memorySubmitStyles(p: ThemePalette) {
+  return {
   hint: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     lineHeight: 20,
     marginBottom: spacing.xs,
@@ -334,32 +348,32 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   chip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: p.surface,
+    borderColor: p.border,
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   activeChip: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: p.primary,
+    borderColor: p.primary,
   },
   chipText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
   activeChipText: {
-    color: colors.white,
+    color: p.white,
   },
   input: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
+    backgroundColor: p.surfaceMuted,
+    borderColor: p.border,
     borderRadius: 15,
     borderWidth: 1,
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     marginBottom: spacing.xs,
     minHeight: 48,
@@ -372,7 +386,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   fileHint: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     marginBottom: spacing.xs,
     textAlign: 'right',
@@ -384,16 +398,17 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   successStatus: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
   },
   errorStatus: {
     backgroundColor: '#F7D7D7',
   },
   statusText: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-});
+  };
+}

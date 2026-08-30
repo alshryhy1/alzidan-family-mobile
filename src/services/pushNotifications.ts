@@ -34,24 +34,24 @@ export type RegisterPushTokenResult = {
 };
 
 const PUSH_REGISTRATION_USER_MESSAGES: Record<string, string> = {
-  register_start: 'جاري تسجيل الإشعارات…',
-  not_physical_device: 'يتطلب جهازاً حقيقياً',
-  push_requires_physical_device: 'يتطلب جهازاً حقيقياً',
-  permission_denied: 'تم رفض إذن الإشعارات',
-  permission_granted: 'تم منح إذن الإشعارات',
-  project_id: 'جاري إعداد الإشعارات…',
-  supabase_not_configured: 'إعداد الخادم غير مكتمل',
-  supabase_env_missing: 'إعداد الخادم غير مكتمل',
-  token_received: 'تم الحصول على رمز الإشعارات',
-  token_empty: 'تعذر الحصول على رمز الإشعارات',
-  empty_expo_push_token: 'تعذر الحصول على رمز الإشعارات',
-  token_unchanged: 'الإشعارات مسجّلة مسبقاً',
-  token_fetch_failed: 'تعذر الحصول على رمز الإشعارات',
-  rpc_success: 'تم تسجيل الإشعارات بنجاح',
-  rpc_failed: 'تعذر تسجيل الإشعارات',
-  fallback_upsert_success: 'تم تسجيل الإشعارات بنجاح',
-  fallback_upsert_failed: 'تعذر تسجيل الإشعارات',
-  registration_failed: 'تعذر تسجيل الإشعارات',
+  register_start: 'جاري تفعيل الإشعارات…',
+  not_physical_device: 'الإشعارات تعمل على الجهاز الحقيقي.',
+  push_requires_physical_device: 'الإشعارات تعمل على الجهاز الحقيقي.',
+  permission_denied: 'لم يُسمح بالإشعارات.',
+  permission_granted: 'تم السماح بالإشعارات.',
+  project_id: 'جاري تفعيل الإشعارات…',
+  supabase_not_configured: 'تعذر تفعيل الإشعارات الآن.',
+  supabase_env_missing: 'تعذر تفعيل الإشعارات الآن.',
+  token_received: 'تم تفعيل الإشعارات.',
+  token_empty: 'تعذر تفعيل الإشعارات.',
+  empty_expo_push_token: 'تعذر تفعيل الإشعارات.',
+  token_unchanged: 'الإشعارات مفعّلة.',
+  token_fetch_failed: 'تعذر تفعيل الإشعارات.',
+  rpc_success: 'تم تفعيل الإشعارات.',
+  rpc_failed: 'تعذر تفعيل الإشعارات.',
+  fallback_upsert_success: 'تم تفعيل الإشعارات.',
+  fallback_upsert_failed: 'تعذر تفعيل الإشعارات.',
+  registration_failed: 'تعذر تفعيل الإشعارات.',
 };
 
 export function getPushRegistrationUserMessage(input: {
@@ -62,7 +62,7 @@ export function getPushRegistrationUserMessage(input: {
   if (key && PUSH_REGISTRATION_USER_MESSAGES[key]) {
     return PUSH_REGISTRATION_USER_MESSAGES[key];
   }
-  return 'تعذر تسجيل الإشعارات. حاول مرة أخرى لاحقاً.';
+  return 'تعذر تفعيل الإشعارات. حاول مرة أخرى لاحقاً.';
 }
 
 function normalizeSaudiPhone(value: string) {
@@ -192,64 +192,92 @@ export function formatFormalNotificationText(input: {
 }): FormalNotificationText {
   const type = normalizeType(input.type);
   const person = normalizeText(input.person);
-  const fallbackTitle = normalizeText(input.fallbackTitle) || 'إشعار جديد';
-  const fallbackBody = normalizeText(input.fallbackBody) || 'ورد إشعار جديد في تطبيق عائلة الزيدان.';
+  const fallbackTitle = normalizeText(input.fallbackTitle);
+  const fallbackBody = normalizeText(input.fallbackBody);
 
-  if (type === 'birth') {
-    const subject = person ? `صدور إشعار مولود جديد يخص: ${person}` : 'صدور إشعار مولود جديد';
-    const body = person
-      ? `تم اعتماد خبر مولود جديد في تطبيق عائلة الزيدان لصاحب الاسم: ${person}.`
-      : 'تم اعتماد خبر مولود جديد في تطبيق عائلة الزيدان.';
-    return { typeLabel: 'إشعار مولود جديد', subject, body, title: `إشعار مولود جديد — ${subject}` };
+  if (type === 'inbox_share') {
+    return {
+      typeLabel: 'وصلك من العائلة',
+      subject: 'وصلك من العائلة',
+      body: fallbackBody || 'شاركك أحد مناسبة تخصك.',
+      title: fallbackTitle || 'وصلك من العائلة',
+    };
   }
 
-  if (type === 'death') {
-    const subject = person ? `صدور إشعار وفاة يخص: ${person}` : 'صدور إشعار وفاة';
-    const body = person
-      ? `تم تسجيل خبر وفاة في تطبيق عائلة الزيدان للاسم: ${person}.`
-      : 'تم تسجيل خبر وفاة في تطبيق عائلة الزيدان.';
-    return { typeLabel: 'إشعار وفاة', subject, body, title: `إشعار وفاة — ${subject}` };
+  if (
+    type === 'branch_delegate_new_request' ||
+    type === 'admin_new_request' ||
+    type === 'women_manager_new_request' ||
+    type === 'status_changed'
+  ) {
+    return {
+      typeLabel: fallbackTitle || 'طلب',
+      subject: person || fallbackTitle || 'طلب',
+      body: fallbackBody || fallbackTitle || 'وصل طلب جديد.',
+      title: fallbackTitle || 'طلب',
+    };
   }
 
-  if (type === 'sick' || type === 'operation' || type === 'discharge') {
-    const subject = person ? `صدور إشعار حالة صحية يخص: ${person}` : 'صدور إشعار حالة صحية';
-    const body = person
-      ? `تم تسجيل حالة صحية في تطبيق عائلة الزيدان للاسم: ${person}.`
-      : 'تم تسجيل حالة صحية جديدة في تطبيق عائلة الزيدان.';
-    return { typeLabel: 'إشعار حالة صحية', subject, body, title: `إشعار حالة صحية — ${subject}` };
+  if (type === 'birth' || type === 'aqiqa') {
+    return {
+      typeLabel: 'مولود جديد',
+      subject: person || 'مولود جديد',
+      body: person ? `وُلد ${person}.` : 'خبر مولود جديد في العائلة.',
+      title: 'مولود جديد',
+    };
   }
 
-  if (type === 'general' || type === 'news') {
-    const subject = person ? `صدور خبر جديد يخص: ${person}` : 'صدور خبر جديد';
-    const body = fallbackBody || 'تم نشر خبر جديد في تطبيق عائلة الزيدان.';
-    return { typeLabel: 'إشعار خبر جديد', subject, body, title: `إشعار خبر جديد — ${subject}` };
+  if (type === 'death' || type === 'condolence') {
+    return {
+      typeLabel: 'وفاة',
+      subject: person || 'وفاة',
+      body: person || 'خبر وفاة في العائلة.',
+      title: 'إنا لله وإنا إليه راجعون',
+    };
   }
 
-  if (type === 'update' || type === 'updated' || type === 'edit' || type === 'edited') {
-    const subject = person ? `تم تحديث خبر يخص: ${person}` : 'تم تحديث خبر';
-    const body = person
-      ? `تم تحديث خبر في تطبيق عائلة الزيدان للاسم: ${person}.`
-      : 'تم تحديث خبر في تطبيق عائلة الزيدان.';
-    return { typeLabel: 'إشعار تحديث', subject, body, title: `إشعار تحديث — ${subject}` };
+  if (type === 'sick' || type === 'operation' || type === 'discharge' || type === 'healing' || type === 'health') {
+    return {
+      typeLabel: 'حالة صحية',
+      subject: person || 'حالة صحية',
+      body: person || 'خبر حالة صحية في العائلة.',
+      title: 'حالة صحية',
+    };
   }
 
-  if (type === 'new' || type === 'new_item' || type === 'added') {
-    const subject = person ? `تمت إضافة خبر جديد يخص: ${person}` : 'تمت إضافة خبر جديد';
-    const body = person
-      ? `تمت إضافة خبر جديد في تطبيق عائلة الزيدان للاسم: ${person}.`
-      : 'تمت إضافة خبر جديد في تطبيق عائلة الزيدان.';
-    return { typeLabel: 'إشعار إضافة جديدة', subject, body, title: `إشعار إضافة جديدة — ${subject}` };
+  if (type === 'marriage' || type === 'wedding' || type === 'contract') {
+    return {
+      typeLabel: 'زواج',
+      subject: person || 'زواج',
+      body: person || 'مناسبة زواج في العائلة.',
+      title: 'زواج',
+    };
   }
 
-  const defaultSubject = person ? `صدور إشعار مناسبة يخص: ${person}` : 'صدور إشعار مناسبة';
-  const defaultBody = fallbackBody || 'تم نشر مناسبة جديدة في تطبيق عائلة الزيدان.';
-  const defaultTitle = fallbackTitle === 'إشعار جديد' ? `إشعار مناسبة — ${defaultSubject}` : fallbackTitle;
+  if (
+    type === 'graduation' ||
+    type === 'graduation_notice' ||
+    type === 'promotion' ||
+    type === 'promotion_notice' ||
+    type === 'family_news' ||
+    type === 'news' ||
+    type === 'general' ||
+    type === 'success' ||
+    type === 'achievement'
+  ) {
+    return {
+      typeLabel: 'خبر عائلي',
+      subject: person || 'خبر عائلي',
+      body: person || fallbackBody || 'خبر جديد في العائلة.',
+      title: 'خبر عائلي',
+    };
+  }
 
   return {
-    typeLabel: 'إشعار مناسبة',
-    subject: defaultSubject,
-    body: defaultBody,
-    title: defaultTitle,
+    typeLabel: 'مناسبة',
+    subject: person || 'مناسبة',
+    body: person || fallbackBody || 'مناسبة جديدة في العائلة.',
+    title: fallbackTitle && fallbackTitle !== 'إشعار جديد' ? fallbackTitle : 'مناسبة',
   };
 }
 
@@ -267,10 +295,10 @@ export function formatFormalNotificationFromPayload(payload: {
     data.member_name,
   );
   const type = pickFirstText(
+    data.mode,
+    data.notification_type,
     data.type,
     data.event_type,
-    data.kind,
-    data.notification_type,
   );
 
   return formatFormalNotificationText({

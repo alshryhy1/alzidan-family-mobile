@@ -1,7 +1,9 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useMemo } from 'react';
 
 import { ActionButton } from './ActionButton';
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
 
 type DataStateProps = {
   empty?: boolean;
@@ -11,6 +13,30 @@ type DataStateProps = {
   onRetry?: () => void;
 };
 
+function dataStyles(p: ThemePalette) {
+  return StyleSheet.create({
+    box: {
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.md,
+    },
+    error: {
+      color: p.condolence,
+      fontSize: typography.body,
+      fontWeight: '800',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    text: {
+      color: p.textMuted,
+      fontSize: typography.body,
+      lineHeight: 23,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+  });
+}
+
 export function DataState({
   empty,
   emptyText = 'لا توجد بيانات متاحة حاليًا.',
@@ -18,10 +44,12 @@ export function DataState({
   loading,
   onRetry,
 }: DataStateProps) {
+  const p = useThemePalette();
+  const styles = useMemo(() => dataStyles(p), [p]);
   if (loading) {
     return (
       <View style={styles.box}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={p.primary} />
         <Text style={styles.text}>جاري تحميل البيانات…</Text>
       </View>
     );
@@ -47,25 +75,3 @@ export function DataState({
 
   return null;
 }
-
-const styles = StyleSheet.create({
-  box: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  error: {
-    color: colors.condolence,
-    fontSize: typography.body,
-    fontWeight: '800',
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  text: {
-    color: colors.textMuted,
-    fontSize: typography.body,
-    lineHeight: 23,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-});

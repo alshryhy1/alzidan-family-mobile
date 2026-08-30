@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Linking, Pressable, Text, TextInput, View, Alert } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
 import { DataState } from '../components/DataState';
@@ -12,10 +11,20 @@ import { PhoneField } from '../components/PhoneField';
 import { SceneShell } from '../components/scene';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
+import { notifyAdminOfNewRequest, notifyFamilyEventPublished } from '../services/eventOutboundNotify';
 import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
 import { rememberPushPhone, registerPushToken } from '../services/pushNotifications';
-import { insertPublicRow, selectPublicRows, uploadPublicFileUri } from '../services/supabase';
-import { colors, scene, spacing, typography } from '../theme';
+import { insertPublicRow, uploadPublicFileUri } from '../services/supabase';
+import {
+  buildMemberOccasionRow,
+  deleteMemberOccasion,
+  isRegisteredMemberPhone,
+  publishMemberOccasion,
+  updateMemberOccasion,
+} from '../services/memberOccasions';
+import { heritagePalette, spacing, typography, type ThemePalette } from '../theme';
+import { useTheme, useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch, FamilyEvent } from '../types';
 import {
   MOBILE_EVENT_FAMILIES,
@@ -24,6 +33,9 @@ import {
   findMobileEventType,
   listMobileEventTypesByFamily,
   validateEventFacts,
+  EVENT_PLACE_KINDS,
+  formatVenueLine,
+  mapsUrlFromCoords,
   type MobileEventFamily,
 } from '../utils/eventRequestMessage';
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
@@ -33,9 +45,9 @@ import {
   canonicalizePhone,
   e164Digits,
   isValidPhone,
-  memberProfilePhoneQuery,
   parsePhoneToParts,
   toE164,
+  phonesMatch,
 } from '../utils/phone';
 
 type Filter = 'all' | FamilyEvent['category'];
@@ -46,16 +58,9 @@ type EventsScreenProps = {
   events: FamilyEvent[];
   loading: boolean;
   onRetry: () => void;
-};
-
-const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
-
-type MemberProfileRow = {
-  phone: string | null;
-  branch_key: string;
-  tree_child_id: number;
-  display_name: string | null;
-  status: string | null;
+  memberPhone?: string | null;
+  memberGreeting?: string | null;
+  memberBranchKey?: string | null;
 };
 
 const filters: Array<{ key: Filter; label: string }> = [
@@ -66,9 +71,9 @@ const filters: Array<{ key: Filter; label: string }> = [
 ];
 
 const categoryColor: Record<FamilyEvent['category'], string> = {
-  happy: colors.happy,
-  health: colors.health,
-  condolence: colors.condolence,
+  happy: heritagePalette.happy,
+  health: heritagePalette.health,
+  condolence: heritagePalette.condolence,
 };
 
 function requestId() {
@@ -139,7 +144,13 @@ function visitTimeRange(event: FamilyEvent) {
 
 function eventDetailRows(event: FamilyEvent) {
   const isVisit = event.contactMethod === 'visit';
+  const venue = formatVenueLine({ placeKind: event.placeKind, extra: event.placeName });
+  const mapsUrl = mapsUrlFromCoords(event.lat, event.lng);
   return [
+    venue ? { label: 'المكان', value: venue } : null,
+    mapsUrl && event.lat != null && event.lng != null
+      ? { label: 'الإحداثيات', value: `${event.lat}, ${event.lng}` }
+      : null,
     event.hospitalName ? { label: 'المستشفى', value: event.hospitalName } : null,
     event.hospitalDepartment ? { label: 'القسم', value: event.hospitalDepartment } : null,
     isVisit && visitDateRange(event) ? { label: 'تاريخ الزيارة', value: visitDateRange(event) } : null,
@@ -168,6 +179,7 @@ function stripMarkdownNoise(value?: string | null) {
 }
 
 function EventVideo({ uri }: { uri: string }) {
+  const styles = useThemedStyles(eventsStyles);
   const player = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = false;
   });
@@ -183,7 +195,19 @@ function EventVideo({ uri }: { uri: string }) {
   );
 }
 
-export function EventsScreen({ branches, error, events, loading, onRetry }: EventsScreenProps) {
+export function EventsScreen({
+  branches,
+  error,
+  events,
+  loading,
+  onRetry,
+  memberPhone = null,
+  memberGreeting = null,
+  memberBranchKey = null,
+}: EventsScreenProps) {
+  const { occasionSocialEnabled } = useTheme();
+  const p = useThemePalette();
+  const styles = useThemedStyles(eventsStyles);
   const [filter, setFilter] = useState<Filter>('all');
   const [addOpen, setAddOpen] = useState(false);
   const [addBranch, setAddBranch] = useState(branches[0]?.id ?? 'زيدان');
@@ -192,6 +216,8 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const [addPerson, setAddPerson] = useState('');
   const [addDate, setAddDate] = useState('');
   const [addPlace, setAddPlace] = useState('');
+  const [addPlaceKind, setAddPlaceKind] = useState('');
+  const [addCoords, setAddCoords] = useState('');
   const [addHospitalDept, setAddHospitalDept] = useState('');
   const [contactCountryId, setContactCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
   const [contactNational, setContactNational] = useState('');
@@ -212,6 +238,8 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   });
   const [submitting, setSubmitting] = useState(false);
   const [pickingMedia, setPickingMedia] = useState<'image' | 'video' | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const sessionPhone = canonicalizePhone(memberPhone || '');
   const visibleEvents = filter === 'all' ? events : events.filter((event) => event.category === filter);
   const featuredEvent = visibleEvents[0] ?? null;
   const happyCount = events.filter((event) => event.category === 'happy').length;
@@ -222,51 +250,22 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
   const allowsMedia = eventAllowsMedia(selectedType.key);
 
   useEffect(() => {
-    let alive = true;
+    const cleaned = canonicalizePhone(memberPhone || '');
+    if (!cleaned) return;
+    setPhoneNational((current) => {
+      if (current.trim()) return current;
+      const parts = parsePhoneToParts(cleaned);
+      setPhoneCountryId(parts.countryId);
+      return parts.national;
+    });
+  }, [memberPhone]);
 
-    AsyncStorage.getItem(MEMBER_PHONE_KEY)
-      .then(async (stored) => {
-        const cleaned = canonicalizePhone(stored || '');
-        if (!cleaned) return;
-
-        if (alive) {
-          setPhoneNational((current) => {
-            if (current.trim()) return current;
-            const parts = parsePhoneToParts(cleaned);
-            setPhoneCountryId(parts.countryId);
-            return parts.national;
-          });
-        }
-
-        const query = memberProfilePhoneQuery(cleaned);
-        const rows = query ? await selectPublicRows<MemberProfileRow>(query) : [];
-        const found = rows[0];
-        if (!found) return;
-
-        const profileBranch = String(found.branch_key || '').trim();
-        if (alive && profileBranch) {
-          setAddBranch(profileBranch);
-        }
-
-        let resolvedName = String(found.display_name || '').trim();
-        if (!resolvedName && found.tree_child_id) {
-          const childRows = await selectPublicRows<{ name: string | null }>(
-            `tree_children?select=name&id=eq.${found.tree_child_id}&limit=1`,
-          );
-          const pathName = String(childRows[0]?.name || '').trim();
-          if (pathName) resolvedName = compactNameFromPath(pathName);
-        }
-
-        if (alive && resolvedName) {
-          setSubmitterName((current) => (current.trim() ? current : resolvedName));
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      alive = false;
-    };
-  }, []);
+  useEffect(() => {
+    if (memberBranchKey) setAddBranch((current) => current || memberBranchKey);
+    if (memberGreeting) {
+      setSubmitterName((current) => (current.trim() ? current : String(memberGreeting).trim()));
+    }
+  }, [memberBranchKey, memberGreeting]);
 
   const pickMedia = async (kind: 'image' | 'video') => {
     if (pickingMedia) return;
@@ -314,10 +313,116 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
     }
   };
 
+  function eventRaw(event: FamilyEvent): Record<string, unknown> {
+    const raw = event.rawDetails;
+    if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
+    if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+
+  function isOwnedEvent(event: FamilyEvent) {
+    if (!sessionPhone) return false;
+    return phonesMatch(sessionPhone, event.sourcePhone);
+  }
+
+  function resetAddForm() {
+    setEditingId(null);
+    setAddPerson('');
+    setAddDate('');
+    setAddPlace('');
+    setAddPlaceKind('');
+    setAddCoords('');
+    setAddHospitalDept('');
+    setContactNational('');
+    setAddPrayerPlace('');
+    setAddPrayerTime('');
+    setAddBurialPlace('');
+    setAddImageUrl('');
+    setAddVideoUrl('');
+    setPickedImage(null);
+    setPickedVideo(null);
+    setAddText('');
+  }
+
+  function startEditEvent(event: FamilyEvent) {
+    const type = findMobileEventType(String(event.type || 'general'));
+    const raw = eventRaw(event);
+    setEditingId(event.id);
+    setAddFamily(type.family);
+    setAddType(type.key);
+    if (event.branchKey) setAddBranch(event.branchKey);
+    setAddPerson(event.person || '');
+    setAddDate(event.eventDate || event.date || '');
+    setAddPlace(event.placeName || event.hospitalName || String(raw.condolence_place || '') || '');
+    setAddPlaceKind(event.placeKind || '');
+    setAddCoords(
+      event.lat != null && event.lng != null ? `${event.lat}, ${event.lng}` : '',
+    );
+    setAddHospitalDept(event.hospitalDepartment || '');
+    setAddPrayerPlace(String(raw.prayer_place || ''));
+    setAddPrayerTime(String(raw.prayer_time || ''));
+    setAddBurialPlace(String(raw.burial_place || ''));
+    setAddText(event.details || String(raw.text || ''));
+    setAddImageUrl(event.imageUrl || '');
+    setAddVideoUrl(event.videoUrl || '');
+    setPickedImage(null);
+    setPickedVideo(null);
+    if (event.contactPhone) {
+      const parts = parsePhoneToParts(event.contactPhone);
+      setContactCountryId(parts.countryId);
+      setContactNational(parts.national);
+    }
+    setAddOpen(true);
+    setSubmitStatus({ kind: 'idle', text: 'تعديل المصدر — احفظ بعد التغيير.' });
+  }
+
+  function confirmDeleteEvent(event: FamilyEvent) {
+    const phone = sessionPhone || toE164(phoneCountryId, phoneNational);
+    Alert.alert('حذف المناسبة', 'تُحذف من المصدر ولن تظهر في المناسبات.', [
+      { text: 'إلغاء', style: 'cancel' },
+      {
+        text: 'حذف',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            try {
+              const result = await deleteMemberOccasion(phone, Number(event.id));
+              if (!result?.ok) {
+                setSubmitStatus({
+                  kind: 'error',
+                  text:
+                    result?.error === 'not_owner'
+                      ? 'لا يمكنك حذف مناسبة ليست من مصدرك.'
+                      : 'تعذر الحذف الآن. راجِع الإدارة إن استمر.',
+                });
+                return;
+              }
+              if (editingId === event.id) resetAddForm();
+              setSubmitStatus({ kind: 'success', text: 'حُذفت المناسبة من المصدر.' });
+              onRetry();
+            } catch (error) {
+              setSubmitStatus({
+                kind: 'error',
+                text: error instanceof Error ? error.message : 'تعذر حذف المناسبة.',
+              });
+            }
+          })();
+        },
+      },
+    ]);
+  }
+
   const submitEventRequest = async () => {
     const phone = toE164(phoneCountryId, phoneNational);
     if (!addBranch.trim()) {
-      setSubmitStatus({ kind: 'error', text: 'اختر الفرع حتى يصل الطلب لمندوب الفرع الصحيح.' });
+      setSubmitStatus({ kind: 'error', text: 'اختر الفرع.' });
       return;
     }
     if (!submitterName.trim() || !isValidPhone(phoneCountryId, phoneNational)) {
@@ -332,6 +437,9 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
       type: selectedType.key,
       person: addPerson,
       dateLabel: addDate,
+      place: addPlace,
+      placeKind: addPlaceKind,
+      coords: addCoords,
       text: addText,
     });
     if (factsError) {
@@ -362,6 +470,70 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
       const finalImageUrl = allowsMedia ? uploadedImageUrl || addImageUrl.trim() : '';
       const finalVideoUrl = allowsMedia ? uploadedVideoUrl || addVideoUrl.trim() : '';
       const contactPhone = contactNational.trim() ? toE164(contactCountryId, contactNational) : '';
+      const registered = await isRegisteredMemberPhone(phone);
+
+      if (editingId && !registered) {
+        setSubmitStatus({
+          kind: 'error',
+          text: 'تعديل المصدر للمسجّلين بجوالهم فقط. ادخل من ملفي.',
+        });
+        return;
+      }
+
+      if (registered) {
+        const row = buildMemberOccasionRow({
+          branch: addBranch,
+          type: selectedType.key,
+          person: addPerson.trim(),
+          dateLabel: addDate.trim(),
+          place: addPlace.trim(),
+          placeKind: addPlaceKind,
+          coords: addCoords.trim(),
+          hospitalDept: addHospitalDept.trim(),
+          contactPhone,
+          prayerPlace: addPrayerPlace.trim(),
+          prayerTime: addPrayerTime.trim(),
+          burialPlace: addBurialPlace.trim(),
+          text: addText.trim(),
+          imageUrl: finalImageUrl,
+          videoUrl: finalVideoUrl,
+          submitterName: submitterName.trim(),
+          submitterPhone: phone,
+          requestId: requestIdValue,
+          createdAt,
+        });
+        const result = editingId
+          ? await updateMemberOccasion(phone, Number(editingId), row)
+          : await publishMemberOccasion(phone, row);
+        if (!result?.ok) {
+          const err = String(result?.error || '');
+          throw new Error(
+            err === 'not_registered'
+              ? 'هذا الجوال غير مسجّل في العائلة.'
+              : err === 'not_owner'
+                ? 'لا يمكنك تعديل مناسبة ليست من مصدرك.'
+                : 'تعذر النشر المباشر الآن. راجِع الإدارة إن استمر.',
+          );
+        }
+        await rememberPushPhone(phone);
+        registerPushToken('event_submit').catch(() => {});
+        if (!editingId) {
+          await notifyFamilyEventPublished({
+            type: row.type,
+            person: row.person,
+            branch_key: row.branch_key,
+            text: addText.trim(),
+          });
+        }
+        resetAddForm();
+        setSubmitStatus({
+          kind: 'success',
+          text: editingId ? 'حُفظ التعديل على المصدر.' : 'نُشرت المناسبة مباشرة في المجلس.',
+        });
+        onRetry();
+        return;
+      }
+
       const message = buildMobileEventRequestMessage({
         branch: addBranch,
         type: selectedType.key,
@@ -369,6 +541,8 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
         person: addPerson.trim(),
         dateLabel: addDate.trim(),
         place: addPlace.trim(),
+        placeKind: addPlaceKind,
+        coords: addCoords.trim(),
         hospitalName: addPlace.trim(),
         hospitalDept: addHospitalDept.trim(),
         contactPhone,
@@ -398,6 +572,14 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
         status: 'pending',
         created_at: createdAt,
       });
+      await notifyAdminOfNewRequest({
+        request_id: requestIdValue,
+        kind: 'event_card',
+        branch_key: addBranch,
+        status: 'pending',
+        name: submitterName.trim(),
+        phone,
+      });
       await notifyBranchDelegatesOfRequest({
         request_id: requestIdValue,
         kind: 'event_card',
@@ -420,6 +602,8 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
       setAddPerson('');
       setAddDate('');
       setAddPlace('');
+      setAddPlaceKind('');
+      setAddCoords('');
       setAddHospitalDept('');
       setContactNational('');
       setAddPrayerPlace('');
@@ -432,7 +616,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
       setAddText('');
       setSubmitStatus({
         kind: 'success',
-        text: `تم إرسال المناسبة لمندوب فرع ${addBranch}، وبانتظار المراجعة.`,
+        text: 'تم إرسال طلبك للمراجعة.',
       });
     } catch (error) {
       setSubmitStatus({
@@ -541,7 +725,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                     {event.categoryLabel}
                   </Text>
                 </View>
-                <Text style={styles.date}>{event.date || 'دون تاريخ'}</Text>
+                {event.date ? <Text style={styles.date}>{event.date}</Text> : null}
               </View>
               {event.person ? <Text style={styles.person}>{event.person}</Text> : null}
               {event.imageUrl ? (
@@ -569,7 +753,15 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                   ))}
                 </View>
               ) : null}
-              {event.contactPhone ? (
+              {mapsUrlFromCoords(event.lat, event.lng) ? (
+                <Pressable
+                  onPress={() => Linking.openURL(mapsUrlFromCoords(event.lat, event.lng))}
+                  style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.actionText}>الموقع على الخريطة</Text>
+                </Pressable>
+              ) : null}
+              {occasionSocialEnabled && event.contactPhone ? (
                 <View style={styles.actions}>
                   <Pressable
                     onPress={() =>
@@ -597,10 +789,27 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 eventType={String(event.type || '')}
                 person={event.person}
               />
+              {isOwnedEvent(event) ? (
+                <View style={styles.ownerRow}>
+                  <Pressable
+                    onPress={() => startEditEvent(event)}
+                    style={({ pressed }) => [styles.ownerBtn, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.ownerBtnText}>تعديل المصدر</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => confirmDeleteEvent(event)}
+                    style={({ pressed }) => [styles.ownerBtn, styles.ownerBtnDanger, pressed && styles.pressed]}
+                  >
+                    <Text style={[styles.ownerBtnText, styles.ownerBtnDangerText]}>حذف</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               </View>
             </View>
           ))
         : null}
+      {occasionSocialEnabled ? (
       <SectionCard
         eyebrow="إضافة"
         title={
@@ -624,9 +833,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
         {addOpen ? (
           <>
             <Text style={styles.fieldLabel}>الفرع</Text>
-            <Text style={styles.addHint}>
-              اختر فرع صاحب المناسبة. الطلب يصل لمندوب هذا الفرع، وليس لمندوب باسمه.
-            </Text>
+            <Text style={styles.addHint}>اختر فرع صاحب المناسبة.</Text>
             <View style={styles.branchPicker}>
               {branches.map((item) => {
                 const active = item.id === addBranch;
@@ -684,7 +891,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
             <TextInput
               onChangeText={setAddPerson}
               placeholder={selectedType.personLabel}
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={addPerson}
@@ -692,17 +899,19 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
             <TextInput
               onChangeText={setAddDate}
               placeholder={
-                selectedType.family === 'death'
-                  ? 'تاريخ الوفاة (اختياري) — مثال: 2026-08-12'
-                  : selectedType.family === 'health'
-                    ? 'تاريخ الحالة (اختياري) — مثال: 2026-08-12'
-                    : selectedType.family === 'news'
-                      ? 'التاريخ اختياري للخبر'
-                      : selectedType.requiresDate
-                        ? 'تاريخ المناسبة — مثال: 2026-08-12'
-                        : 'التاريخ اختياري'
+                selectedType.key === 'birth'
+                  ? 'تاريخ الولادة اختياري — مثال: 2026-08-25'
+                  : selectedType.family === 'death'
+                    ? 'تاريخ الوفاة (اختياري) — مثال: 2026-08-12'
+                    : selectedType.family === 'health'
+                      ? 'تاريخ الحالة (اختياري) — مثال: 2026-08-12'
+                      : selectedType.family === 'news'
+                        ? 'تاريخ الخبر اختياري — مثال: 2026-08-25'
+                        : selectedType.requiresDate
+                          ? 'تاريخ المناسبة — مثال: 2026-08-12'
+                          : 'التاريخ اختياري'
               }
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={addDate}
@@ -712,7 +921,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 <TextInput
                   onChangeText={setAddPlace}
                   placeholder="المستشفى / المكان اختياري"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={p.textMuted}
                   style={styles.input}
                   textAlign="right"
                   value={addPlace}
@@ -720,7 +929,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 <TextInput
                   onChangeText={setAddHospitalDept}
                   placeholder="القسم اختياري"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={p.textMuted}
                   style={styles.input}
                   textAlign="right"
                   value={addHospitalDept}
@@ -739,7 +948,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 <TextInput
                   onChangeText={setAddPlace}
                   placeholder="موقع العزاء اختياري"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={p.textMuted}
                   style={styles.input}
                   textAlign="right"
                   value={addPlace}
@@ -747,7 +956,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 <TextInput
                   onChangeText={setAddPrayerPlace}
                   placeholder="مكان الصلاة اختياري"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={p.textMuted}
                   style={styles.input}
                   textAlign="right"
                   value={addPrayerPlace}
@@ -755,7 +964,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 <TextInput
                   onChangeText={setAddPrayerTime}
                   placeholder="وقت الصلاة اختياري"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={p.textMuted}
                   style={styles.input}
                   textAlign="right"
                   value={addPrayerTime}
@@ -763,7 +972,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 <TextInput
                   onChangeText={setAddBurialPlace}
                   placeholder="مكان الدفن اختياري"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={p.textMuted}
                   style={styles.input}
                   textAlign="right"
                   value={addBurialPlace}
@@ -773,23 +982,50 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
             {allowsMedia ? (
               <>
                 {selectedType.family === 'occasion' ? (
-                  <TextInput
+                  <>
+                    <Text style={styles.fieldLabel}>الموقع</Text>
+                    <View style={styles.branchPicker}>
+                      {EVENT_PLACE_KINDS.map((item) => {
+                        const active = item.key === addPlaceKind;
+                        return (
+                          <Pressable
+                            key={item.key}
+                            onPress={() => setAddPlaceKind(active ? '' : item.key)}
+                            style={[styles.formChip, active && styles.activeFormChip]}
+                          >
+                            <Text style={[styles.formChipText, active && styles.activeFormChipText]}>
+                              {item.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <TextInput
                     onChangeText={setAddPlace}
                     placeholder={
-                      selectedType.requiresPlace
-                        ? 'المكان (مطلوب)'
-                        : 'المكان اختياري (قاعة أو مدينة)'
+                      selectedType.requiresPlace && !selectedType.requiresPlaceKind
+                        ? 'اسم الموقع (مطلوب)'
+                        : 'اسم الموقع اختياري'
                     }
-                    placeholderTextColor={colors.textMuted}
+                    placeholderTextColor={p.textMuted}
                     style={styles.input}
                     textAlign="right"
                     value={addPlace}
                   />
+                    <TextInput
+                      onChangeText={setAddCoords}
+                      placeholder="إحداثيات اختيارية — 24.7136, 46.6753"
+                      placeholderTextColor={p.textMuted}
+                      style={styles.input}
+                      textAlign="right"
+                      value={addCoords}
+                    />
+                  </>
                 ) : null}
                 <TextInput
                   onChangeText={setAddImageUrl}
                   placeholder="رابط صورة اختياري أو اختر من الجهاز"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={p.textMuted}
                   style={styles.input}
                   textAlign="right"
                   value={addImageUrl}
@@ -822,7 +1058,7 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                 <TextInput
                   onChangeText={setAddVideoUrl}
                   placeholder="رابط فيديو اختياري أو اختر من الجهاز"
-                  placeholderTextColor={colors.textMuted}
+                  placeholderTextColor={p.textMuted}
                   style={styles.input}
                   textAlign="right"
                   value={addVideoUrl}
@@ -864,21 +1100,23 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
                     : 'نص المناسبة'
                   : 'ملاحظات اختياري'
               }
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={[styles.input, styles.textArea]}
               textAlign="right"
               value={addText}
             />
             <Text style={styles.addHint}>
-              {addBranch
-                ? `سيراجع الطلب مندوب فرع ${addBranch}.`
-                : 'اختر الفرع قبل الإرسال.'}
+              {editingId
+                ? 'تحفظ التعديل على المصدر نفسه.'
+                : sessionPhone
+                  ? `المسجّل بجواله ينشر مباشرة في مناسبات فرع ${addBranch || 'العائلة'}.`
+                  : 'غير المسجّل يُرسل الطلب للإدارة للمراجعة.'}
             </Text>
             <View style={styles.submitterCol}>
               <TextInput
                 onChangeText={setSubmitterName}
                 placeholder="اسم المرسل"
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={p.textMuted}
                 style={styles.input}
                 textAlign="right"
                 value={submitterName}
@@ -894,14 +1132,26 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
             <ActionButton
               label={
                 submitting
-                  ? 'جاري الإرسال...'
-                  : selectedType.family === 'death'
-                    ? 'إرسال إعلان الوفاة'
-                    : selectedType.family === 'health'
-                      ? 'إرسال الحالة الصحية'
-                      : selectedType.mode === 'notice'
-                        ? 'إرسال التهنئة / الخبر'
-                        : 'إرسال المناسبة'
+                  ? editingId
+                    ? 'جاري الحفظ...'
+                    : 'جاري النشر...'
+                  : editingId
+                    ? 'حفظ التعديل'
+                    : selectedType.family === 'death'
+                      ? sessionPhone
+                        ? 'نشر إعلان الوفاة'
+                        : 'إرسال إعلان الوفاة'
+                      : selectedType.family === 'health'
+                        ? sessionPhone
+                          ? 'نشر الحالة الصحية'
+                          : 'إرسال الحالة الصحية'
+                        : selectedType.mode === 'notice'
+                          ? sessionPhone
+                            ? 'نشر التهنئة / الخبر'
+                            : 'إرسال التهنئة / الخبر'
+                          : sessionPhone
+                            ? 'نشر المناسبة'
+                            : 'إرسال المناسبة'
               }
               onPress={submitEventRequest}
             />
@@ -923,11 +1173,13 @@ export function EventsScreen({ branches, error, events, loading, onRetry }: Even
           </View>
         ) : null}
       </SectionCard>
+      ) : null}
     </SceneShell>
   );
 }
 
-const styles = StyleSheet.create({
+function eventsStyles(p: ThemePalette) {
+  return {
   filters: {
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',
@@ -935,24 +1187,24 @@ const styles = StyleSheet.create({
   },
   filter: {
     backgroundColor: 'transparent',
-    borderColor: scene.gold,
+    borderColor: p.gold,
     borderRadius: 20,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   activeFilter: {
-    backgroundColor: scene.green,
-    borderColor: scene.green,
+    backgroundColor: p.green,
+    borderColor: p.green,
   },
   filterText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '700',
     writingDirection: 'rtl',
   },
   activeFilterText: {
-    color: colors.white,
+    color: p.white,
   },
   summary: {
     flexDirection: 'row-reverse',
@@ -960,7 +1212,7 @@ const styles = StyleSheet.create({
   },
   summaryItem: {
     alignItems: 'center',
-    backgroundColor: scene.creamLift,
+    backgroundColor: p.creamLift,
     borderColor: 'rgba(196,163,90,0.4)',
     borderRadius: 16,
     borderWidth: 1,
@@ -970,12 +1222,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   summaryNumber: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.title,
     fontWeight: '900',
   },
   summaryLabel: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: 10,
     fontWeight: '700',
     textAlign: 'center',
@@ -988,8 +1240,8 @@ const styles = StyleSheet.create({
   },
   addToggle: {
     alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
+    backgroundColor: p.primarySoft,
+    borderColor: p.primary,
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: 'row-reverse',
@@ -998,7 +1250,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   addToggleText: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     flex: 1,
     fontSize: typography.body,
     fontWeight: '900',
@@ -1006,52 +1258,52 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   addToggleIcon: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: 24,
     fontWeight: '900',
     width: 28,
   },
   addHint: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     lineHeight: 20,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   fieldLabel: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.caption,
     fontWeight: '900',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   formChip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: p.surface,
+    borderColor: p.border,
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   activeFormChip: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: p.primary,
+    borderColor: p.primary,
   },
   formChipText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
   activeFormChipText: {
-    color: colors.white,
+    color: p.white,
   },
   input: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
+    backgroundColor: p.surfaceMuted,
+    borderColor: p.border,
     borderRadius: 15,
     borderWidth: 1,
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     minHeight: 48,
     paddingHorizontal: spacing.md,
@@ -1069,8 +1321,8 @@ const styles = StyleSheet.create({
   },
   mediaButton: {
     alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
+    backgroundColor: p.primarySoft,
+    borderColor: p.primary,
     borderRadius: 14,
     borderWidth: 1,
     minHeight: 42,
@@ -1078,7 +1330,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   mediaButtonText: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.caption,
     fontWeight: '900',
     writingDirection: 'rtl',
@@ -1087,7 +1339,7 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
   mediaName: {
-    color: colors.textMuted,
+    color: p.textMuted,
     flex: 1,
     fontSize: typography.caption,
     textAlign: 'right',
@@ -1095,7 +1347,7 @@ const styles = StyleSheet.create({
   },
   removeMediaButton: {
     alignItems: 'center',
-    borderColor: colors.border,
+    borderColor: p.border,
     borderRadius: 12,
     borderWidth: 1,
     minHeight: 36,
@@ -1103,7 +1355,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   removeMediaText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '800',
     writingDirection: 'rtl',
@@ -1123,20 +1375,20 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   successStatus: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
   },
   errorStatus: {
     backgroundColor: '#F7D7D7',
   },
   submitStatusText: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.caption,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   eventCard: {
-    backgroundColor: scene.creamLift,
+    backgroundColor: p.creamLift,
     borderColor: 'rgba(196,163,90,0.4)',
     borderRadius: 26,
     borderWidth: 1,
@@ -1144,7 +1396,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   eventStage: {
-    borderColor: scene.gold,
+    borderColor: p.gold,
     borderWidth: 2,
   },
   eventCardHappy: {
@@ -1165,7 +1417,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   eventTitle: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.title,
     fontWeight: '800',
     textAlign: 'right',
@@ -1187,19 +1439,19 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   date: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     writingDirection: 'rtl',
   },
   person: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.body,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   eventImageFrame: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: p.surfaceMuted,
     borderRadius: 16,
     overflow: 'hidden',
     width: '100%',
@@ -1210,27 +1462,27 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   details: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     lineHeight: 24,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   eventVideo: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: p.surfaceMuted,
     borderRadius: 16,
     height: 240,
     overflow: 'hidden',
     width: '100%',
   },
   branch: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   detailGrid: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: p.surfaceMuted,
     borderRadius: 16,
     gap: spacing.xs,
     padding: spacing.sm,
@@ -1242,7 +1494,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   detailLabel: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '800',
     minWidth: 82,
@@ -1250,7 +1502,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   detailValue: {
-    color: colors.text,
+    color: p.text,
     flex: 1,
     fontSize: typography.caption,
     fontWeight: '700',
@@ -1263,25 +1515,51 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: p.primary,
     borderRadius: 14,
     flex: 1,
     minHeight: 42,
     justifyContent: 'center',
   },
   secondaryAction: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
+    backgroundColor: p.primarySoft,
+    borderColor: p.primary,
     borderWidth: 1,
   },
   actionText: {
-    color: colors.white,
+    color: p.white,
     fontSize: typography.caption,
     fontWeight: '900',
     writingDirection: 'rtl',
   },
   secondaryActionText: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
+  },
+  ownerRow: {
+    flexDirection: 'row-reverse',
+    gap: spacing.sm,
+    marginTop: 4,
+  },
+  ownerBtn: {
+    alignItems: 'center',
+    borderColor: p.gold,
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  ownerBtnText: {
+    color: p.primaryDark,
+    fontSize: typography.caption,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
+  ownerBtnDanger: {
+    borderColor: 'rgba(153,27,27,0.45)',
+  },
+  ownerBtnDangerText: {
+    color: '#991b1b',
   },
   pressed: {
     opacity: 0.72,
@@ -1292,7 +1570,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   featuredPerson: {
-    color: scene.creamLift,
+    color: p.creamLift,
     fontSize: 32,
     fontWeight: '800',
     lineHeight: 42,
@@ -1300,21 +1578,22 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   featuredTitle: {
-    color: scene.gold,
+    color: p.gold,
     fontSize: 18,
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   featuredDate: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 13,
     writingDirection: 'rtl',
   },
   featuredEmpty: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 15,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-});
+  };
+}

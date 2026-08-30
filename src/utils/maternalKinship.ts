@@ -10,7 +10,7 @@ import { isPublicLineageHiddenPerson } from './personVisibility';
 
 export type MaternalKinshipLabel = 'جدك من الأم' | 'خالك' | 'ابن خالك' | 'ابن خالتك';
 
-export type LinkKinshipLabel = 'ابنك' | 'حفيدك من ابنتك' | 'ابن أختك';
+export type LinkKinshipLabel = 'ابنك' | 'حفيدك من ابنتك' | 'ابن أختك' | 'ابن بنت عمي';
 
 export type EncounterKinshipLabel = MaternalKinshipLabel | LinkKinshipLabel | 'أخ من أمك';
 
@@ -138,12 +138,41 @@ function wifeNasabText(spouse: SpouseRow) {
 export function wifeRoleTowardViewer(
   spouse: SpouseRow,
   viewer: Pick<TreeChild, 'id' | 'name' | 'parentName'>,
-): 'self' | 'daughter' | 'sister' | null {
+  children: TreeChild[] = [],
+): 'self' | 'daughter' | 'sister' | 'cousinDaughter' | null {
   if (!spouse || !viewer || !isFamilyMember(spouse.wifeIsFamilyMember)) return null;
   if (!isActiveSpouse(spouse.status)) return null;
   const viewerPath = normalizePathKey(nodePathId(viewer));
   const viewerParent = normalizePathKey(effectiveParentName(viewer));
   const viewerGf = parentPathOf(viewerParent);
+  const path = lineagePath(spouse.wifeLineage);
+  if (path && children.length) {
+    const resolved = children.filter((row) => nodePathId(row) === path);
+    if (resolved.length === 1) {
+      const resolvedPath = nodePathId(resolved[0]);
+      const resolvedParent = normalizePathKey(effectiveParentName(resolved[0]));
+      if (resolvedPath && viewerPath && resolvedPath === viewerPath) return 'self';
+      if (resolvedParent && viewerPath && resolvedParent === viewerPath) return 'daughter';
+      if (
+        resolvedParent &&
+        viewerParent &&
+        resolvedParent === viewerParent &&
+        resolvedPath !== viewerPath
+      ) {
+        return 'sister';
+      }
+      const womanGf = parentPathOf(resolvedParent);
+      if (
+        womanGf &&
+        viewerGf &&
+        womanGf === viewerGf &&
+        resolvedParent !== viewerParent
+      ) {
+        return 'cousinDaughter';
+      }
+      return null;
+    }
+  }
   const nasab = wifeNasabText(spouse);
   const lineage = lineagePath(spouse.wifeLineage) || lineagePath(nasab);
   const tokens = nasabTokens(nasab);
@@ -167,6 +196,17 @@ export function wifeRoleTowardViewer(
   }
   if (wifeFather && fatherLeaf && wifeFather === fatherLeaf && wifeLeaf && wifeLeaf !== selfLeaf) {
     if (!wifeGf || !gfLeaf || wifeGf === gfLeaf) return 'sister';
+  }
+  if (
+    wifeFather &&
+    gfLeaf &&
+    wifeGf &&
+    wifeGf === gfLeaf &&
+    wifeFather !== fatherLeaf &&
+    wifeLeaf &&
+    wifeLeaf !== selfLeaf
+  ) {
+    return 'cousinDaughter';
   }
   return null;
 }
@@ -212,10 +252,18 @@ export function linkKinshipByTargetId(
   if (!viewer || !ctx) return map;
   const counts = activeWifeCountByHusband(ctx.spouses);
   (ctx.spouses || []).forEach((spouse) => {
-    const role = wifeRoleTowardViewer(spouse, viewer);
+    const role = wifeRoleTowardViewer(spouse, viewer, ctx.children);
     if (!role) return;
     const label: LinkKinshipLabel | '' =
-      role === 'self' ? 'ابنك' : role === 'daughter' ? 'حفيدك من ابنتك' : role === 'sister' ? 'ابن أختك' : '';
+      role === 'self'
+        ? 'ابنك'
+        : role === 'daughter'
+          ? 'حفيدك من ابنتك'
+          : role === 'sister'
+            ? 'ابن أختك'
+            : role === 'cousinDaughter'
+              ? 'ابن بنت عمي'
+              : '';
     if (!label) return;
     childIdsForSpouse(spouse, ctx, counts).forEach((childId) => {
       if (!childId || childId === Number(viewer.id)) return;
@@ -240,8 +288,14 @@ export const ENCOUNTER_KINSHIP_LABELS: Record<string, true> = {
   'ابن أختك': true,
   حفيدك: true,
   'ابن أخيك': true,
+  'ابن ابن أخيك': true,
   عمك: true,
   'ابن عمك': true,
+  'بنت عمي': true,
+  'ابن بنت عمي': true,
+  'ابن بنت عمك': true,
+  'ابن ابن عمك': true,
+  أخت: true,
   أبوك: true,
   'جدك من الأب': true,
   أخ: true,
@@ -271,14 +325,13 @@ function uniqueByNasab(
     if (branch && arabicNorm(row.branchKey) !== branch) return false;
     return arabicNorm(leafPersonName(row.name)) === wanted;
   });
-  if (inBranch.length === 1) return inBranch[0];
-  if (inBranch.length > 1 && father) {
+  if (father) {
     const narrowed = inBranch.filter(
-      (row) => arabicNorm(leafPersonName(row.parentName)) === father,
+      (row) => arabicNorm(leafPersonName(effectiveParentName(row))) === father,
     );
     return narrowed.length === 1 ? narrowed[0] : null;
   }
-  return null;
+  return inBranch.length === 1 ? inBranch[0] : null;
 }
 
 /** Mother's father node from nasab «فلانة بنت فلان بن …» without needing the daughter row. */
@@ -335,8 +388,10 @@ function uniqueSpouseForSister(
   if (byPath.length === 1) return byPath[0];
   if (byPath.length > 1) return null;
 
-  if (!sisterLeaf) return null;
-  const byLeaf = spouses.filter((spouse) => {
+  const sisterParentLeaf = arabicNorm(leafPersonName(effectiveParentName(sister)));
+  const sisterGfLeaf = arabicNorm(leafPersonName(parentPathOf(effectiveParentName(sister))));
+  if (!sisterLeaf || !sisterParentLeaf) return null;
+  const byNasab = spouses.filter((spouse) => {
     if (!isActiveSpouse(spouse.status) || !isFamilyMember(spouse.wifeIsFamilyMember)) {
       return false;
     }
@@ -344,11 +399,13 @@ function uniqueSpouseForSister(
     if (branch && spouse.wifeBranchKey && normalizePathKey(spouse.wifeBranchKey) !== branch) {
       return false;
     }
-    const nameLeaf = nasabTokens(spouse.wifeName || '')[0] || arabicNorm(leafPersonName(spouse.wifeName || ''));
-    const lineageLeaf = nasabTokens(spouse.wifeLineage || '')[0] || arabicNorm(leafPersonName(spouse.wifeLineage || ''));
-    return nameLeaf === sisterLeaf || lineageLeaf === sisterLeaf;
+    const tokens = nasabTokens(wifeNasabText(spouse));
+    if (!tokens[0] || tokens[0] !== sisterLeaf) return false;
+    if (!tokens[1] || tokens[1] !== sisterParentLeaf) return false;
+    if (tokens[2] && sisterGfLeaf && tokens[2] !== sisterGfLeaf) return false;
+    return true;
   });
-  return byLeaf.length === 1 ? byLeaf[0] : null;
+  return byNasab.length === 1 ? byNasab[0] : null;
 }
 
 type MotherResolution = {

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { DataState } from '../components/DataState';
 import { PersonPhoto } from '../components/PersonPhoto';
 import { SceneSection, SceneShell } from '../components/scene';
-import { colors, scene, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch, TreeChild, TreeParent, TreePerson } from '../types';
 import {
   getBranchRootName,
@@ -25,6 +27,7 @@ type TreeScreenProps = {
   focusedTreeChildId?: number | null;
   onOpenEncounter?: (branchKey: string, treeChildId: number) => void;
   onBackToHouses?: () => void;
+  includePubliclyHiddenPeople?: boolean;
 };
 
 
@@ -183,14 +186,17 @@ function buildBranchTree(
   branch: Branch | undefined,
   parents: TreeParent[],
   childrenRows: TreeChild[],
+  includePubliclyHidden?: boolean,
 ): TreePerson | null {
   if (!branch) return null;
 
   const branchParents = parents.filter((parent) => parent.branchKey === branch.id);
   const branchChildren = childrenRows.filter(
-    (child) => child.branchKey === branch.id && !isPublicLineageHiddenPerson(child),
+    (child) =>
+      child.branchKey === branch.id &&
+      (includePubliclyHidden || !isPublicLineageHiddenPerson(child)),
   );
-  const byParent = groupChildrenRows(branchChildren, branch.id);
+  const byParent = groupChildrenRows(branchChildren, branch.id, { includePubliclyHidden });
 
   const branchRoot = getBranchRootName(branch.id);
   const knownChildren = new Set(
@@ -281,21 +287,24 @@ export function TreeScreen({
   focusedTreeChildId,
   onOpenEncounter,
   onBackToHouses,
+  includePubliclyHiddenPeople = false,
 }: TreeScreenProps) {
+  const p = useThemePalette();
+  const styles = useThemedStyles(treeStyles);
   const branch = branches.find((item) => item.id === branchKey);
   const tree = useMemo(
-    () => buildBranchTree(branch, parents, childrenRows),
-    [branch, childrenRows, parents],
+    () => buildBranchTree(branch, parents, childrenRows, includePubliclyHiddenPeople),
+    [branch, childrenRows, parents, includePubliclyHiddenPeople],
   );
   const allBranchTrees = useMemo(
     () =>
       branches
         .map((item) => ({
           branch: item,
-          tree: buildBranchTree(item, parents, childrenRows),
+          tree: buildBranchTree(item, parents, childrenRows, includePubliclyHiddenPeople),
         }))
         .filter((item): item is { branch: Branch; tree: TreePerson } => Boolean(item.tree)),
-    [branches, childrenRows, parents],
+    [branches, childrenRows, parents, includePubliclyHiddenPeople],
   );
   const [trail, setTrail] = useState<TreePerson[]>([]);
   const [pendingTrail, setPendingTrail] = useState<TreePerson[] | null>(null);
@@ -462,7 +471,7 @@ export function TreeScreen({
             autoCorrect={false}
             onChangeText={setSearchQuery}
             placeholder="ابحث في جميع الفروع"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={p.textMuted}
             returnKeyType="search"
             style={styles.searchInput}
             textAlign="right"
@@ -581,14 +590,15 @@ export function TreeScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function treeStyles(p: ThemePalette) {
+  return {
   housesBack: {
     alignSelf: 'flex-end',
     paddingBottom: 4,
     paddingVertical: 4,
   },
   housesBackText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '700',
     textAlign: 'right',
@@ -601,48 +611,48 @@ const styles = StyleSheet.create({
   },
   branchChip: {
     backgroundColor: 'transparent',
-    borderColor: scene.gold,
+    borderColor: p.gold,
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   activeBranchChip: {
-    backgroundColor: scene.green,
-    borderColor: scene.green,
+    backgroundColor: p.green,
+    borderColor: p.green,
   },
   branchChipText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
   activeBranchChipText: {
-    color: colors.white,
+    color: p.white,
   },
   searchBox: {
     gap: spacing.xs,
   },
   searchInput: {
-    backgroundColor: scene.creamLift,
-    borderColor: scene.gold,
+    backgroundColor: p.creamLift,
+    borderColor: p.gold,
     borderRadius: 18,
     borderWidth: 1,
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     writingDirection: 'rtl',
   },
   searchResults: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: p.surface,
+    borderColor: p.border,
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
   },
   searchResult: {
-    borderBottomColor: colors.border,
+    borderBottomColor: p.border,
     borderBottomWidth: 1,
     gap: 2,
     paddingHorizontal: spacing.md,
@@ -654,20 +664,20 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   searchResultName: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   searchResultPath: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: 11,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   searchEmpty: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     padding: spacing.md,
     textAlign: 'center',
@@ -679,7 +689,7 @@ const styles = StyleSheet.create({
   backButton: {
     alignItems: 'center',
     alignSelf: 'flex-end',
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
     borderRadius: 14,
     flexDirection: 'row-reverse',
     gap: spacing.xs,
@@ -687,18 +697,18 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   backButtonText: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.caption,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
   backArrow: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: 20,
     fontWeight: '900',
   },
   personCard: {
-    backgroundColor: colors.primaryDark,
+    backgroundColor: p.primaryDark,
     borderRadius: 28,
     gap: spacing.sm,
     padding: spacing.lg,
@@ -711,7 +721,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   personName: {
-    color: colors.white,
+    color: p.white,
     fontSize: typography.display,
     fontWeight: '900',
     lineHeight: 38,
@@ -760,7 +770,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   detailValue: {
-    color: colors.white,
+    color: p.white,
     flex: 1,
     fontSize: typography.body,
     fontWeight: '700',
@@ -769,13 +779,13 @@ const styles = StyleSheet.create({
   },
   parentButton: {
     alignItems: 'center',
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
     borderRadius: 14,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   parentButtonText: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.caption,
     fontWeight: '800',
     textAlign: 'center',
@@ -783,8 +793,8 @@ const styles = StyleSheet.create({
   },
   encounterButton: {
     alignItems: 'center',
-    backgroundColor: colors.primaryDark,
-    borderColor: colors.accent,
+    backgroundColor: p.primaryDark,
+    borderColor: p.accent,
     borderRadius: 14,
     borderWidth: 1,
     marginTop: spacing.xs,
@@ -792,7 +802,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   encounterButtonText: {
-    color: colors.accentSoft,
+    color: p.accentSoft,
     fontSize: typography.body,
     fontWeight: '900',
     textAlign: 'center',
@@ -802,7 +812,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   sectionTitle: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.title,
     fontWeight: '800',
     textAlign: 'right',
@@ -810,10 +820,10 @@ const styles = StyleSheet.create({
   },
   childCard: {
     alignItems: 'center',
-    backgroundColor: scene.creamLift,
+    backgroundColor: p.creamLift,
     borderColor: 'rgba(196,163,90,0.4)',
     borderRadius: 20,
-    borderRightColor: scene.gold,
+    borderRightColor: p.gold,
     borderRightWidth: 4,
     borderWidth: 1,
     flexDirection: 'row-reverse',
@@ -836,27 +846,27 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   nodeName: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   nodeMeta: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   descendantsText: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   nodeControl: {
-    color: colors.primary,
+    color: p.primary,
     flexShrink: 0,
     fontSize: 22,
     fontWeight: '800',
@@ -878,14 +888,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   heroEyebrow: {
-    color: scene.gold,
+    color: p.gold,
     fontSize: 12,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   heroName: {
-    color: scene.creamLift,
+    color: p.creamLift,
     fontSize: 30,
     fontWeight: '800',
     lineHeight: 40,
@@ -893,7 +903,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   heroLineage: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 22,
@@ -901,16 +911,17 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   heroCount: {
-    color: scene.gold,
+    color: p.gold,
     fontSize: 13,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   heroInvite: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 15,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-});
+  };
+}

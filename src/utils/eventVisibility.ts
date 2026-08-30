@@ -2,11 +2,12 @@
  * مصدر ظهور الأخبار الواحد (مسار C / NEWS-001 + جدولة).
  * القواعد مطابقة لـ web `isFamilyEventPubliclyVisible`:
  * - وفاة: 3 أيام تقويمية من يوم الحدث (أو created_at إن لم يوجد event_date)
- * - صحة: ضمن نافذة showDays من created_at (1–7، افتراضي 7)
- * - الأفراح المؤرخة: لا تظهر قبل show_at (افتراضي 3 أيام قبل التاريخ)
+ * - تهاني/صحة (مولود جديد…): ضمن نافذة showDays من created_at — تاريخ الواقعة لا يُنهي الخبر
+ * - مناسبات مؤرخة (حفل/اجتماع): لا تظهر قبل show_at؛ تنتهي بنهاية يوم المناسبة
  * - event_date = null: يعتمد على created_at / showDays فقط (لا ظهور أبدي)
  */
 import moment from 'moment-hijri';
+import { eventFamilyOf } from './eventRequestMessage';
 
 export type EventVisibilityInput = {
   type?: string | null;
@@ -97,6 +98,12 @@ export function isHappyEventType(event: EventVisibilityInput) {
 export function isHealthEventType(event: EventVisibilityInput) {
   const type = String(event.type || '').trim().toLowerCase();
   return type === 'sick' || type === 'operation' || type === 'discharge';
+}
+
+function isPublishWindowEventType(event: EventVisibilityInput) {
+  const family = eventFamilyOf(String(event.type || ''));
+  if (family === 'news' || family === 'health') return true;
+  return isHealthEventType(event);
 }
 
 function readScheduleValue(event: EventVisibilityInput, snake: string, camel: string) {
@@ -251,7 +258,7 @@ export function isFamilyEventPubliclyVisible(
     return isWithinDaysFromEventDay(event, DEATH_KEEP_DAYS, now);
   }
 
-  if (isHealthEventType(event)) {
+  if (isHealthEventType(event) || isPublishWindowEventType(event)) {
     return isCreatedWithinShowWindow(event, now);
   }
 

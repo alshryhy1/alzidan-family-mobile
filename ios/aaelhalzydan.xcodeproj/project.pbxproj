@@ -15,6 +15,9 @@
 		717C67F6F5C647CCCC334D67 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3B66602584DE6E5D25487163 /* Assets.xcassets */; };
 		775C7CE96615CFE4C8CF788C /* AlzidanFamilyWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C196652396D5EDF244FA72B6 /* AlzidanFamilyWidgetBundle.swift */; };
 		85C7A7F6EB8031889AB5FB8D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 389401E179212ABABD73AC4D /* Foundation.framework */; };
+		A1THEME00300000000000001 /* AlzidanThemeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1THEME00100000000000001 /* AlzidanThemeBridge.swift */; };
+		A1THEME00400000000000001 /* AlzidanThemeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A1THEME00200000000000001 /* AlzidanThemeBridge.m */; };
+		A1THEME00600000000000001 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AC9E7DB4CDE30BAE9512DC89 /* WidgetKit.framework */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		DC7EB0779BDE39BEF7CC6F30 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C2F3117FEFE71D8D55E77B1 /* ExpoModulesProvider.swift */; };
 		EAB31FF07F6350AA38A42179 /* libPods-aaelhalzydan.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C69D7AC7FFC90129CA5A7DC3 /* libPods-aaelhalzydan.a */; };
@@ -58,6 +61,8 @@
 		8C7D4DA766555B21E9EE4BF7 /* Pods-aaelhalzydan.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-aaelhalzydan.debug.xcconfig"; path = "Target Support Files/Pods-aaelhalzydan/Pods-aaelhalzydan.debug.xcconfig"; sourceTree = "<group>"; };
 		9C2F3117FEFE71D8D55E77B1 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-aaelhalzydan/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		9C4973CA88473827671CC11A /* AlzidanFamilyWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AlzidanFamilyWidget/AlzidanFamilyWidget.swift; sourceTree = SOURCE_ROOT; };
+		A1THEME00100000000000001 /* AlzidanThemeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlzidanThemeBridge.swift; path = aaelhalzydan/AlzidanThemeBridge.swift; sourceTree = "<group>"; };
+		A1THEME00200000000000001 /* AlzidanThemeBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = AlzidanThemeBridge.m; path = aaelhalzydan/AlzidanThemeBridge.m; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = aaelhalzydan/SplashScreen.storyboard; sourceTree = "<group>"; };
 		AC9E7DB4CDE30BAE9512DC89 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
@@ -86,6 +91,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EAB31FF07F6350AA38A42179 /* libPods-aaelhalzydan.a in Frameworks */,
+				A1THEME00600000000000001 /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -96,6 +102,8 @@
 			isa = PBXGroup;
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
+				A1THEME00100000000000001 /* AlzidanThemeBridge.swift */,
+				A1THEME00200000000000001 /* AlzidanThemeBridge.m */,
 				F11748442D0722820044C1D9 /* aaelhalzydan-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
@@ -461,6 +469,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
+				A1THEME00300000000000001 /* AlzidanThemeBridge.swift in Sources */,
+				A1THEME00400000000000001 /* AlzidanThemeBridge.m in Sources */,
 				DC7EB0779BDE39BEF7CC6F30 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -494,7 +504,7 @@
 				DEVELOPMENT_TEAM = GZ9M83BFAK;
 				INFOPLIST_FILE = AlzidanFamilyWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 2.0.1;
+				MARKETING_VERSION = 2.0.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.alzidan.family2.AlzidanFamilyWidgetExtension;
 				PRODUCT_NAME = AlzidanFamilyWidgetExtension;
@@ -527,7 +537,7 @@
 					"@executable_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.4;
-				MARKETING_VERSION = 2.0.1;
+				MARKETING_VERSION = 2.0.2;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -560,7 +570,7 @@
 					"@executable_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.4;
-				MARKETING_VERSION = 2.0.1;
+				MARKETING_VERSION = 2.0.2;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -719,7 +729,7 @@
 				DEVELOPMENT_TEAM = GZ9M83BFAK;
 				INFOPLIST_FILE = AlzidanFamilyWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 2.0.1;
+				MARKETING_VERSION = 2.0.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.alzidan.family2.AlzidanFamilyWidgetExtension;
 				PRODUCT_NAME = AlzidanFamilyWidgetExtension;

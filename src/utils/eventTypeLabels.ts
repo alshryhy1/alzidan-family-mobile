@@ -1,4 +1,4 @@
-import { MOBILE_EVENT_TYPES } from './eventRequestMessage';
+import { MOBILE_EVENT_TYPES, normalizeMobileEventType } from './eventRequestMessage';
 
 const ARABIC_LABELS: Record<string, string> = Object.fromEntries(
   MOBILE_EVENT_TYPES.map((item) => [item.key, item.label]),
@@ -18,11 +18,14 @@ const NOTICE_TYPES = new Set(
 );
 
 export function eventTypeArabicLabel(type?: string | null) {
-  const key = String(type || '')
-    .trim()
-    .toLowerCase();
-  if (!key) return 'خبر عائلي';
-  return ARABIC_LABELS[key] || 'خبر عائلي';
+  const raw = String(type || '').trim();
+  if (!raw) return 'مناسبة عامة';
+  const key = normalizeMobileEventType(raw);
+  if (ARABIC_LABELS[key]) return ARABIC_LABELS[key];
+  const lower = raw.toLowerCase();
+  if (ARABIC_LABELS[lower]) return ARABIC_LABELS[lower];
+  if (ARABIC_LABELS[raw]) return ARABIC_LABELS[raw];
+  return raw;
 }
 
 export function isNoticeEventType(type?: string | null) {

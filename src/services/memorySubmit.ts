@@ -135,7 +135,7 @@ async function callMemorySubmitRpc(item: Record<string, unknown>, media: Record<
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
   const response = await fetch(`${supabaseUrl}/rest/v1/rpc/memory_submit_item_v1`, {
@@ -152,7 +152,7 @@ async function callMemorySubmitRpc(item: Record<string, unknown>, media: Record<
   if (!response.ok) {
     const message = await response.text();
     if (response.status === 404 || message.includes('memory_submit_item_v1')) {
-      throw new Error('نفّذ family_memory_delegate_fix.sql على Supabase ثم أعد المحاولة.');
+      throw new Error('تعذر إرسال الذكرى الآن. حاول مرة أخرى.');
     }
     throw new Error(message || `تعذر إرسال الذكرى (${response.status}).`);
   }

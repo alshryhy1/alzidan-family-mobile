@@ -1,9 +1,10 @@
 import Constants from 'expo-constants';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, Text, View } from 'react-native';
 
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemedStyles } from '../theme/useThemedStyles';
 
 const LEGAL_BASE = 'https://alzidan.org/pages';
 
@@ -29,6 +30,7 @@ function openUrl(url: string) {
 }
 
 export function AboutScreen() {
+  const styles = useThemedStyles(aboutStyles);
   const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
   return (
@@ -84,17 +86,16 @@ export function AboutScreen() {
 
       <View style={styles.version}>
         <Text style={styles.versionTitle}>النسخة {appVersion}</Text>
-        <Text style={styles.versionText}>
-          واجهات عامة للقراءة والطلبات، مرتبطة بمصدر البيانات المعتمد على alzidan.org.
-        </Text>
+        <Text style={styles.versionText}>تطبيق عائلة مطلق الزيدان على الجوال.</Text>
       </View>
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({
+function aboutStyles(p: ThemePalette) {
+  return {
   paragraph: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     lineHeight: 26,
     textAlign: 'right',
@@ -109,12 +110,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   bullet: {
-    color: colors.accent,
+    color: p.accent,
     fontSize: 20,
     lineHeight: 24,
   },
   listText: {
-    color: colors.text,
+    color: p.text,
     flex: 1,
     fontSize: typography.body,
     lineHeight: 24,
@@ -131,10 +132,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   legalLinkPressed: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
   },
   legalLinkText: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: typography.body,
     fontWeight: '700',
     textAlign: 'right',
@@ -149,36 +150,37 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   emailLabel: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.body,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   emailValue: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: typography.body,
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   version: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
     borderRadius: 20,
     gap: spacing.xs,
     padding: spacing.md,
   },
   versionTitle: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.title,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   versionText: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: typography.body,
     lineHeight: 23,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-});
+  };
+}

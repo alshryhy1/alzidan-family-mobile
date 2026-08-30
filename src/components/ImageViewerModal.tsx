@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemedStyles } from '../theme/useThemedStyles';
 
 type Props = {
   visible: boolean;
@@ -21,6 +22,7 @@ type Props = {
 };
 
 export function ImageViewerModal({ visible, uri, caption, onClose }: Props) {
+  const styles = useThemedStyles(imageViewerStyles);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
 
@@ -75,7 +77,8 @@ export function ImageViewerModal({ visible, uri, caption, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function imageViewerStyles(p: ThemePalette) {
+  return {
   backdrop: {
     backgroundColor: 'rgba(8, 12, 10, 0.94)',
     flex: 1,
@@ -104,9 +107,10 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   closeText: {
-    color: colors.white,
+    color: p.white,
     fontSize: typography.title,
     fontWeight: '700',
     lineHeight: 22,
   },
-});
+  };
+}

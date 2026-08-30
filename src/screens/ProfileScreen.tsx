@@ -1,28 +1,46 @@
 import { useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
 import { PersonPhoto } from '../components/PersonPhoto';
 import { PhoneField } from '../components/PhoneField';
-import { SceneSection, SceneShell } from '../components/scene';
+import { DateStamp, SceneSection, SceneShell } from '../components/scene';
+import {
+  loginTrustedDevice,
+  logoutTrustedDevice,
+  resumeTrustedDevice,
+  sessionToMemberRow,
+  type DeviceSession,
+} from '../services/deviceAuth';
+import {
+  canUseDeviceLock,
+  disableDeviceLock,
+  enableDeviceLock,
+  isDeviceLockEnabled,
+} from '../services/deviceLock';
 import { saveMemberPhoto, uploadMemberPhoto } from '../services/personPhoto';
 import { clearPushPhone, rememberPushPhone, registerPushToken } from '../services/pushNotifications';
-import { callPublicRpc, selectPublicRows } from '../services/supabase';
-import { colors, scene, spacing, typography } from '../theme';
+import { callPublicRpc, classifyPublicRpcError, insertPublicRow, selectPublicRows } from '../services/supabase';
+import { notifyAdminOfNewRequest, notifyWomenManagersOfRequest } from '../services/eventOutboundNotify';
+import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
+import { brandCircleSize, spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch, TreeChild } from '../types';
 import {
   DEFAULT_PHONE_COUNTRY_ID,
   formatPhoneDisplay,
   isValidPhone,
-  memberProfilePhoneQuery,
   phoneLookupCandidates,
   toE164,
   canonicalizePhone,
   isValidStoredPhone,
 } from '../utils/phone';
 import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '../services/occasionInteractions';
+import { fetchWomenManagerSession } from '../services/womenManager';
+import { fetchFamilyAdminSession } from '../services/familyAdmin';
+import { fetchDelegateInboxSession } from '../services/delegateInbox';
 
 type ProfileScreenProps = {
   branches: Branch[];
@@ -31,11 +49,15 @@ type ProfileScreenProps = {
   onOpenMemberCard: (branchKey: string, treeChildId: number) => void;
   onMemberSessionChange?: (phone: string | null) => void;
   onPhotoSaved?: () => void;
+  onOpenGiving?: () => void;
+  onOpenWomenAdmin?: () => void;
+  onOpenFamilyAdmin?: () => void;
+  onOpenDelegateInbox?: () => void;
   onRefresh?: () => void | Promise<void>;
   refreshing?: boolean;
 };
 
-const MEMBER_PHONE_KEY = 'alzidan_member_phone_v1';
+const MEMBER_PHONE_REGISTER_MARKER = 'MEMBER_PHONE_REGISTER_V1';
 
 type MemberProfileRow = {
   id: number;
@@ -46,20 +68,6 @@ type MemberProfileRow = {
   display_name: string | null;
   status: string | null;
   role?: 'member' | 'delegate' | 'both';
-};
-
-type AppLoginByPhoneResult = {
-  ok?: boolean;
-  error?: string;
-  role?: 'member' | 'delegate' | 'both' | 'none';
-  phone?: string;
-  member_id?: number | null;
-  tree_child_id?: number | null;
-  person_id?: string | null;
-  branch_key?: string | null;
-  display_name?: string | null;
-  is_delegate?: boolean;
-  is_member?: boolean;
 };
 
 function displayPersonName(value: string) {
@@ -86,6 +94,61 @@ function tripleNameFromPath(value: string) {
   return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : displayPersonName(value);
 }
 
+function parseTripleName(value: string) {
+  const tokens = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter((part) => part && part !== 'بن' && part !== 'ابن');
+  if (tokens.length < 3) return null;
+  return tokens.slice(0, 3);
+}
+
+function foldArName(value: string) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/ة/g, 'ه');
+}
+
+function treeLeafName(path: string) {
+  const parts = String(path || '')
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.at(-1) || '';
+}
+
+function treePathHasTriple(path: string, triple: string[]) {
+  const hay = foldArName(String(path || '').replace(/\//g, ' '));
+  if (!hay || triple.length < 3) return false;
+  return triple.every((token) => hay.includes(foldArName(token)));
+}
+
+function personMatchesTriple(row: TreeChild, triple: string[], branch: string) {
+  if (String(row.branchKey || '').trim() !== branch) return false;
+  const path = [row.parentName, row.name].filter(Boolean).join('/');
+  if (!treePathHasTriple(path, triple) && !treePathHasTriple(row.name, triple)) {
+    return false;
+  }
+  return foldArName(treeLeafName(row.name || path)) === foldArName(triple[0]);
+}
+
+function tripleExistsInLoadedTree(rows: TreeChild[], triple: string[], branch: string) {
+  return rows.some((row) => personMatchesTriple(row, triple, branch));
+}
+
+function memberPhoneRegisterRequestId() {
+  const stamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `MPR-${stamp}-${random}`;
+}
+
 export function ProfileScreen({
   branches,
   childrenRows,
@@ -93,14 +156,23 @@ export function ProfileScreen({
   onOpenMemberCard,
   onMemberSessionChange,
   onPhotoSaved,
+  onOpenGiving,
+  onOpenWomenAdmin,
+  onOpenFamilyAdmin,
+  onOpenDelegateInbox,
   onRefresh,
   refreshing = false,
 }: ProfileScreenProps) {
+  const p = useThemePalette();
+  const styles = useThemedStyles(profileStyles);
   const [countryId, setCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
   const [national, setNational] = useState('');
   const [savedPhone, setSavedPhone] = useState('');
   const [member, setMember] = useState<MemberProfileRow | null>(null);
   const [inbox, setInbox] = useState<OccasionInboxItem[]>([]);
+  const [womenManagerEnabled, setWomenManagerEnabled] = useState(false);
+  const [familyAdminEnabled, setFamilyAdminEnabled] = useState(false);
+  const [delegateInboxEnabled, setDelegateInboxEnabled] = useState(false);
   const [expandedInbox, setExpandedInbox] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<{ kind: 'idle' | 'success' | 'error'; text: string }>({
     kind: 'idle',
@@ -109,6 +181,12 @@ export function ProfileScreen({
   const [loading, setLoading] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [localPhotoUrl, setLocalPhotoUrl] = useState<string | null>(null);
+  const [unregisteredPhone, setUnregisteredPhone] = useState('');
+  const [tripleName, setTripleName] = useState('');
+  const [registerBranch, setRegisterBranch] = useState(branches[0]?.id ?? 'زيدان');
+  const [registerSending, setRegisterSending] = useState(false);
+  const [registerSent, setRegisterSent] = useState(false);
+  const [faceLockOn, setFaceLockOn] = useState(false);
 
   const memberTreeRow = useMemo(() => {
     const id = Number(member?.tree_child_id || 0);
@@ -145,30 +223,41 @@ export function ProfileScreen({
     return 'عضو العائلة';
   }, [isDelegateSession, member?.display_name, memberTreeRow?.name]);
 
-  const tryLoginRpc = async (e164: string) => {
-    const candidates = phoneLookupCandidates(e164);
-    for (const candidate of candidates) {
-      try {
-        const login = await callPublicRpc<AppLoginByPhoneResult>('public_app_login_by_phone_v1', {
-          p_phone: candidate,
-        });
-        if (login?.ok) return login;
-      } catch {
-        // try next candidate / fall through
-      }
-    }
-    return null;
+  const activateSession = async (session: DeviceSession, successText: string) => {
+    const found = sessionToMemberRow(session);
+    setMember(found);
+    setSavedPhone(session.phone);
+    setUnregisteredPhone('');
+    setRegisterSent(false);
+    await rememberPushPhone(session.phone);
+    registerPushToken('profile_login').catch(() => {});
+    onMemberSessionChange?.(session.phone);
+    setStatus({ kind: 'success', text: successText });
   };
 
-  const activateSession = async (found: MemberProfileRow, cleanedFallback: string, successText: string) => {
-    const storedPhone = canonicalizePhone(found.phone || cleanedFallback) || cleanedFallback;
-    setMember(found);
-    setSavedPhone(storedPhone);
-    await AsyncStorage.setItem(MEMBER_PHONE_KEY, storedPhone);
-    await rememberPushPhone(storedPhone);
-    registerPushToken('profile_login').catch(() => {});
-    onMemberSessionChange?.(storedPhone);
-    setStatus({ kind: 'success', text: successText });
+  const bindErrorText = (error: string) => {
+    if (error === 'pending_family') {
+      return 'هذا الحساب بانتظار تثبيت العائلة، ولا يدخل من التطبيق حتى تثبّته الإدارة.';
+    }
+    if (error === 'lock_required') {
+      return 'افتح بقفل الجهاز للمتابعة.';
+    }
+    if (error === 'other_device' || error === 'device_other_account') {
+      return 'هذا الرقم مستخدم على جهاز آخر.';
+    }
+    if (error === 'not_found' || error === 'not_allowed') {
+      return 'هذا الرقم غير مسجل كعضو أو مندوب فرع لدى إدارة العائلة.';
+    }
+    if (error === 'bad_phone' || error === 'bad_request') {
+      return 'اكتب رقم جوال صحيح مع اختيار الدولة.';
+    }
+    if (error === 'rpc_missing') {
+      return 'تعذر ربط الجهاز الآن. راجِع الإدارة إن استمر.';
+    }
+    if (error === 'rpc_failed') {
+      return 'تعذر ربط الجهاز الآن. تحقق من الاتصال ثم أعد المحاولة.';
+    }
+    return 'تعذر إكمال ربط الجهاز حالياً، حاول لاحقاً.';
   };
 
   const loadMember = async (targetPhone: string) => {
@@ -180,68 +269,49 @@ export function ProfileScreen({
 
     setLoading(true);
     setStatus({ kind: 'idle', text: '' });
+    setUnregisteredPhone('');
+    setRegisterSent(false);
 
     try {
-      const query = memberProfilePhoneQuery(cleaned);
-      const rows = query ? await selectPublicRows<MemberProfileRow>(query) : [];
-      const found = rows[0] ?? null;
-
-      if (found) {
-        let role: MemberProfileRow['role'] = 'member';
-        try {
-          const login = await tryLoginRpc(cleaned);
-          if (login?.ok && (login.role === 'delegate' || login.role === 'both')) {
-            role = login.role;
-          }
-        } catch {
-          // RPC may not be deployed yet; member path still binds push.
+      const result = await loginTrustedDevice(cleaned);
+      if ('error' in result) {
+        if (result.error === 'not_found' || result.error === 'not_allowed') {
+          setMember(null);
+          setSavedPhone('');
+          setUnregisteredPhone(cleaned);
         }
-
-        await activateSession(
-          { ...found, role },
-          cleaned,
-          role === 'delegate' || role === 'both'
-            ? 'تم تسجيل الدخول وتفعيل إشعارات المندوب على هذا الجهاز.'
-            : 'تم تسجيل الدخول.',
-        );
+        setStatus({ kind: 'error', text: bindErrorText(result.error) });
         return;
       }
-
-      try {
-        const login = await tryLoginRpc(cleaned);
-
-        if (login?.ok && (login.is_delegate || login.role === 'delegate' || login.role === 'both')) {
-          const synthetic: MemberProfileRow = {
-            id: Number(login.member_id || 0),
-            phone: login.phone || cleaned,
-            branch_key: String(login.branch_key || ''),
-            tree_child_id: Number(login.tree_child_id || 0),
-            person_id: login.person_id || null,
-            display_name: login.display_name || 'مندوب الفرع',
-            status: 'active',
-            role: login.role === 'both' ? 'both' : 'delegate',
-          };
-          await activateSession(
-            synthetic,
-            cleaned,
-            'تم تفعيل إشعارات المندوب على هذا الجهاز. ستصلك طلبات الفرع الجديدة.',
-          );
-          return;
-        }
-      } catch {
-        // Fall through to not-found message.
+      await activateSession(
+        result,
+        result.isDelegate
+          ? 'تم ربط هذا الجهاز وتفعيل إشعارات المندوب.'
+          : 'تم توثيق هذا الجهاز على رقمك. الدخول التالي بنفس الرقم من هنا.',
+      );
+      if (!(await isDeviceLockEnabled()) && (await canUseDeviceLock())) {
+        Alert.alert(
+          'الدخول ببصمة الوجه',
+          'تحمي حسابك على هذا الجهاز. لا تُرسل صورة الوجه خارج جهازك.',
+          [
+            { text: 'لاحقاً', style: 'cancel' },
+            {
+              text: 'تفعيل',
+              onPress: () => {
+                void enableDeviceLock().then((res) => {
+                  if (res.ok) setFaceLockOn(true);
+                });
+              },
+            },
+          ],
+        );
+      } else if (await isDeviceLockEnabled()) {
+        setFaceLockOn(true);
       }
-
-      setMember(null);
-      setSavedPhone('');
+    } catch (err) {
       setStatus({
         kind: 'error',
-        text: 'هذا الرقم غير مسجل كعضو أو مندوب فرع لدى إدارة العائلة.',
-      });
-    } catch {
-      setStatus({
-        kind: 'error',
-        text: 'تعذر تسجيل الدخول حالياً، حاول لاحقاً.',
+        text: bindErrorText(classifyPublicRpcError(err)),
       });
     } finally {
       setLoading(false);
@@ -249,10 +319,13 @@ export function ProfileScreen({
   };
 
   useEffect(() => {
-    AsyncStorage.getItem(MEMBER_PHONE_KEY)
-      .then((value) => {
-        const cleaned = canonicalizePhone(value || '');
-        if (cleaned) loadMember(cleaned).catch(() => {});
+    resumeTrustedDevice()
+      .then((session) => {
+        if (session) {
+          void isDeviceLockEnabled().then(setFaceLockOn);
+          return activateSession(session, 'تم استعادة الدخول من الجهاز الموثوق.');
+        }
+        return undefined;
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -262,19 +335,37 @@ export function ProfileScreen({
     const p = canonicalizePhone(member?.phone || savedPhone || '');
     if (!p) {
       setInbox([]);
+      setWomenManagerEnabled(false);
+      setFamilyAdminEnabled(false);
+      setDelegateInboxEnabled(false);
       return;
     }
     fetchOccasionInbox(p)
       .then(setInbox)
       .catch(() => setInbox([]));
+    fetchWomenManagerSession(p)
+      .then((session) => setWomenManagerEnabled(session.enabled))
+      .catch(() => setWomenManagerEnabled(false));
+    fetchFamilyAdminSession(p)
+      .then((session) => setFamilyAdminEnabled(session.enabled))
+      .catch(() => setFamilyAdminEnabled(false));
+    fetchDelegateInboxSession(p)
+      .then((session) => setDelegateInboxEnabled(session.enabled))
+      .catch(() => setDelegateInboxEnabled(false));
   }, [member?.phone, savedPhone]);
 
   const logout = () => {
-    AsyncStorage.removeItem(MEMBER_PHONE_KEY).catch(() => {});
-    clearPushPhone().catch(() => {});
+    void logoutTrustedDevice().then(() => {
+      void clearPushPhone();
+    });
     setMember(null);
     setSavedPhone('');
+    setWomenManagerEnabled(false);
+    setFamilyAdminEnabled(false);
+    setDelegateInboxEnabled(false);
     setNational('');
+    setUnregisteredPhone('');
+    setRegisterSent(false);
     onMemberSessionChange?.(null);
     setLocalPhotoUrl(null);
     setStatus({ kind: 'idle', text: '' });
@@ -286,6 +377,146 @@ export function ProfileScreen({
       return;
     }
     loadMember(toE164(countryId, national)).catch(() => {});
+  };
+
+  const sendNumberToAdmin = async () => {
+    const phone = canonicalizePhone(unregisteredPhone || toE164(countryId, national));
+    if (!phone || !isValidStoredPhone(phone)) {
+      setStatus({ kind: 'error', text: 'اكتب رقم جوال صحيح مع اختيار الدولة ثم اضغط دخول.' });
+      return;
+    }
+    const branch = String(registerBranch || '').trim();
+    if (!branch) {
+      setStatus({ kind: 'error', text: 'اختر الفرع حتى يصل الطلب لمندوب الفرع والإدارة.' });
+      return;
+    }
+    const triple = parseTripleName(tripleName);
+    if (!triple) {
+      setStatus({ kind: 'error', text: 'اكتب الاسم الثلاثي كاملاً (ثلاثة أسماء).' });
+      return;
+    }
+    const tripleText = triple.join(' ');
+    setRegisterSending(true);
+    setStatus({ kind: 'idle', text: '' });
+    try {
+      let inTree: boolean | null = null;
+      try {
+        const rpc = await callPublicRpc<boolean | { ok?: boolean } | boolean[]>(
+          'member_phone_register_name_in_tree_v1',
+          { p_branch: branch, p_name: tripleText },
+        );
+        if (typeof rpc === 'boolean') inTree = rpc;
+        else if (Array.isArray(rpc) && typeof rpc[0] === 'boolean') inTree = rpc[0];
+        else if (rpc && typeof rpc === 'object' && typeof rpc.ok === 'boolean') inTree = rpc.ok;
+      } catch {
+        inTree = null;
+      }
+      if (inTree !== true) {
+        const localHit = tripleExistsInLoadedTree(childrenRows, triple, branch);
+        if (inTree === false || !localHit) {
+          setStatus({
+            kind: 'error',
+            text: 'الاسم الثلاثي غير موجود في هذا الفرع. راجع الاسم والفرع — لن يُرسل الطلب.',
+          });
+          return;
+        }
+      }
+      const candidates = phoneLookupCandidates(phone);
+      for (const candidate of candidates) {
+        const pending = await selectPublicRows<{
+          id: number;
+          kind: string | null;
+          message: string | null;
+        }>(
+          `approval_requests?phone=eq.${encodeURIComponent(candidate)}&status=eq.pending&select=id,kind,message&limit=12`,
+        );
+        if (
+          pending.some(
+            (row) =>
+              String(row.kind || '') === 'member_phone_register' ||
+              String(row.kind || '') === 'member_registration' ||
+              String(row.message || '').includes(MEMBER_PHONE_REGISTER_MARKER),
+          )
+        ) {
+          setRegisterSent(true);
+          setStatus({
+            kind: 'success',
+            text: 'طلبك وصل سابقاً للإدارة والمناديب. انتظر تسجيل رقمك على شخصك في الشجرة.',
+          });
+          return;
+        }
+      }
+
+      const requestId = memberPhoneRegisterRequestId();
+      const createdAt = new Date().toISOString();
+      const message = [
+        'تسجيل جوال عضو',
+        MEMBER_PHONE_REGISTER_MARKER,
+        '',
+        `الاسم الثلاثي: ${tripleText}`,
+        `الجوال: ${phone}`,
+        `الفرع: ${branch}`,
+        '',
+        '__JSON__:',
+        JSON.stringify({
+          v: 1,
+          operation: 'member_phone_register',
+          marker: MEMBER_PHONE_REGISTER_MARKER,
+          triple_name: tripleText,
+          phone,
+          branch_key: branch,
+          created_at: createdAt,
+        }),
+      ].join('\n');
+
+      await insertPublicRow('approval_requests', {
+        request_id: requestId,
+        kind: 'member_phone_register',
+        branch_key: branch,
+        name: tripleText,
+        phone,
+        email: null,
+        message,
+        status: 'pending',
+        created_at: createdAt,
+      });
+      await notifyBranchDelegatesOfRequest({
+        request_id: requestId,
+        kind: 'member_phone_register',
+        branch_key: branch,
+        status: 'pending',
+        name: tripleText,
+        phone,
+      });
+      await notifyAdminOfNewRequest({
+        request_id: requestId,
+        kind: 'member_phone_register',
+        branch_key: branch,
+        status: 'pending',
+        name: tripleText,
+        phone,
+      });
+      await notifyWomenManagersOfRequest({
+        request_id: requestId,
+        kind: 'member_phone_register',
+        branch_key: branch,
+        status: 'pending',
+        name: tripleText,
+        phone,
+      });
+      setRegisterSent(true);
+      setStatus({
+        kind: 'success',
+        text: 'أُرسل رقمك واسمك للإدارة ومندوب الفرع. بعد تسجيله على شخصك في الشجرة تدخل بنفس الرقم.',
+      });
+    } catch (error) {
+      setStatus({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'تعذر إرسال الطلب حالياً، حاول لاحقاً.',
+      });
+    } finally {
+      setRegisterSending(false);
+    }
   };
 
   const pickMemberPhoto = async () => {
@@ -373,6 +604,20 @@ export function ProfileScreen({
 
   return (
     <SceneShell
+      brandAccessory={
+        onOpenGiving ? (
+          <Pressable
+            accessibilityLabel="تبرع"
+            accessibilityRole="button"
+            onPress={onOpenGiving}
+            style={styles.donateCircle}
+          >
+            <Text style={styles.donateCircleText}>تبرع</Text>
+          </Pressable>
+        ) : (
+          <DateStamp />
+        )
+      }
       english="MY PLACE"
       eyebrow={member ? (isDelegateSession ? 'مندوب مسجل' : 'عضو مسجل') : 'دخول العائلة'}
       heroExtra={
@@ -388,12 +633,17 @@ export function ProfileScreen({
             >
               <PersonPhoto framed name={memberName} showFallback size="lg" uri={photoUrl} />
             </Pressable>
-            {branchName ? <Text style={styles.heroBranch}>فرع {branchName}</Text> : null}
-            <Text style={styles.heroPhone}>{formatPhoneDisplay(member.phone || savedPhone)}</Text>
+            <View style={styles.heroMetaRow}>
+              <View style={styles.heroDateCol}>
+                <DateStamp compact />
+              </View>
+              <View style={styles.heroMetaText}>
+                {branchName ? <Text style={styles.heroBranch}>فرع {branchName}</Text> : null}
+                <Text style={styles.heroPhone}>{formatPhoneDisplay(member.phone || savedPhone)}</Text>
+              </View>
+            </View>
           </View>
-        ) : (
-          <Text style={styles.heroInvite}>ادخل برقمك المسجل لتفتح مكانك في العائلة.</Text>
-        )
+        ) : undefined
       }
       onRefresh={() => {
         void refreshProfile();
@@ -443,18 +693,39 @@ export function ProfileScreen({
 
           <View style={styles.logoutSplit} />
 
+          <ActionButton
+            label={faceLockOn ? 'إيقاف بصمة الوجه' : 'تفعيل الدخول ببصمة الوجه'}
+            onPress={() => {
+              if (faceLockOn) {
+                void disableDeviceLock().then(() => setFaceLockOn(false));
+                return;
+              }
+              void enableDeviceLock().then((res) => {
+                if (res.ok) {
+                  setFaceLockOn(true);
+                  return;
+                }
+                if (res.error === 'unavailable') {
+                  setStatus({
+                    kind: 'error',
+                    text: 'فعّل بصمة الوجه من إعدادات الجهاز أولاً.',
+                  });
+                }
+              });
+            }}
+            variant="secondary"
+          />
+
           <Pressable onPress={logout} style={styles.logoutButton}>
             <Text style={styles.logoutText}>تسجيل خروج</Text>
           </Pressable>
 
           <Text style={styles.note}>
-            {isDelegateSession
-              ? 'بعد هذا التسجيل ستصلك إشعارات طلبات فرعك الجديدة على الجهاز.'
-              : 'هذا الدخول للتعريف وفتح البطاقة فقط، ولا يمنح صلاحيات تعديل أو حذف.'}
+            الخروج ينهي الجلسة فقط. الدخول التالي بنفس الرقم من هذا الجهاز.
           </Text>
         </SceneSection>
       ) : (
-        <SceneSection title="ادخل برقم الجوال المسجل">
+        <SceneSection title="اربط هذا الجهاز">
           <PhoneField
             countryId={countryId}
             national={national}
@@ -463,16 +734,101 @@ export function ProfileScreen({
             hint="اختر الدولة ثم اكتب الرقم المحلي فقط دون رمز الدولة."
           />
           <ActionButton
-            label={loading ? 'جاري الدخول...' : 'دخول'}
+            label={loading ? 'جاري الربط...' : 'ربط الجهاز'}
             onPress={submitLogin}
           />
           <Text style={styles.note}>
-            الأعضاء والمناديب: بعد الدخول يُربط الجهاز بإشعارات طلبات الفرع تلقائياً.
+            كل جهاز مرتبط برقم واحد. إذا كان الرقم مستخدماً على جهاز آخر فلن يتم الدخول من هنا.
           </Text>
         </SceneSection>
       )}
 
-      {member ? (
+      {status.text ? (
+        <View style={[styles.status, status.kind === 'error' ? styles.errorStatus : styles.successStatus]}>
+          <Text style={styles.statusText}>{status.text}</Text>
+        </View>
+      ) : null}
+
+      {!member && unregisteredPhone ? (
+        <SceneSection title="أرسل رقمك للإدارة">
+          <Text style={styles.note}>
+            اكتب اسمك الثلاثي كما هو في الشجرة واختر فرعك. إن لم يطابق الاسم شخصاً في الفرع يُرفض الإرسال ولا يصل للإدارة ولا للمناديب.
+          </Text>
+          <TextInput
+            onChangeText={setTripleName}
+            placeholder="الاسم الثلاثي"
+            placeholderTextColor={p.textMuted}
+            style={styles.input}
+            textAlign="right"
+            value={tripleName}
+          />
+          <Text style={styles.fieldLabel}>الفرع</Text>
+          <View style={styles.branchPicker}>
+            {branches.map((item) => {
+              const active = item.id === registerBranch;
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => setRegisterBranch(item.id)}
+                  style={[styles.chip, active && styles.activeChip]}
+                >
+                  <Text style={[styles.chipText, active && styles.activeChipText]}>{item.name}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <ActionButton
+            label={
+              registerSending
+                ? 'جاري الإرسال...'
+                : registerSent
+                  ? 'تم إرسال الطلب'
+                  : 'أرسل رقمك للإدارة'
+            }
+            onPress={() => {
+              if (!registerSending && !registerSent) void sendNumberToAdmin();
+            }}
+          />
+        </SceneSection>
+      ) : null}
+
+      {member && womenManagerEnabled ? (
+        <SceneSection title="إدارة النساء">
+          <Text style={styles.note}>
+            صلاحية مسؤولة نسائية من الإدارة الأصلية. ليست إدارة كاملة.
+          </Text>
+          <ActionButton
+            label="فتح إدارة النساء"
+            onPress={() => onOpenWomenAdmin?.()}
+          />
+        </SceneSection>
+      ) : null}
+
+      {member && familyAdminEnabled ? (
+        <SceneSection title="إدارة العائلة">
+          <Text style={styles.note}>
+            صلاحية يومية من الإدارة الأصلية: قبول ورفض وتعديل صلاحيات المناديب من نفس مصدر الموقع، بلا رمز الإدارة.
+          </Text>
+          <ActionButton
+            label="فتح إدارة العائلة"
+            onPress={() => onOpenFamilyAdmin?.()}
+          />
+        </SceneSection>
+      ) : null}
+
+      {member && delegateInboxEnabled ? (
+        <SceneSection title="طلبات فرعي">
+          <Text style={styles.note}>
+            مندوب معتمد على هذا الجهاز. الطلبات المعلّقة لفرعك فقط، بلا سرّ الموقع وبلا إدارة عائلة.
+          </Text>
+          <ActionButton
+            label="فتح طلبات الفرع"
+            onPress={() => onOpenDelegateInbox?.()}
+          />
+        </SceneSection>
+      ) : null}
+
+      {member && !womenManagerEnabled ? (
         <SceneSection title="وصلك من العائلة">
           {inbox.length === 0 ? (
             <Text style={styles.note}>
@@ -555,17 +911,12 @@ export function ProfileScreen({
           )}
         </SceneSection>
       ) : null}
-
-      {status.text ? (
-        <View style={[styles.status, status.kind === 'error' ? styles.errorStatus : styles.successStatus]}>
-          <Text style={styles.statusText}>{status.text}</Text>
-        </View>
-      ) : null}
     </SceneShell>
   );
 }
 
-const styles = StyleSheet.create({
+function profileStyles(p: ThemePalette) {
+  return {
   inboxCard: {
     marginTop: spacing.sm,
     paddingVertical: 14,
@@ -573,7 +924,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(37, 92, 77, 0.16)',
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
     overflow: 'hidden',
   },
   inboxToggle: {
@@ -587,7 +938,7 @@ const styles = StyleSheet.create({
   },
   inboxPreview: {
     flex: 1,
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'right',
@@ -601,10 +952,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     borderRadius: 999,
     overflow: 'hidden',
-    backgroundColor: colors.accentSoft,
+    backgroundColor: p.accentSoft,
   },
   inboxChevron: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -622,33 +973,33 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 11,
     borderRadius: 999,
-    backgroundColor: colors.primary,
+    backgroundColor: p.primary,
   },
   inboxBadgeDot: {
     width: 7,
     height: 7,
     borderRadius: 999,
-    backgroundColor: colors.accent,
+    backgroundColor: p.accent,
   },
   inboxBadgeText: {
-    color: colors.white,
+    color: p.white,
     fontSize: 12,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
   inboxLine: {
-    color: colors.text,
+    color: p.text,
     fontSize: 15,
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   inboxVerb: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontWeight: '600',
   },
   inboxOccasion: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontWeight: '900',
   },
   inboxMsgRow: {
@@ -662,20 +1013,20 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(180, 134, 69, 0.28)',
-    backgroundColor: colors.accentSoft,
+    backgroundColor: p.accentSoft,
   },
   inboxSender: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontWeight: '900',
     fontSize: 14,
     writingDirection: 'rtl',
   },
   inboxSep: {
-    color: colors.accent,
+    color: p.accent,
     fontWeight: '800',
   },
   inboxMsg: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.caption + 1,
     lineHeight: 20,
     textAlign: 'right',
@@ -683,13 +1034,49 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   input: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: p.surfaceMuted,
     borderRadius: 16,
-    color: colors.text,
+    color: p.text,
     fontSize: 15,
     marginBottom: spacing.md,
+    marginTop: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
+  },
+  fieldLabel: {
+    color: p.text,
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: spacing.xs,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  branchPicker: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  chip: {
+    backgroundColor: p.surface,
+    borderColor: p.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  activeChip: {
+    backgroundColor: p.primary,
+    borderColor: p.primary,
+  },
+  chipText: {
+    color: p.textMuted,
+    fontSize: 13,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
+  activeChipText: {
+    color: p.white,
   },
   profileHeader: {
     alignItems: 'center',
@@ -699,14 +1086,14 @@ const styles = StyleSheet.create({
   },
   avatar: {
     alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: p.primary,
     borderRadius: 28,
     height: 56,
     justifyContent: 'center',
     width: 56,
   },
   avatarText: {
-    color: colors.surface,
+    color: p.surface,
     fontSize: 24,
     fontWeight: '900',
   },
@@ -714,20 +1101,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   profileName: {
-    color: colors.text,
+    color: p.text,
     fontSize: 20,
     fontWeight: '900',
     textAlign: 'right',
   },
   profileMeta: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: 13,
     marginTop: 4,
     textAlign: 'right',
   },
   logoutButton: {
     alignItems: 'center',
-    borderColor: scene.gold,
+    borderColor: p.gold,
     borderRadius: 16,
     borderWidth: 1,
     marginTop: spacing.sm,
@@ -741,7 +1128,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   photoDeleteText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: 14,
     fontWeight: '700',
     writingDirection: 'rtl',
@@ -754,10 +1141,47 @@ const styles = StyleSheet.create({
     width: 48,
   },
   identityHero: {
-    alignItems: 'flex-end',
+    alignItems: 'stretch',
+    direction: 'ltr',
     gap: 10,
     paddingBottom: spacing.xs,
     paddingTop: 2,
+    width: '100%',
+  },
+  donateCircle: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(196,163,90,0.16)',
+    borderColor: p.gold,
+    borderRadius: brandCircleSize / 2,
+    borderWidth: 1,
+    height: brandCircleSize,
+    justifyContent: 'center',
+    width: brandCircleSize,
+  },
+  donateCircleText: {
+    color: p.goldSoft,
+    fontSize: 12,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
+  heroMetaRow: {
+    alignItems: 'flex-start',
+    direction: 'ltr',
+    flexDirection: 'row',
+    width: '100%',
+  },
+  heroDateCol: {
+    alignItems: 'flex-start',
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  heroMetaText: {
+    alignItems: 'flex-end',
+    flex: 1,
+    gap: 4,
+    minWidth: 0,
+    paddingLeft: 8,
   },
   photoFrame: {
     alignItems: 'center',
@@ -765,21 +1189,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroBranch: {
-    color: scene.gold,
+    color: p.gold,
     fontSize: 14,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   heroPhone: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 13,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   monogramOuter: {
     alignItems: 'center',
-    borderColor: scene.gold,
+    borderColor: p.gold,
     borderRadius: 52,
     borderWidth: 1,
     height: 92,
@@ -789,7 +1213,7 @@ const styles = StyleSheet.create({
   monogramInner: {
     alignItems: 'center',
     backgroundColor: 'rgba(196,163,90,0.16)',
-    borderColor: scene.goldSoft,
+    borderColor: p.goldSoft,
     borderRadius: 40,
     borderWidth: 1,
     height: 76,
@@ -797,24 +1221,17 @@ const styles = StyleSheet.create({
     width: 76,
   },
   monogramLetter: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 34,
     fontWeight: '800',
   },
-  heroInvite: {
-    color: 'rgba(232,213,168,0.88)',
-    fontSize: 15,
-    lineHeight: 24,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
   logoutText: {
-    color: colors.text,
+    color: p.text,
     fontSize: 15,
     fontWeight: '700',
   },
   note: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: 13,
     lineHeight: 20,
     marginTop: spacing.md,
@@ -833,8 +1250,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#D1FAE5',
   },
   statusText: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.caption,
     textAlign: 'right',
   },
-});
+  };
+}

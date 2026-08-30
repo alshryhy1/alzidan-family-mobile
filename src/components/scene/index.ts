@@ -1,2 +1,2 @@
-export { GoldDivider, OrnamentField } from './Ornament';
-export { SceneSection, SceneShell, type SceneVariant } from './SceneShell';
+export { BrandMark, GoldDivider, OrnamentField } from './Ornament';
+export { DateStamp, SceneSection, SceneShell, type SceneVariant } from './SceneShell';

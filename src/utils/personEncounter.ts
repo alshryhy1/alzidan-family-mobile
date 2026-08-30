@@ -124,17 +124,56 @@ export function effectiveParentName(person: Pick<TreeChild, 'name' | 'parentName
   return parentPathKey(path);
 }
 
+function isFemalePerson(person: Pick<TreeChild, 'gender'> | null | undefined) {
+  return isPublicLineageHiddenPerson(person);
+}
+
+function isProvenSisterNephew(
+  viewer: Pick<TreeChild, 'name' | 'parentName'>,
+  target: Pick<TreeChild, 'name' | 'parentName'>,
+  people: TreeChild[] = [],
+) {
+  const viewerParent = normalizePathKey(effectiveParentName(viewer));
+  const targetParent = normalizePathKey(effectiveParentName(target));
+  if (!viewerParent || !targetParent) return false;
+  const motherParent = parentPathKey(targetParent);
+  if (!motherParent || motherParent !== viewerParent) return false;
+  if (targetParent === nodePathId(viewer)) return false;
+  const parentNode = people.find((row) => nodePathId(row) === targetParent);
+  return Boolean(parentNode && isFemalePerson(parentNode));
+}
+
+function paternalCousinChildLabel(
+  viewer: Pick<TreeChild, 'name' | 'parentName'>,
+  target: Pick<TreeChild, 'name' | 'parentName'>,
+  people: TreeChild[] = [],
+) {
+  const viewerParent = normalizePathKey(effectiveParentName(viewer));
+  const targetParent = normalizePathKey(effectiveParentName(target));
+  if (!viewerParent || !targetParent) return null;
+  const cousinFather = parentPathKey(targetParent);
+  const viewerGf = parentPathKey(viewerParent);
+  if (!cousinFather || !viewerGf) return null;
+  if (parentPathKey(cousinFather) !== viewerGf) return null;
+  if (cousinFather === viewerParent) return null;
+  const parentNode = people.find((row) => nodePathId(row) === targetParent);
+  if (parentNode && !isFemalePerson(parentNode)) return 'ابن ابن عمك';
+  return 'ابن بنت عمي';
+}
+
 /**
  * Proven kinship for the member encounter.
- * Path labels: أبوك / ابنك / أخ / عمك / ابن عمك / ابن أخيك / جدك / حفيدك
+ * Path labels: أبوك / ابنك / أخ / أخت / عمك / ابن عمك / بنت عمي / ابن أخيك / جدك / حفيدك
  * Link labels (wife + mother_links): ابنك / ابن أختك / حفيدك من ابنتك
+ * Name is not identity — `id` + parent path are.
  */
 export function resolveProvenKinshipLabel(
   viewer: TreeChild | null | undefined,
   target: TreeChild | null | undefined,
   maternalLabel?: string | null,
+  people: TreeChild[] = [],
 ): string | null {
-  const maternal = String(maternalLabel || '').trim();
+  let maternal = String(maternalLabel || '').trim();
   if (!target) return maternal || null;
   if (!viewer) return maternal || null;
   if (Number(viewer.id) && Number(target.id) && Number(viewer.id) === Number(target.id)) {
@@ -146,14 +185,38 @@ export function resolveProvenKinshipLabel(
 
   const viewerParent = normalizePathKey(effectiveParentName(viewer));
   const targetParent = normalizePathKey(effectiveParentName(target));
+  if (maternal === 'ابن بنت عمك') maternal = 'ابن بنت عمي';
+  const cousinChild = paternalCousinChildLabel(viewer, target, people);
+  let underFatherDepth = 0;
+  if (viewerParent && targetNode && targetNode.startsWith(`${viewerParent}/`)) {
+    underFatherDepth = targetNode
+      .slice(viewerParent.length + 1)
+      .split('/')
+      .filter(Boolean).length;
+  }
+  if (maternal === 'ابن أختك') {
+    const sameFatherNephew = Boolean(
+      viewerParent &&
+        targetParent &&
+        parentPathKey(targetParent) === viewerParent &&
+        targetParent !== viewerNode,
+    );
+    if (
+      cousinChild ||
+      underFatherDepth >= 3 ||
+      (sameFatherNephew && !isProvenSisterNephew(viewer, target, people))
+    ) {
+      maternal = '';
+    }
+  }
 
   if (viewerParent && viewerParent === targetNode) return 'أبوك';
   if (targetParent && targetParent === viewerNode) return 'ابنك';
   if (maternal === 'ابنك') return 'ابنك';
   if (viewerParent && targetParent && viewerParent === targetParent) {
     if (!viewerParent.includes('/')) return maternal || null;
-    if (maternal === 'أخ من أمك') return 'شقيقك';
-    return 'أخ';
+    if (maternal === 'أخ من أمك') return isFemalePerson(target) ? 'شقيقتك' : 'شقيقك';
+    return isFemalePerson(target) ? 'أخت' : 'أخ';
   }
 
   const paternalGrandfather = parentPathKey(effectiveParentName(viewer) || viewer.parentName);
@@ -162,7 +225,7 @@ export function resolveProvenKinshipLabel(
   if (targetPaternalGrandfather && targetPaternalGrandfather === viewerNode) return 'حفيدك';
 
   if (maternal === 'حفيدك من ابنتك') return 'حفيدك من ابنتك';
-  if (maternal === 'ابن أختك') return 'ابن أختك';
+  if (maternal === 'ابن بنت عمي') return 'ابن بنت عمي';
   if (maternal === 'أخ من أمك') return 'أخ من أمك';
   if (maternal === 'حفيدك') return 'حفيدك';
 
@@ -180,8 +243,12 @@ export function resolveProvenKinshipLabel(
     return 'حفيدك';
   }
   if (viewerUp === 1 && targetUp === 2) {
-    if (maternal === 'ابن أختك') return 'ابن أختك';
+    if (maternal === 'ابن أختك' || isProvenSisterNephew(viewer, target, people)) return 'ابن أختك';
     return 'ابن أخيك';
+  }
+  if (viewerUp === 1 && targetUp === 3) {
+    if (maternal === 'ابن بنت عمي') return 'ابن بنت عمي';
+    return 'ابن ابن أخيك';
   }
   if (viewerUp === 2 && targetUp === 1) {
     if (maternal === 'خالك') return 'خالك';
@@ -195,9 +262,13 @@ export function resolveProvenKinshipLabel(
     ) {
       return maternal;
     }
-    return 'ابن عمك';
+    return isFemalePerson(target) ? 'بنت عمي' : 'ابن عمك';
+  }
+  if (viewerUp === 2 && targetUp === 3) {
+    return cousinChild || maternal || null;
   }
 
+  if (maternal === 'ابن أختك') return 'ابن أختك';
   return maternal || null;
 }
 
@@ -251,6 +322,7 @@ function isDirectChildPath(parentNode: string, childName: string): boolean {
 export function findDirectSons(
   childrenRows: TreeChild[],
   person: TreeChild,
+  opts?: { includePubliclyHidden?: boolean },
 ): TreeChild[] {
   const parentNode = nodePathId(person);
   if (!parentNode) return [];
@@ -289,7 +361,7 @@ export function findDirectSons(
 
       return false;
     })
-    .filter((row) => !isPublicLineageHiddenPerson(row))
+    .filter((row) => opts?.includePubliclyHidden || !isPublicLineageHiddenPerson(row))
     .slice(0, 24);
 }
 

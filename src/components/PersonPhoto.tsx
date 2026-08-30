@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { isSafePersonPhotoUrl } from '../services/personPhoto';
-import { colors, scene } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
 
 type PersonPhotoSize = 'sm' | 'md' | 'lg';
 
@@ -29,6 +29,7 @@ export function PersonPhoto({
   showFallback = false,
   framed = false,
 }: PersonPhotoProps) {
+  const p = useThemePalette();
   const [failed, setFailed] = useState(false);
   const safe = isSafePersonPhotoUrl(uri) && !failed;
   const dim = SIZE[size];
@@ -50,6 +51,7 @@ export function PersonPhoto({
       style={[
         styles.wrap,
         {
+          borderColor: p.gold,
           borderRadius: dim.wrap / 2,
           borderWidth: border,
           height: dim.wrap,
@@ -59,7 +61,12 @@ export function PersonPhoto({
         (framedLook) && styles.framed,
       ]}
     >
-      <View style={[styles.inner, { borderRadius: inner / 2, height: inner, width: inner }]}>
+      <View
+        style={[
+          styles.inner,
+          { backgroundColor: p.greenDeep, borderRadius: inner / 2, height: inner, width: inner },
+        ]}
+      >
         {safe ? (
           <Image
             onError={() => setFailed(true)}
@@ -72,7 +79,7 @@ export function PersonPhoto({
             }}
           />
         ) : (
-          <Text style={[styles.letter, { fontSize: dim.letter }]}>{letter}</Text>
+          <Text style={[styles.letter, { color: p.accentSoft, fontSize: dim.letter }]}>{letter}</Text>
         )}
       </View>
     </View>
@@ -83,7 +90,6 @@ const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
     backgroundColor: 'rgba(196,163,90,0.14)',
-    borderColor: scene.gold,
     flexShrink: 0,
     justifyContent: 'center',
     overflow: 'hidden',
@@ -93,12 +99,10 @@ const styles = StyleSheet.create({
   },
   inner: {
     alignItems: 'center',
-    backgroundColor: scene.greenDeep,
     justifyContent: 'center',
     overflow: 'hidden',
   },
   letter: {
-    color: colors.accentSoft,
     fontWeight: '800',
   },
 });

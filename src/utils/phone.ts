@@ -245,6 +245,13 @@ export function phoneLookupCandidates(raw: string) {
   return [...out].filter(Boolean);
 }
 
+export function phonesMatch(a?: string | null, b?: string | null) {
+  const left = phoneLookupCandidates(String(a || ''));
+  const right = new Set(phoneLookupCandidates(String(b || '')));
+  if (!left.length || !right.size) return false;
+  return left.some((item) => right.has(item));
+}
+
 export function memberProfilePhoneQuery(phone: string) {
   const candidates = phoneLookupCandidates(phone);
   if (!candidates.length) return '';

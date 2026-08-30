@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, Text, TextInput, View } from 'react-native';
 
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import {
   DEFAULT_PHONE_COUNTRY_ID,
   getPhoneCountry,
@@ -28,6 +30,8 @@ export function PhoneField({
   label = 'رقم الجوال',
   hint,
 }: Props) {
+  const p = useThemePalette();
+  const styles = useThemedStyles(phoneStyles);
   const [pickerOpen, setPickerOpen] = useState(false);
   const country = useMemo(() => getPhoneCountry(countryId), [countryId]);
 
@@ -48,7 +52,7 @@ export function PhoneField({
           keyboardType="phone-pad"
           onChangeText={(text) => onNationalChange(normalizeNationalInput(text, country.id))}
           placeholder={country.placeholder}
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.nationalInput}
           textAlign="left"
           value={national}
@@ -88,6 +92,7 @@ function CountryRow({
   active: boolean;
   onPress: () => void;
 }) {
+  const styles = useThemedStyles(phoneStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -103,12 +108,13 @@ function CountryRow({
   );
 }
 
-const styles = StyleSheet.create({
+function phoneStyles(p: ThemePalette) {
+  return {
   wrap: {
     gap: 6,
   },
   label: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.caption,
     fontWeight: '700',
     textAlign: 'right',
@@ -121,8 +127,8 @@ const styles = StyleSheet.create({
   },
   countryBtn: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
+    backgroundColor: p.surfaceMuted,
+    borderColor: p.border,
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -134,20 +140,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   countryDial: {
-    color: colors.text,
+    color: p.text,
     fontSize: 14,
     fontWeight: '800',
   },
   countryCaret: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: 12,
   },
   nationalInput: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
+    backgroundColor: p.surfaceMuted,
+    borderColor: p.border,
     borderRadius: 14,
     borderWidth: 1,
-    color: colors.text,
+    color: p.text,
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
@@ -156,7 +162,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   hint: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: 11,
     textAlign: 'right',
     writingDirection: 'rtl',
@@ -167,7 +173,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: colors.surface,
+    backgroundColor: p.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '70%',
@@ -176,7 +182,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   sheetTitle: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.title,
     fontWeight: '800',
     marginBottom: spacing.sm,
@@ -192,7 +198,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   countryRowActive: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
   },
   countryRowFlag: {
     fontSize: 22,
@@ -202,23 +208,24 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   countryRowName: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   countryRowDial: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     textAlign: 'right',
   },
   countryRowCheck: {
-    color: colors.primary,
+    color: p.primary,
     fontSize: 16,
     fontWeight: '900',
   },
   pressed: {
     opacity: 0.75,
   },
-});
+  };
+}

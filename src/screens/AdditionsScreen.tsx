@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
 import { PhoneField } from '../components/PhoneField';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
+import { notifyAdminOfNewRequest } from '../services/eventOutboundNotify';
 import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
 import { rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { insertPublicRow } from '../services/supabase';
@@ -15,6 +16,7 @@ import {
   findMobileEventType,
   listMobileEventTypesByFamily,
   validateEventFacts,
+  EVENT_PLACE_KINDS,
   type MobileEventFamily,
 } from '../utils/eventRequestMessage';
 import { buildTreeCardMessage, treeCardRequestId } from '../utils/treeCardMessage';
@@ -23,7 +25,9 @@ import {
   isValidPhone,
   toE164,
 } from '../utils/phone';
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch } from '../types';
 
 export type AdditionsIntent = 'person' | 'correction';
@@ -89,6 +93,8 @@ function buildCorrectionMessage(payload: {
 }
 
 export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreenProps) {
+  const p = useThemePalette();
+  const styles = useThemedStyles(additionsStyles);
   const defaultBranch = branches[0]?.id ?? 'زيدان';
   const [branch, setBranch] = useState(defaultBranch);
   const [eventFamily, setEventFamily] = useState<MobileEventFamily>('news');
@@ -96,6 +102,8 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
   const [eventPerson, setEventPerson] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [eventPlace, setEventPlace] = useState('');
+  const [eventPlaceKind, setEventPlaceKind] = useState('');
+  const [eventCoords, setEventCoords] = useState('');
   const [eventHospitalDept, setEventHospitalDept] = useState('');
   const [eventPrayerPlace, setEventPrayerPlace] = useState('');
   const [eventPrayerTime, setEventPrayerTime] = useState('');
@@ -148,6 +156,9 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
       type: selectedEventType.key,
       person: eventPerson,
       dateLabel: eventDate,
+      place: eventPlace,
+      placeKind: eventPlaceKind,
+      coords: eventCoords,
       text: eventText,
     });
     if (factsError) {
@@ -166,6 +177,8 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         person: eventPerson.trim(),
         dateLabel: eventDate.trim(),
         place: eventPlace.trim(),
+        placeKind: eventPlaceKind,
+        coords: eventCoords.trim(),
         hospitalName: eventPlace.trim(),
         hospitalDept: eventHospitalDept.trim(),
         contactPhone: contactPhoneE164(),
@@ -203,12 +216,22 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         name: submitterName.trim(),
         phone: submitterPhoneE164(),
       });
+      await notifyAdminOfNewRequest({
+        request_id: reqId,
+        kind: 'event_card',
+        branch_key: branch,
+        status: 'pending',
+        name: submitterName.trim(),
+        phone: submitterPhoneE164(),
+      });
       await rememberPushPhone(submitterPhoneE164());
       registerPushToken('event_submit').catch(() => {});
 
       setEventPerson('');
       setEventDate('');
       setEventPlace('');
+      setEventPlaceKind('');
+      setEventCoords('');
       setEventHospitalDept('');
       setContactNational('');
       setEventPrayerPlace('');
@@ -293,6 +316,14 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         name: submitterName.trim(),
         phone: submitterPhoneE164(),
       });
+      await notifyAdminOfNewRequest({
+        request_id: reqId,
+        kind: 'tree_card',
+        branch_key: branch,
+        status: 'pending',
+        name: submitterName.trim(),
+        phone: submitterPhoneE164(),
+      });
       await rememberPushPhone(submitterPhoneE164());
       registerPushToken('request_submit').catch(() => {});
       await appendTrackedRequest({
@@ -369,6 +400,14 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         name: submitterName.trim(),
         phone: submitterPhone,
       });
+      await notifyAdminOfNewRequest({
+        request_id: reqId,
+        kind: 'tree_edit',
+        branch_key: branch,
+        status: 'pending',
+        name: submitterName.trim(),
+        phone: submitterPhone,
+      });
       await rememberPushPhone(submitterPhone);
       registerPushToken('request_submit').catch(() => {});
       await appendTrackedRequest({
@@ -424,7 +463,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setSubmitterName}
           placeholder="اسم المرسل"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={submitterName}
@@ -441,7 +480,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
           keyboardType="email-address"
           onChangeText={setEmail}
           placeholder="البريد الإلكتروني اختياري"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={email}
@@ -453,7 +492,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setGrandfather}
           placeholder="الجد 1 (إجباري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={grandfather}
@@ -461,7 +500,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setGrandfather2}
           placeholder="الجد 2 (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={grandfather2}
@@ -469,7 +508,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setGrandfather3}
           placeholder="الجد 3 (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={grandfather3}
@@ -477,7 +516,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setGrandfather4}
           placeholder="الجد 4 (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={grandfather4}
@@ -485,7 +524,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setFather}
           placeholder="الأب (إجباري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={father}
@@ -493,7 +532,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setPersonName}
           placeholder="اسم الشخص (إجباري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={personName}
@@ -501,7 +540,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setPersonDob}
           placeholder="تاريخ الميلاد اختياري (YYYY-MM-DD)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={personDob}
@@ -509,7 +548,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setPersonCity}
           placeholder="المدينة (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={personCity}
@@ -517,7 +556,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setPersonArea}
           placeholder="الحي/القرية (اختياري)"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={personArea}
@@ -582,7 +621,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setEventPerson}
           placeholder={selectedEventType.personLabel}
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={eventPerson}
@@ -600,7 +639,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
                     ? 'تاريخ المناسبة — مثال: 2026-08-12'
                     : 'التاريخ اختياري'
           }
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={eventDate}
@@ -610,7 +649,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
             <TextInput
               onChangeText={setEventPlace}
               placeholder="المستشفى / المكان اختياري"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={eventPlace}
@@ -618,7 +657,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
             <TextInput
               onChangeText={setEventHospitalDept}
               placeholder="القسم اختياري"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={eventHospitalDept}
@@ -637,7 +676,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
             <TextInput
               onChangeText={setEventPlace}
               placeholder="موقع العزاء اختياري"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={eventPlace}
@@ -645,7 +684,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
             <TextInput
               onChangeText={setEventPrayerPlace}
               placeholder="مكان الصلاة اختياري"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={eventPrayerPlace}
@@ -653,7 +692,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
             <TextInput
               onChangeText={setEventPrayerTime}
               placeholder="وقت الصلاة اختياري"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={eventPrayerTime}
@@ -661,7 +700,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
             <TextInput
               onChangeText={setEventBurialPlace}
               placeholder="مكان الدفن اختياري"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={p.textMuted}
               style={styles.input}
               textAlign="right"
               value={eventBurialPlace}
@@ -669,18 +708,45 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
           </>
         ) : null}
         {selectedEventType.family === 'occasion' && selectedEventType.mode !== 'notice' ? (
-          <TextInput
+          <>
+            <Text style={styles.fieldLabel}>الموقع</Text>
+            <View style={styles.branchPicker}>
+              {EVENT_PLACE_KINDS.map((item) => {
+                const active = item.key === eventPlaceKind;
+                return (
+                  <Pressable
+                    key={item.key}
+                    onPress={() => setEventPlaceKind(active ? '' : item.key)}
+                    style={[styles.chip, active && styles.activeChip]}
+                  >
+                    <Text style={[styles.chipText, active && styles.activeChipText]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <TextInput
             onChangeText={setEventPlace}
             placeholder={
-              selectedEventType.requiresPlace
-                ? 'المكان (مطلوب)'
-                : 'المكان اختياري (قاعة أو مدينة)'
+              selectedEventType.requiresPlace && !selectedEventType.requiresPlaceKind
+                ? 'اسم الموقع (مطلوب)'
+                : 'اسم الموقع اختياري'
             }
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={p.textMuted}
             style={styles.input}
             textAlign="right"
             value={eventPlace}
           />
+            <TextInput
+              onChangeText={setEventCoords}
+              placeholder="إحداثيات اختيارية — 24.7136, 46.6753"
+              placeholderTextColor={p.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={eventCoords}
+            />
+          </>
         ) : null}
         <TextInput
           multiline
@@ -692,7 +758,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
                 : 'نص المناسبة'
               : 'ملاحظات اختياري'
           }
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={[styles.input, styles.textArea]}
           textAlign="right"
           value={eventText}
@@ -719,7 +785,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         <TextInput
           onChangeText={setCorrectionPerson}
           placeholder="اسم الشخص أو المسار"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           textAlign="right"
           value={correctionPerson}
@@ -728,7 +794,7 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
           multiline
           onChangeText={setCorrectionText}
           placeholder="اكتب التصحيح المطلوب"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={[styles.input, styles.textArea]}
           textAlign="right"
           value={correctionText}
@@ -746,16 +812,17 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
   );
 }
 
-const styles = StyleSheet.create({
+function additionsStyles(p: ThemePalette) {
+  return {
   fieldLabel: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.caption,
     fontWeight: '900',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   fieldHint: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     lineHeight: 20,
     textAlign: 'right',
@@ -767,32 +834,32 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   chip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: p.surface,
+    borderColor: p.border,
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   activeChip: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: p.primary,
+    borderColor: p.primary,
   },
   chipText: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
   activeChipText: {
-    color: colors.white,
+    color: p.white,
   },
   input: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
+    backgroundColor: p.surfaceMuted,
+    borderColor: p.border,
     borderRadius: 15,
     borderWidth: 1,
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     minHeight: 48,
     paddingHorizontal: spacing.md,
@@ -804,7 +871,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   fileHint: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     marginTop: spacing.xs,
     textAlign: 'right',
@@ -815,16 +882,17 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   successStatus: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
   },
   errorStatus: {
     backgroundColor: '#F7D7D7',
   },
   statusText: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-});
+  };
+}

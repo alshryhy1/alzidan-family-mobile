@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,9 +12,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { OccasionInteractCard } from '../components/OccasionInteractCard';
 import { PersonPhoto } from '../components/PersonPhoto';
-import { colors, spacing, typography } from '../theme';
+import { loadSelfPathFacts } from '../services/publicData';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch, FamilyEvent, TreeChild } from '../types';
 import { kinshipLabelForPerson } from '../utils/maternalKinship';
+import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 import {
   findDirectSons,
   findPersonOccasions,
@@ -24,6 +29,11 @@ import {
   resolveSharedAncestorBadge,
   type EncounterMode,
 } from '../utils/personEncounter';
+import {
+  buildSelfPathRings,
+  siblingsInGraph,
+  type SelfPathRing,
+} from '../utils/selfPath';
 
 type Props = {
   mode: EncounterMode;
@@ -34,15 +44,10 @@ type Props = {
   events: FamilyEvent[];
   maternalLabel?: string | null;
   kinshipById?: Record<number, string>;
+  memberPhone?: string | null;
+  includePubliclyHiddenPeople?: boolean;
   onClose: () => void;
 };
-
-const GREEN = '#173F35';
-const GREEN_DEEP = '#0F2A24';
-const GOLD = '#C4A35A';
-const GOLD_SOFT = '#E8D5A8';
-const CREAM = '#F3EBD9';
-const CREAM_CARD = '#FFF8EC';
 
 function branchLabel(branches: Branch[], branchKey: string) {
   const found = branches.find((b) => b.id === branchKey);
@@ -56,6 +61,7 @@ function modeTitle(mode: EncounterMode) {
 }
 
 function OrnamentDivider() {
+  const styles = useThemedStyles(encounterStyles);
   return (
     <View style={styles.ornamentRow}>
       <View style={styles.ornamentLine} />
@@ -74,21 +80,30 @@ export function PersonEncounterScreen({
   events,
   maternalLabel,
   kinshipById,
+  memberPhone,
+  includePubliclyHiddenPeople = false,
   onClose,
 }: Props) {
+  const p = useThemePalette();
+  const styles = useThemedStyles(encounterStyles);
   const insets = useSafeAreaInsets();
   const name = leafPersonName(person.name);
   const branch = branchLabel(branches, person.branchKey);
-  const lineage = publicLineageChain(person.name);
+  const lineage = publicLineageChain(person.name, mode === 'self' ? 8 : 3);
+  const [resumeTick, setResumeTick] = useState(0);
+  const [selfPathRings, setSelfPathRings] = useState<SelfPathRing[]>([]);
+  const [selfPathLoading, setSelfPathLoading] = useState(false);
   const maternal =
     maternalLabel || kinshipLabelForPerson(kinshipById, person, childrenRows) || null;
   const kinship =
     mode === 'member'
-      ? resolveProvenKinshipLabel(viewer, person, maternal) || maternal || null
+      ? resolveProvenKinshipLabel(viewer, person, maternal, childrenRows)
       : null;
   const directSons =
     mode === 'visitor' || mode === 'member'
-      ? findDirectSons(childrenRows, person)
+      ? findDirectSons(childrenRows, person, {
+          includePubliclyHidden: includePubliclyHiddenPeople,
+        })
       : [];
   const linkedSons = useMemo(() => {
     if (mode !== 'self' || !kinshipById) return [];
@@ -123,6 +138,66 @@ export function PersonEncounterScreen({
   const sharedPathLabel =
     mode === 'member' && !kinship ? resolveSharedAncestorBadge(viewer, person) : null;
 
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') setResumeTick((n) => n + 1);
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    if (mode !== 'self') {
+      setSelfPathRings([]);
+      setSelfPathLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
+    const siblingNames = siblingsInGraph(person, childrenRows)
+      .filter((row) => !isPublicLineageHiddenPerson(row))
+      .map((row) => leafPersonName(row.name))
+      .filter(Boolean);
+    setSelfPathRings(
+      buildSelfPathRings(person, {
+        siblingNames,
+        childNames: [],
+        externalOffspringNames: [],
+        branchLabel: branch,
+      }),
+    );
+    setSelfPathLoading(true);
+    loadSelfPathFacts(person, childrenRows, memberPhone)
+      .then((facts) => {
+        if (!alive) return;
+        const selfLeaf = leafPersonName(person.name);
+        const sisterNames = (facts.sisterNames || []).filter(
+          (name) => name && name !== selfLeaf,
+        );
+        const sisterSet = new Set(sisterNames);
+        setSelfPathRings(
+          buildSelfPathRings(person, {
+            motherName: facts.motherName,
+            spousePartnerName: facts.spousePartnerName,
+            spouseRole: facts.spouseRole,
+            siblingNames: siblingNames.filter((name) => !sisterSet.has(name)),
+            sisterNames,
+            childNames: facts.childNames,
+            daughterNames: facts.daughterNames,
+            externalOffspringNames: facts.externalOffspringNames,
+            branchLabel: branch,
+          }),
+        );
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setSelfPathLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [mode, person.id, person.name, person.parentName, person.branchKey, branch, childrenRows, memberPhone, resumeTick]);
+
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <ScrollView
@@ -132,7 +207,7 @@ export function PersonEncounterScreen({
       >
         {/* —— Hero (deep green) —— */}
         <LinearGradient
-          colors={[GREEN_DEEP, GREEN, '#1F4F44']}
+          colors={[p.heroDeep, p.heroMid, p.heroLift]}
           start={{ x: 0.1, y: 0 }}
           end={{ x: 0.9, y: 1 }}
           style={[styles.hero, { paddingTop: insets.top + 10 }]}
@@ -166,8 +241,9 @@ export function PersonEncounterScreen({
             </View>
           </View>
 
-          <Text style={styles.encounterLabel}>لقاء الشخص</Text>
-          <Text style={styles.encounterLabelEn}>PERSON ENCOUNTER</Text>
+          <Text style={styles.encounterLabel}>
+            {mode === 'self' ? 'بطاقتك' : 'بطاقة الشخص'}
+          </Text>
 
           <View style={styles.monogramWrap}>
             <PersonPhoto name={name} showFallback size="lg" uri={person.photoUrl} />
@@ -214,11 +290,35 @@ export function PersonEncounterScreen({
             ))}
           </View>
 
-          {lineage.length > 1 ? (
+          {mode === 'self' ? (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                {mode === 'self' ? 'تسلسلك' : 'مكانه في العائلة'}
-              </Text>
+              <Text style={styles.sectionTitle}>مسار الذات</Text>
+              <OrnamentDivider />
+              {selfPathLoading && !selfPathRings.length ? (
+                <Text style={styles.loadingNote}>جاري تحميل مسارك في العائلة...</Text>
+              ) : (
+                <View style={styles.lineageCol}>
+                  {selfPathRings.map((item, index) => (
+                    <View key={item.key} style={styles.lineageNode}>
+                      <Text style={styles.ringCaption}>{item.ring}</Text>
+                      <View style={styles.lineageHex}>
+                        <Text style={styles.lineageHexText}>{item.detail}</Text>
+                      </View>
+                      {index < selfPathRings.length - 1 ? (
+                        <View style={styles.lineageStem}>
+                          <View style={styles.lineageDot} />
+                          <View style={styles.lineageBar} />
+                          <View style={styles.lineageDot} />
+                        </View>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : lineage.length > 1 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>مكانه في العائلة</Text>
               <OrnamentDivider />
               <View style={styles.lineageCol}>
                 {lineage.map((part, index) => (
@@ -239,7 +339,7 @@ export function PersonEncounterScreen({
             </View>
           ) : null}
 
-          {sons.length ? (
+          {mode !== 'self' && sons.length ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{mode === 'self' ? 'أبناؤك' : 'عائلته'}</Text>
               <OrnamentDivider />
@@ -316,9 +416,10 @@ export function PersonEncounterScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function encounterStyles(p: ThemePalette) {
+  return {
   root: {
-    backgroundColor: CREAM,
+    backgroundColor: p.cream,
     flex: 1,
   },
   scroll: {
@@ -343,7 +444,7 @@ const styles = StyleSheet.create({
     top: 0,
   },
   patternGlyph: {
-    color: GOLD,
+    color: p.gold,
     fontSize: 22,
   },
   heroTop: {
@@ -353,7 +454,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   backChip: {
-    borderColor: GOLD,
+    borderColor: p.gold,
     borderRadius: 999,
     borderWidth: 1,
     minWidth: 64,
@@ -361,7 +462,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   backChipText: {
-    color: GOLD_SOFT,
+    color: p.goldSoft,
     fontSize: 12,
     fontWeight: '800',
     textAlign: 'center',
@@ -375,7 +476,7 @@ const styles = StyleSheet.create({
   brandMark: {
     alignItems: 'center',
     backgroundColor: 'rgba(196,163,90,0.15)',
-    borderColor: GOLD,
+    borderColor: p.gold,
     borderRadius: 12,
     borderWidth: 1,
     height: 34,
@@ -383,19 +484,19 @@ const styles = StyleSheet.create({
     width: 34,
   },
   brandLetter: {
-    color: GOLD,
+    color: p.gold,
     fontSize: 18,
     fontWeight: '900',
   },
   brandAr: {
-    color: GOLD_SOFT,
+    color: p.goldSoft,
     fontSize: 13,
     fontWeight: '900',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   brandEn: {
-    color: GOLD,
+    color: p.gold,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.2,
@@ -404,7 +505,7 @@ const styles = StyleSheet.create({
   },
   modeChip: {
     backgroundColor: 'rgba(0,0,0,0.2)',
-    borderColor: GOLD,
+    borderColor: p.gold,
     borderRadius: 999,
     borderWidth: 1,
     minWidth: 64,
@@ -412,21 +513,21 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   modeChipText: {
-    color: GOLD_SOFT,
+    color: p.goldSoft,
     fontSize: 11,
     fontWeight: '800',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   encounterLabel: {
-    color: GOLD,
+    color: p.gold,
     fontSize: 14,
     fontWeight: '800',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   encounterLabelEn: {
-    color: GOLD_SOFT,
+    color: p.goldSoft,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.6,
@@ -441,7 +542,7 @@ const styles = StyleSheet.create({
   monogramOuter: {
     alignItems: 'center',
     backgroundColor: 'rgba(196,163,90,0.12)',
-    borderColor: GOLD,
+    borderColor: p.gold,
     borderRadius: 999,
     borderWidth: 2,
     height: 118,
@@ -450,8 +551,8 @@ const styles = StyleSheet.create({
   },
   monogramInner: {
     alignItems: 'center',
-    backgroundColor: GREEN_DEEP,
-    borderColor: GOLD_SOFT,
+    backgroundColor: p.greenDeep,
+    borderColor: p.goldSoft,
     borderRadius: 999,
     borderWidth: 1,
     height: 96,
@@ -459,19 +560,19 @@ const styles = StyleSheet.create({
     width: 96,
   },
   monogramLetter: {
-    color: GOLD,
+    color: p.gold,
     fontSize: 44,
     fontWeight: '900',
   },
   heroName: {
-    color: CREAM,
+    color: p.cream,
     fontSize: 36,
     fontWeight: '900',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   heroSub: {
-    color: GOLD_SOFT,
+    color: p.goldSoft,
     fontSize: typography.body,
     fontWeight: '700',
     marginTop: 6,
@@ -487,13 +588,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   kinshipLine: {
-    backgroundColor: GOLD,
+    backgroundColor: p.gold,
     height: 1,
     opacity: 0.55,
     width: 36,
   },
   kinshipText: {
-    color: GOLD,
+    color: p.gold,
     fontSize: typography.title,
     fontWeight: '900',
     writingDirection: 'rtl',
@@ -501,7 +602,7 @@ const styles = StyleSheet.create({
   pathBadge: {
     alignSelf: 'center',
     backgroundColor: 'rgba(15,42,36,0.55)',
-    borderColor: GOLD,
+    borderColor: p.gold,
     borderRadius: 999,
     borderWidth: 1,
     marginTop: spacing.md,
@@ -510,7 +611,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   pathBadgeText: {
-    color: GOLD_SOFT,
+    color: p.goldSoft,
     fontSize: 12,
     fontWeight: '800',
     textAlign: 'center',
@@ -522,14 +623,14 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   heroCurveGold: {
-    backgroundColor: GOLD,
+    backgroundColor: p.gold,
     borderTopLeftRadius: 40,
     borderTopRightRadius: 40,
     height: 4,
     opacity: 0.85,
   },
   body: {
-    backgroundColor: CREAM,
+    backgroundColor: p.cream,
     gap: spacing.lg,
     overflow: 'hidden',
     paddingHorizontal: spacing.lg,
@@ -549,14 +650,14 @@ const styles = StyleSheet.create({
     top: 0,
   },
   bodyGlyph: {
-    color: GREEN,
+    color: p.green,
     fontSize: 28,
   },
   section: {
     gap: spacing.sm,
   },
   sectionTitle: {
-    color: GREEN_DEEP,
+    color: p.greenDeep,
     fontSize: typography.title,
     fontWeight: '900',
     textAlign: 'center',
@@ -570,14 +671,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   ornamentLine: {
-    backgroundColor: GOLD,
+    backgroundColor: p.gold,
     flex: 1,
     height: StyleSheet.hairlineWidth,
     maxWidth: 90,
     opacity: 0.7,
   },
   ornamentMark: {
-    color: GOLD,
+    color: p.gold,
     fontSize: 12,
   },
   lineageCol: {
@@ -589,8 +690,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   lineageHex: {
-    backgroundColor: GREEN,
-    borderColor: GOLD,
+    backgroundColor: p.green,
+    borderColor: p.gold,
     borderRadius: 16,
     borderWidth: 1.5,
     minWidth: '70%',
@@ -598,9 +699,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   lineageHexText: {
-    color: CREAM,
+    color: p.cream,
     fontSize: typography.title,
     fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  ringCaption: {
+    color: p.gold,
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 6,
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  loadingNote: {
+    color: p.textMuted,
+    fontSize: typography.body,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
@@ -611,12 +726,12 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   lineageBar: {
-    backgroundColor: GOLD,
+    backgroundColor: p.gold,
     flex: 1,
     width: 2,
   },
   lineageDot: {
-    backgroundColor: GOLD,
+    backgroundColor: p.gold,
     borderRadius: 3,
     height: 6,
     width: 6,
@@ -626,8 +741,8 @@ const styles = StyleSheet.create({
   },
   familyCard: {
     alignItems: 'center',
-    backgroundColor: CREAM_CARD,
-    borderColor: GOLD,
+    backgroundColor: p.surface,
+    borderColor: p.gold,
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row-reverse',
@@ -636,11 +751,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   familyStar: {
-    color: GOLD,
+    color: p.gold,
     fontSize: 14,
   },
   familyName: {
-    color: GREEN_DEEP,
+    color: p.greenDeep,
     flex: 1,
     fontSize: typography.body,
     fontWeight: '900',
@@ -648,8 +763,8 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   infoCard: {
-    backgroundColor: CREAM_CARD,
-    borderColor: GOLD,
+    backgroundColor: p.surface,
+    borderColor: p.gold,
     borderRadius: 16,
     borderWidth: 1,
     gap: spacing.sm,
@@ -663,20 +778,20 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs,
   },
   infoLabel: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     writingDirection: 'rtl',
   },
   infoValue: {
-    color: GREEN_DEEP,
+    color: p.greenDeep,
     fontSize: typography.body,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
   occasionCard: {
     alignItems: 'center',
-    backgroundColor: CREAM_CARD,
-    borderColor: GOLD,
+    backgroundColor: p.surface,
+    borderColor: p.gold,
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: 'row-reverse',
@@ -684,7 +799,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   occasionIcon: {
-    color: GOLD,
+    color: p.gold,
     fontSize: 22,
   },
   occasionText: {
@@ -692,14 +807,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   occasionTitle: {
-    color: GREEN_DEEP,
+    color: p.greenDeep,
     fontSize: typography.body,
     fontWeight: '900',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   occasionMeta: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     textAlign: 'right',
     writingDirection: 'rtl',
@@ -707,4 +822,5 @@ const styles = StyleSheet.create({
   interactWrap: {
     marginTop: spacing.xs,
   },
-});
+  };
+}

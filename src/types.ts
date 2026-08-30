@@ -8,7 +8,11 @@ export type PublicScreen =
   | 'about'
   | 'additions'
   | 'familyLab'
-  | 'person';
+  | 'person'
+  | 'giving'
+  | 'womenAdmin'
+  | 'familyAdmin'
+  | 'delegateInbox';
 
 export type Branch = {
   id: string;
@@ -74,6 +78,8 @@ export type FamilyEvent = {
   imageUrl?: string;
   videoUrl?: string;
   branch: string;
+  branchKey?: string;
+  sourcePhone?: string | null;
   hospitalName?: string;
   hospitalDepartment?: string;
   contactMethod?: 'visit' | 'call' | 'whatsapp' | string;
@@ -82,6 +88,10 @@ export type FamilyEvent = {
   visitDateTo?: string;
   visitTimeFrom?: string;
   visitTimeTo?: string;
+  placeKind?: string;
+  placeName?: string;
+  lat?: number | null;
+  lng?: number | null;
   createdAt?: string;
   showDays?: number | null;
   showAt?: string;

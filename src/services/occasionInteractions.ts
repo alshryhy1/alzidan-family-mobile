@@ -1,4 +1,5 @@
 import { callPublicRpc } from './supabase';
+import { eventFamilyOf, normalizeMobileEventType } from '../utils/eventRequestMessage';
 
 export type OccasionInteractionType = {
   id?: number;
@@ -35,13 +36,58 @@ export type OccasionInboxItem = {
 };
 
 
+const RSVP_TYPES = new Set([
+  'feast',
+  'gathering',
+  'family_meetup',
+  'dinner',
+  'lunch',
+  'general',
+  'finjal_asr',
+  'finjal_isha',
+  'finjal_hawlna',
+]);
+const CEREMONY_TYPES = new Set([
+  'wedding',
+  'contract',
+  'graduation',
+  'promotion',
+  'retirement',
+  'aqiqa',
+]);
+const DROP_REPLY_KEYS = new Set(['inv_details', 'inv_contact']);
+
+export function filterCatalogForType(
+  items: OccasionInteractionType[] | null | undefined,
+  eventType: string,
+) {
+  const typeKey = normalizeMobileEventType(eventType);
+  let list = Array.isArray(items) ? items.slice() : [];
+  list = list.filter((item) => {
+    if (!item || DROP_REPLY_KEYS.has(item.key)) return false;
+    const types = item.applies_to_types;
+    if (Array.isArray(types) && types.length) return types.includes(typeKey);
+    return true;
+  });
+  if (RSVP_TYPES.has(typeKey)) {
+    list = list.filter(
+      (item) =>
+        item.key === 'inv_yes' ||
+        item.key === 'inv_no' ||
+        item.key === 'inv_maybe' ||
+        item.allows_message,
+    );
+  }
+  return list;
+}
+
 export function yourOccasionPhrase(type?: string | null) {
-  const t = String(type || '').trim().toLowerCase();
-  if (t === 'promotion_notice' || t === 'promotion') return 'ترقيتك';
-  if (t === 'graduation_notice' || t === 'graduation') return 'تخرجك';
-  if (t === 'retirement_notice' || t === 'retirement') return 'تقاعدك';
-  if (t === 'marriage' || t === 'wedding' || t === 'contract') return 'زواجك';
-  if (t === 'birth' || t === 'aqiqa') return 'مولودكم';
+  const t = normalizeMobileEventType(type);
+  if (t === 'promotion_notice') return 'ترقيتك';
+  if (t === 'graduation_notice') return 'تخرجك';
+  if (t === 'retirement_notice') return 'تقاعدك';
+  if (t === 'marriage') return 'زواجك';
+  if (t === 'birth') return 'مولودكم';
   if (t === 'new_house') return 'منزلك الجديد';
   if (t === 'success') return 'نجاحك';
   if (t === 'achievement') return 'إنجازك';
@@ -52,9 +98,7 @@ export function yourOccasionPhrase(type?: string | null) {
     return 'حالتك الصحية';
   }
   if (t === 'death' || t === 'condolence') return 'مناسبة العزاء';
-  if (['feast', 'gathering', 'family_meetup', 'dinner', 'lunch', 'general'].includes(t)) {
-    return 'دعوتك';
-  }
+  if (RSVP_TYPES.has(t) || CEREMONY_TYPES.has(t)) return 'دعوتك';
   return 'مناسبتك';
 }
 
@@ -66,49 +110,31 @@ export function trackTitle(track?: string | null) {
 }
 
 export function ctaTitleForType(type?: string | null, person?: string | null) {
-  const t = String(type || '').trim().toLowerCase();
+  const t = normalizeMobileEventType(type);
+  const family = eventFamilyOf(t);
   const name = String(person || '').trim() || 'صاحب المناسبة';
-  if (['sick', 'operation', 'healing', 'discharge', 'safety'].includes(t)) {
+  if (family === 'health' || ['sick', 'operation', 'healing', 'discharge', 'safety'].includes(t)) {
     return `شارك في الدعاء لـ ${name}`;
   }
-  if (t === 'death' || t === 'condolence') return 'شارك الدعاء والمواساة';
-  if (['feast', 'gathering', 'family_meetup', 'dinner', 'lunch', 'general'].includes(t)) {
+  if (family === 'death' || t === 'death' || t === 'condolence') return 'شارك الدعاء والمواساة';
+  if (family === 'occasion' || RSVP_TYPES.has(t) || CEREMONY_TYPES.has(t)) {
     return `رد على دعوة ${name}`;
   }
-  return `شارك ${name} فرحته`;
+  return `شارك ${name} تهنئته`;
 }
 
 export async function fetchOccasionInteractionCatalog(eventType: string) {
-  const family =
-    ['sick', 'operation', 'healing', 'discharge', 'safety'].includes(eventType)
-      ? 'health'
-      : ['death', 'condolence'].includes(eventType)
-        ? 'death'
-        : [
-              'wedding',
-              'contract',
-              'graduation',
-              'aqiqa',
-              'feast',
-              'gathering',
-              'family_meetup',
-              'promotion',
-              'retirement',
-              'dinner',
-              'lunch',
-              'general',
-            ].includes(eventType)
-          ? 'occasion'
-          : 'news';
+  const typeKey = normalizeMobileEventType(eventType);
+  const family = eventFamilyOf(typeKey);
 
   const data = await callPublicRpc<OccasionInteractionType[] | { error?: string }>(
     'occasion_interaction_catalog_v1',
     {
-      p_event_type: eventType,
+      p_event_type: typeKey,
       p_family: family,
     },
   );
-  if (Array.isArray(data)) return data;
+  if (Array.isArray(data)) return filterCatalogForType(data, typeKey);
   return [];
 }
 

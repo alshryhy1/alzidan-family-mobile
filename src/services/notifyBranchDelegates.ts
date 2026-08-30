@@ -11,6 +11,8 @@ const DELEGATE_NOTIFY_KINDS = new Set([
   'tree_card',
   'add_person',
   'tree_edit',
+  'member_phone_register',
+  'member_registration',
   'memory_card',
   'memory',
   'tree_founder',

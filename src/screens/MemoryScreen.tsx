@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AppState, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Image, Linking, Pressable, Text, TextInput, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { DataState } from '../components/DataState';
@@ -14,7 +14,9 @@ import {
   type MemoryReaction,
   type MemoryUiKind,
 } from '../services/memory';
-import { colors, scene, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useTheme, useThemePalette } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch } from '../types';
 
 type IndexFilterKind = 'all' | MemoryUiKind;
@@ -127,6 +129,7 @@ function statFromItems(items: MemoryItem[]) {
 }
 
 function StoryMedia({ item }: { item: MemoryItem }) {
+  const styles = useThemedStyles(memoryStyles);
   const body = cleanText(item.storyText || item.description);
   if (!body) return null;
 
@@ -134,6 +137,7 @@ function StoryMedia({ item }: { item: MemoryItem }) {
 }
 
 function MemoryVideo({ uri }: { uri: string }) {
+  const styles = useThemedStyles(memoryStyles);
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
   });
@@ -160,6 +164,7 @@ function MediaTile({
   onViewImage: (uri: string, caption: string) => void;
   url: string;
 }) {
+  const styles = useThemedStyles(memoryStyles);
   const text = cleanText(caption) || `فتح ${mediaTypeLabel(kind)}`;
 
   if (!url) return null;
@@ -208,6 +213,7 @@ function MemoryCard({
   onSelectPerson: (person: PersonSummary) => void;
   onViewImage: (uri: string, caption: string) => void;
 }) {
+  const styles = useThemedStyles(memoryStyles);
   const person: PersonSummary = {
     key: personKey(item),
     personId: cleanText(item.personId),
@@ -263,6 +269,7 @@ function MemoryCard({
 }
 
 function ReactionCard({ reaction, title }: { reaction: MemoryReaction; title: string }) {
+  const styles = useThemedStyles(memoryStyles);
   return (
     <SectionCard>
       <Text style={styles.memoryTitle}>{reaction.reactionType === 'dua' ? 'دعاء' : 'تعليق'}</Text>
@@ -277,6 +284,9 @@ function ReactionCard({ reaction, title }: { reaction: MemoryReaction; title: st
 }
 
 export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
+  const { occasionSocialEnabled } = useTheme();
+  const p = useThemePalette();
+  const styles = useThemedStyles(memoryStyles);
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -404,8 +414,22 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
 
   const stat = useMemo(() => statFromItems(items), [items]);
 
+  const personDetailFilters = useMemo(
+    () =>
+      occasionSocialEnabled
+        ? detailKindFilters
+        : detailKindFilters.filter((entry) => entry.key !== 'reaction'),
+    [occasionSocialEnabled],
+  );
+
   useEffect(() => {
-    if (!selectedPerson) {
+    if (!occasionSocialEnabled && detailKind === 'reaction') {
+      setDetailKind('all');
+    }
+  }, [detailKind, occasionSocialEnabled]);
+
+  useEffect(() => {
+    if (!occasionSocialEnabled || !selectedPerson) {
       setPersonReactions([]);
       setLoadingReactions(false);
       setReactionsError('');
@@ -442,7 +466,7 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
     return () => {
       alive = false;
     };
-  }, [personItems, selectedPerson]);
+  }, [occasionSocialEnabled, personItems, selectedPerson]);
 
   const reactionTitleByMemory = useMemo(() => {
     const map = new Map<string, string>();
@@ -500,7 +524,7 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
         </SceneSection>
 
         <View style={styles.filterWrap}>
-          {detailKindFilters.map((entry) => {
+          {personDetailFilters.map((entry) => {
             const active = detailKind === entry.key;
             return (
               <Pressable
@@ -514,7 +538,7 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
           })}
         </View>
 
-        {detailKind === 'reaction' ? (
+        {occasionSocialEnabled && detailKind === 'reaction' ? (
           <>
             <DataState error={reactionsError || null} loading={loadingReactions} onRetry={load} />
             {!loadingReactions && !reactionsError && personReactions.length === 0 ? (
@@ -600,7 +624,7 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
         <TextInput
           onChangeText={setQuery}
           placeholder="ابحث باسم الشخص أو عنوان المادة"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={p.textMuted}
           style={styles.input}
           value={query}
         />
@@ -688,7 +712,7 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
             ))}
           </SceneSection>
 
-          <MemorySubmitPanel branches={branchList} />
+          {occasionSocialEnabled ? <MemorySubmitPanel branches={branchList} /> : null}
         </>
       ) : null}
     </SceneShell>
@@ -697,7 +721,8 @@ export function MemoryScreen({ branches: branchList }: { branches: Branch[] }) {
   );
 }
 
-const styles = StyleSheet.create({
+function memoryStyles(p: ThemePalette) {
+  return {
   statsGrid: {
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',
@@ -705,39 +730,39 @@ const styles = StyleSheet.create({
   },
   statBox: {
     alignItems: 'center',
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
     borderRadius: 14,
     minWidth: 92,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   statValue: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.title,
     fontWeight: '800',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   statLabel: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     fontWeight: '700',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   statTitle: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   input: {
-    backgroundColor: colors.white,
-    borderColor: colors.border,
+    backgroundColor: p.white,
+    borderColor: p.border,
     borderRadius: 14,
     borderWidth: 1,
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     minHeight: 48,
     paddingHorizontal: spacing.sm,
@@ -758,45 +783,45 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   filterChipActive: {
-    backgroundColor: scene.green,
-    borderColor: scene.green,
+    backgroundColor: p.green,
+    borderColor: p.green,
   },
   filterChipText: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.caption,
     fontWeight: '700',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
   filterChipTextActive: {
-    color: colors.white,
+    color: p.white,
   },
   memoryHeader: {
     gap: 4,
   },
   memoryTitle: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.title,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   memoryMeta: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     lineHeight: 20,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   memoryBody: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     lineHeight: 24,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   source: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.caption,
     fontWeight: '700',
     lineHeight: 20,
@@ -807,7 +832,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   image: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: p.surfaceMuted,
     borderRadius: 14,
     height: 210,
     width: '100%',
@@ -819,19 +844,19 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   mediaCaption: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   fileLink: {
-    backgroundColor: colors.accentSoft,
+    backgroundColor: p.accentSoft,
     borderRadius: 12,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   fileLinkText: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.caption,
     fontWeight: '700',
     textAlign: 'right',
@@ -839,20 +864,20 @@ const styles = StyleSheet.create({
   },
   personTag: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
     borderRadius: 999,
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
   },
   personTagText: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.caption,
     fontWeight: '700',
     writingDirection: 'rtl',
   },
   personCard: {
     alignItems: 'center',
-    backgroundColor: scene.creamLift,
+    backgroundColor: p.creamLift,
     borderColor: 'rgba(196,163,90,0.4)',
     borderRadius: 20,
     borderWidth: 1,
@@ -863,8 +888,8 @@ const styles = StyleSheet.create({
   },
   personSeal: {
     alignItems: 'center',
-    backgroundColor: scene.green,
-    borderColor: scene.gold,
+    backgroundColor: p.green,
+    borderColor: p.gold,
     borderRadius: 22,
     borderWidth: 1,
     height: 44,
@@ -872,7 +897,7 @@ const styles = StyleSheet.create({
     width: 44,
   },
   personSealLetter: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 18,
     fontWeight: '800',
   },
@@ -881,14 +906,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   personName: {
-    color: colors.text,
+    color: p.text,
     fontSize: typography.body,
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   personMeta: {
-    color: colors.textMuted,
+    color: p.textMuted,
     fontSize: typography.caption,
     lineHeight: 20,
     textAlign: 'right',
@@ -896,13 +921,13 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.primarySoft,
+    backgroundColor: p.primarySoft,
     borderRadius: 12,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   backButtonText: {
-    color: colors.primaryDark,
+    color: p.primaryDark,
     fontSize: typography.caption,
     fontWeight: '700',
     writingDirection: 'rtl',
@@ -916,13 +941,13 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   featuredLabel: {
-    color: scene.gold,
+    color: p.gold,
     fontSize: 12,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
   featuredTitle: {
-    color: scene.creamLift,
+    color: p.creamLift,
     fontSize: 24,
     fontWeight: '800',
     lineHeight: 34,
@@ -930,12 +955,12 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
   featuredPerson: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 14,
     writingDirection: 'rtl',
   },
   featuredEmpty: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 15,
     textAlign: 'right',
     writingDirection: 'rtl',
@@ -945,22 +970,23 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   heroLineage: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 14,
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   backChip: {
-    borderColor: scene.gold,
+    borderColor: p.gold,
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 7,
   },
   backChipText: {
-    color: scene.goldSoft,
+    color: p.goldSoft,
     fontSize: 12,
     fontWeight: '800',
     writingDirection: 'rtl',
   },
-});
+  };
+}

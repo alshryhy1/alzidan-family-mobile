@@ -128,10 +128,15 @@ function mergeChildMeta(prev: TreeChild, next: TreeChild): TreeChild {
 /**
  * Groups branch child rows under canonical parent path keys, matching web merge behavior.
  */
-export function groupChildrenRows(rows: TreeChild[], branchKey: string): Map<string, TreeChild[]> {
-  const publicRows = (Array.isArray(rows) ? rows : []).filter(
-    (row) => !isPublicLineageHiddenPerson(row),
-  );
+export function groupChildrenRows(
+  rows: TreeChild[],
+  branchKey: string,
+  opts?: { includePubliclyHidden?: boolean },
+): Map<string, TreeChild[]> {
+  const source = Array.isArray(rows) ? rows : [];
+  const publicRows = opts?.includePubliclyHidden
+    ? source
+    : source.filter((row) => !isPublicLineageHiddenPerson(row));
   const key = normalizePersonName(branchKey || '');
   const branchRoot = key ? getBranchRootName(key) : '';
   const byParent = new Map<string, TreeChild[]>();

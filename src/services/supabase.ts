@@ -3,13 +3,21 @@ import * as FileSystem from 'expo-file-system/legacy';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
+type HeaderProvider = () => Promise<Record<string, string>> | Record<string, string>;
+
+let rpcHeaderProvider: HeaderProvider = async () => ({});
+
+export function setRpcHeaderProvider(provider: HeaderProvider) {
+  rpcHeaderProvider = provider;
+}
+
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
 }
 
 export async function selectPublicRows<T>(path: string): Promise<T[]> {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
   const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
@@ -30,7 +38,7 @@ export async function selectPublicRows<T>(path: string): Promise<T[]> {
 
 export async function insertPublicRow(path: string, row: Record<string, unknown>) {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
   const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
@@ -56,7 +64,7 @@ export async function insertPublicRowReturning<T extends Record<string, unknown>
   row: Record<string, unknown>,
 ) {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
   const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
@@ -83,7 +91,7 @@ export async function insertPublicRowReturning<T extends Record<string, unknown>
 
 export async function upsertPublicRow(path: string, row: Record<string, unknown>, onConflict: string) {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
   const separator = path.includes('?') ? '&' : '?';
@@ -110,9 +118,10 @@ export async function callPublicRpc<T = Record<string, unknown>>(
   args: Record<string, unknown>,
 ): Promise<T> {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
+  const extraHeaders = await rpcHeaderProvider();
   const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${functionName}`, {
     method: 'POST',
     headers: {
@@ -120,6 +129,7 @@ export async function callPublicRpc<T = Record<string, unknown>>(
       Authorization: `Bearer ${supabaseAnonKey}`,
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      ...extraHeaders,
     },
     body: JSON.stringify(args),
   });
@@ -130,6 +140,35 @@ export async function callPublicRpc<T = Record<string, unknown>>(
   }
 
   return response.json() as Promise<T>;
+}
+
+export function classifyPublicRpcError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || '');
+  const blob = raw.toLowerCase();
+  if (
+    blob.includes('pgrst202') ||
+    blob.includes('could not find the function') ||
+    blob.includes('schema cache')
+  ) {
+    return 'rpc_missing';
+  }
+  if (blob.includes('device_required')) return 'device_required';
+  if (blob.includes('pgrst204') || blob.includes('column')) return 'rpc_missing';
+  if (blob.includes('22p02') || blob.includes('invalid input syntax for type uuid')) {
+    return 'bad_request';
+  }
+  if (blob.includes('42501') || blob.includes('permission denied')) return 'rpc_missing';
+  try {
+    const parsed = JSON.parse(raw) as { code?: string; message?: string; hint?: string };
+    const code = String(parsed.code || '').toLowerCase();
+    const msg = `${parsed.message || ''} ${parsed.hint || ''}`.toLowerCase();
+    if (code === 'pgrst202' || msg.includes('could not find the function')) return 'rpc_missing';
+    if (code === '22p02') return 'bad_request';
+    if (msg.includes('device_required')) return 'device_required';
+  } catch {
+    // body was not json
+  }
+  return 'rpc_failed';
 }
 
 function publicStorageUrl(bucket: string, path: string) {
@@ -170,7 +209,7 @@ export async function uploadPublicFile(
   contentType: string,
 ) {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
   const objectUrl = storageObjectUrl(bucket, path);
@@ -201,7 +240,7 @@ export async function uploadPublicFileUri(
   contentType: string,
 ) {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
   const objectUrl = storageObjectUrl(bucket, path);
@@ -274,7 +313,7 @@ export async function invokePublicEdgeFunction(
   body: Record<string, unknown>,
 ) {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('إعداد اتصال Supabase غير مكتمل.');
+    throw new Error('تعذر الاتصال الآن. حاول مرة أخرى.');
   }
 
   const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {

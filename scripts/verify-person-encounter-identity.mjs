@@ -288,7 +288,7 @@ function effectiveParentName(person) {
 }
 
 function resolveProvenKinshipLabel(viewer, target, maternalLabel) {
-  const maternal = String(maternalLabel || '').trim();
+  let maternal = String(maternalLabel || '').trim();
   if (!target) return maternal || null;
   if (!viewer) return maternal || null;
   if (Number(viewer.id) && Number(target.id) && Number(viewer.id) === Number(target.id)) return null;
@@ -297,6 +297,7 @@ function resolveProvenKinshipLabel(viewer, target, maternalLabel) {
   if (!viewerNode || !targetNode) return maternal || null;
   const viewerParent = normalizePathKey(effectiveParentName(viewer));
   const targetParent = normalizePathKey(effectiveParentName(target));
+  if (maternal === 'ابن أختك') maternal = '';
   if (viewerParent && viewerParent === targetNode) return 'أبوك';
   if (targetParent && targetParent === viewerNode) return 'ابنك';
   if (maternal === 'ابنك') return 'ابنك';
@@ -400,7 +401,8 @@ const nephew = {
 assert.equal(resolveProvenKinshipLabel(hasan, nephew), 'ابن أخيك');
 assert.equal(
   resolveProvenKinshipLabel(hasan, nephew, 'ابن أختك'),
-  'ابن أختك',
+  'ابن أخيك',
+  'تسمية ابن أختك لا تُقبل إن كان الأب أخاً لا أختاً',
 );
 assert.equal(
   resolveProvenKinshipLabel(null, nephew, 'ابن أختك'),

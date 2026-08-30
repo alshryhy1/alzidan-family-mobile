@@ -1,8 +1,10 @@
 import type { PropsWithChildren } from 'react';
 import type { RefObject } from 'react';
+import { useMemo } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemePalette } from '../theme/ThemeContext';
 
 type ScreenProps = PropsWithChildren<{
   title: string;
@@ -12,6 +14,33 @@ type ScreenProps = PropsWithChildren<{
   scrollRef?: RefObject<ScrollView | null>;
 }>;
 
+function screenStyles(p: ThemePalette) {
+  return StyleSheet.create({
+    content: {
+      gap: spacing.lg,
+      padding: spacing.lg,
+      paddingBottom: spacing.xxl,
+    },
+    heading: {
+      gap: spacing.xs,
+    },
+    title: {
+      color: p.text,
+      fontSize: typography.heading,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    description: {
+      color: p.textMuted,
+      fontSize: typography.body,
+      lineHeight: 23,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+  });
+}
+
 export function Screen({
   children,
   title,
@@ -20,6 +49,8 @@ export function Screen({
   refreshing = false,
   scrollRef,
 }: ScreenProps) {
+  const p = useThemePalette();
+  const styles = useMemo(() => screenStyles(p), [p]);
   return (
     <ScrollView
       ref={scrollRef}
@@ -30,10 +61,10 @@ export function Screen({
       refreshControl={
         onRefresh ? (
           <RefreshControl
-            colors={[colors.primary]}
+            colors={[p.primary]}
             onRefresh={onRefresh}
             refreshing={refreshing}
-            tintColor={colors.primary}
+            tintColor={p.primary}
           />
         ) : undefined
       }
@@ -49,28 +80,3 @@ export function Screen({
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    gap: spacing.lg,
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  heading: {
-    gap: spacing.xs,
-  },
-  title: {
-    color: colors.text,
-    fontSize: typography.heading,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  description: {
-    color: colors.textMuted,
-    fontSize: typography.body,
-    lineHeight: 23,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-});

@@ -51,10 +51,14 @@ function mergeTreeMeta(prev: TreeChild, next: TreeChild): TreeChild {
  * unique people after grouping, excluding the branch root.
  * Living drops when a person is marked متوفى, and rises when a living child is added.
  */
-export function collectBranchTreeStats(rows: TreeChild[], branchKey: string): BranchTreeStats {
+export function collectBranchTreeStats(
+  rows: TreeChild[],
+  branchKey: string,
+  opts?: { includePubliclyHidden?: boolean },
+): BranchTreeStats {
   const key = normalizePersonName(branchKey);
   const root = getBranchRootName(key);
-  const grouped = groupChildrenRows(rows, key);
+  const grouped = groupChildrenRows(rows, key, opts);
   const metaById = new Map<string, TreeChild>();
   const nodes = new Set<string>();
 
