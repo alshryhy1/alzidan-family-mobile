@@ -444,6 +444,7 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
   const [matches, setMatches] = useState<FamilyAdminPerson[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [searchScope, setSearchScope] = useState<'auto' | 'all' | 'branch'>('auto');
   const [busyId, setBusyId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -473,7 +474,7 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
   }, [load]);
 
   const runSearch = useCallback(
-    async (rawQuery: string) => {
+    async (rawQuery: string, scope: 'auto' | 'all' | 'branch' = searchScope) => {
       if (!selected) return;
       const q = rawQuery.trim() || leafName(selected.name);
       if (q.length < 2) {
@@ -485,11 +486,14 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
       setSearching(true);
       onError('');
       try {
-        const next = await searchFamilyAdminPeopleSmart(phone, q, selected.name, selected.branchKey);
+        const next = await searchFamilyAdminPeopleSmart(phone, q, selected.name, selected.branchKey, scope);
         setMatches(next);
         setHasSearched(true);
+        setSearchScope(scope);
         if (!next.length) {
-          onError('لم يُعثر على شخص مطابق. جرّب اسمًا أقصر أو صحّح الاسم في تبويب أشخاص.');
+          onError(
+            'لم يُعثر على شخص في الشجرة — لا يمكن الاعتماد حتى يظهر اسم مطابق. جرّب «بحث في كل الفروع» أو الاسم الأخير فقط، أو صحّح الشجرة من الموقع.',
+          );
         }
       } catch (error) {
         setHasSearched(false);
@@ -498,7 +502,7 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
         setSearching(false);
       }
     },
-    [onError, phone, selected],
+    [onError, phone, searchScope, selected],
   );
 
   useEffect(() => {
@@ -659,7 +663,18 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
                 }}
               />
               <ActionButton label={searching ? 'جاري البحث…' : 'بحث'} onPress={() => void runSearch(query)} />
+              <ActionButton
+                label={searching ? 'جاري البحث…' : 'بحث في كل الفروع'}
+                onPress={() => void runSearch(query, 'all')}
+                variant="secondary"
+              />
               {searching ? <Text style={styles.meta}>جاري البحث في الشجرة…</Text> : null}
+              {hasSearched && !searching ? (
+                <Text style={styles.meta}>
+                  نتائج البحث: {matches.length}
+                  {searchScope === 'all' ? ' · كل الفروع' : selected.branchKey ? ` · فرع ${selected.branchKey}` : ''}
+                </Text>
+              ) : null}
               {suggestedBind ? (
                 <ActionButton
                   label={
@@ -671,9 +686,15 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
                 />
               ) : null}
               {hasSearched && !searching && matches.length === 0 ? (
-                <Text style={styles.warn}>
-                  لا يوجد شخص مطابق في الشجرة. عدّل الاسم وأعد البحث، أو صحّح بيانات الشخص من تبويب أشخاص.
-                </Text>
+                <View style={styles.blockedBox}>
+                  <Text style={styles.blockedTitle}>لا يمكن الاعتماد الآن</Text>
+                  <Text style={styles.blockedBody}>
+                    البحث لم يجد شخصًا في الشجرة بهذا الاسم. زر «رفض» يعمل، لكن «اعتماد وربط» يظهر فقط بعد ظهور نتيجة.
+                  </Text>
+                  <Text style={styles.blockedBody}>
+                    إن كان الاسم صحيحًا: شغّل على Supabase ملف COPY-ME-family-admin-search-patch-v1.sql ثم أعد البحث.
+                  </Text>
+                </View>
               ) : null}
               {hasSearched && !searching && matches.length > 1 && !suggestedBind ? (
                 <Text style={styles.meta}>عدة نتائج — اختر الشخص الصحيح:</Text>
@@ -972,6 +993,31 @@ function familyAdminStyles(p: ThemePalette) {
     },
     hint: {
       color: p.textMuted,
+      fontSize: 14,
+      fontWeight: '600' as const,
+      lineHeight: 22,
+      textAlign: 'right' as const,
+      writingDirection: 'rtl' as const,
+    },
+    blockedBox: {
+      backgroundColor: p.surface,
+      borderColor: p.condolence,
+      borderRadius: 16,
+      borderWidth: 1,
+      gap: spacing.xs,
+      marginTop: spacing.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    blockedTitle: {
+      color: p.condolence,
+      fontSize: 15,
+      fontWeight: '800' as const,
+      textAlign: 'right' as const,
+      writingDirection: 'rtl' as const,
+    },
+    blockedBody: {
+      color: p.text,
       fontSize: 14,
       fontWeight: '600' as const,
       lineHeight: 22,

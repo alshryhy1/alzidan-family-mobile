@@ -230,32 +230,34 @@ export async function searchFamilyAdminPeopleSmart(
   query: string,
   requestName: string,
   branchKey?: string | null,
+  scope: 'auto' | 'all' | 'branch' = 'auto',
 ): Promise<FamilyAdminPerson[]> {
   const attempts = familyAdminSearchAttempts(query, requestName);
   const branch = branchKey ? String(branchKey).trim() : null;
   let lastError: unknown = null;
   const merged: FamilyAdminPerson[] = [];
 
-  for (const attempt of attempts) {
-    try {
-      const rows = await searchFamilyAdminPeople(adminPhone, attempt, branch);
-      merged.push(...rows);
-      if (merged.length) return mergeFamilyAdminPeople(merged);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  if (branch) {
+  const runAttempts = async (branchFilter: string | null) => {
     for (const attempt of attempts) {
       try {
-        const rows = await searchFamilyAdminPeople(adminPhone, attempt, null);
+        const rows = await searchFamilyAdminPeople(adminPhone, attempt, branchFilter);
         merged.push(...rows);
-        if (merged.length) return mergeFamilyAdminPeople(merged);
+        if (merged.length) return true;
       } catch (error) {
         lastError = error;
       }
     }
+    return false;
+  };
+
+  // Request branch_key is often submitter-selected — search all branches first.
+  if (scope === 'all') {
+    if (await runAttempts(null)) return mergeFamilyAdminPeople(merged);
+  } else if (scope === 'branch' && branch) {
+    if (await runAttempts(branch)) return mergeFamilyAdminPeople(merged);
+  } else {
+    if (await runAttempts(null)) return mergeFamilyAdminPeople(merged);
+    if (branch && (await runAttempts(branch))) return mergeFamilyAdminPeople(merged);
   }
 
   if (lastError) throw lastError;

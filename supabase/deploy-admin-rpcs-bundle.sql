@@ -236,6 +236,7 @@ declare
   v_gate jsonb;
   v_q text;
   v_branch text;
+  v_leaf text;
 begin
   v_gate := public.family_admin_require_v1(p_phone);
   if coalesce((v_gate->>'ok')::boolean, false) is not true then
@@ -249,6 +250,7 @@ begin
   if v_q is null or char_length(v_q) < 2 then
     return jsonb_build_object('ok', true, 'need_query', true, 'rows', '[]'::jsonb);
   end if;
+  v_leaf := nullif(btrim(regexp_replace(v_q, '^.*/', '')), '');
 
   return jsonb_build_object(
     'ok', true,
@@ -278,6 +280,16 @@ begin
           and (
             position(v_q in coalesce(c.child_name, to_jsonb(c)->>'name', '')) > 0
             or coalesce(c.child_name, to_jsonb(c)->>'name', '') ilike '%' || v_q || '%'
+            or (
+              v_leaf is not null
+              and regexp_replace(coalesce(c.child_name, to_jsonb(c)->>'name', ''), '^.*/', '') ilike '%' || v_leaf || '%'
+            )
+            or exists (
+              select 1
+              from unnest(regexp_split_to_array(v_q, '\s+')) as w(word)
+              where char_length(btrim(w.word)) >= 2
+                and coalesce(c.child_name, to_jsonb(c)->>'name', '') ilike '%' || btrim(w.word) || '%'
+            )
           )
         order by c.id desc
         limit 40
