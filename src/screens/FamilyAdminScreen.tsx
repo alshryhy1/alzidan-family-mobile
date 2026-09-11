@@ -16,6 +16,7 @@ import {
   isFamilyAdminMemberRequest,
   rejectFamilyAdminRequest,
   searchFamilyAdminPeople,
+  searchFamilyAdminPeopleSmart,
   setFamilyAdminDelegateEnabled,
   setFamilyAdminDelegateRole,
   setFamilyAdminPhone,
@@ -484,9 +485,12 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
       setSearching(true);
       onError('');
       try {
-        const next = await searchFamilyAdminPeople(phone, q);
+        const next = await searchFamilyAdminPeopleSmart(phone, q, selected.name, selected.branchKey);
         setMatches(next);
         setHasSearched(true);
+        if (!next.length) {
+          onError('لم يُعثر على شخص مطابق. جرّب اسمًا أقصر أو صحّح الاسم في تبويب أشخاص.');
+        }
       } catch (error) {
         setHasSearched(false);
         onError(familyAdminActionMessage(error));
@@ -527,10 +531,13 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
     try {
       await rejectFamilyAdminRequest(phone, row.id);
       notifySubmitter(row, 'rejected');
+      Alert.alert('تم الرفض', 'رُفض الطلب من السيرفر.');
       setSelected(null);
       await load();
     } catch (error) {
-      onError(familyAdminActionMessage(error));
+      const message = familyAdminActionMessage(error);
+      onError(message);
+      Alert.alert('تعذر الرفض', message);
     } finally {
       setBusyId(null);
     }
@@ -569,7 +576,9 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
       setMatches([]);
       await load();
     } catch (error) {
-      onError(familyAdminActionMessage(error));
+      const message = familyAdminActionMessage(error);
+      onError(message);
+      Alert.alert('تعذر الاعتماد', message);
     } finally {
       setBusyId(null);
     }

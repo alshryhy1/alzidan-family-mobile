@@ -7,7 +7,7 @@ import {
   FamilyAdminRpcMissingError,
   fetchFamilyAdminRequests,
   fetchFamilyAdminSession,
-  searchFamilyAdminPeople,
+  searchFamilyAdminPeopleSmart,
 } from './familyAdmin';
 import {
   WomenManagerRpcMissingError,
@@ -53,7 +53,7 @@ export async function probeFamilyAdminBackend(phone: string): Promise<AdminBacke
   }
   try {
     await fetchFamilyAdminRequests(cleaned);
-    await searchFamilyAdminPeople(cleaned, PROBE_QUERY);
+    await searchFamilyAdminPeopleSmart(cleaned, PROBE_QUERY, PROBE_QUERY);
     return { surface: 'family', ready: true, sessionEnabled: true, message: '' };
   } catch (error) {
     if (error instanceof FamilyAdminRpcMissingError) {

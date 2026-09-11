@@ -1,3 +1,4 @@
+import { familyAdminSearchAttempts, mergeFamilyAdminPeople } from '../utils/familyAdminSearch';
 import { callPublicRpc } from './supabase';
 
 export type FamilyAdminSession = {
@@ -164,10 +165,11 @@ function throwIfMissingRpc(error: unknown): never {
   throw error instanceof Error ? error : new Error(message || 'تعذر الاتصال.');
 }
 
-function assertOk(row: ActionRpc | undefined) {
+function assertOk(row: ActionRpc | SearchRpc | ListRpc | undefined) {
   if (!row) throw new FamilyAdminRpcMissingError();
   if (row.error === 'sql_missing') throw new FamilyAdminRpcMissingError();
   if (row.ok === false) throw new Error(row.error || 'not_allowed');
+  if (row.error && row.error !== 'need_query') throw new Error(row.error);
 }
 
 export async function fetchFamilyAdminSession(phone: string): Promise<FamilyAdminSession> {
@@ -221,6 +223,43 @@ export async function searchFamilyAdminPeople(
   }
   assertOk(row);
   return (row?.rows || []).map(mapPerson).filter((item): item is FamilyAdminPerson => Boolean(item));
+}
+
+export async function searchFamilyAdminPeopleSmart(
+  adminPhone: string,
+  query: string,
+  requestName: string,
+  branchKey?: string | null,
+): Promise<FamilyAdminPerson[]> {
+  const attempts = familyAdminSearchAttempts(query, requestName);
+  const branch = branchKey ? String(branchKey).trim() : null;
+  let lastError: unknown = null;
+  const merged: FamilyAdminPerson[] = [];
+
+  for (const attempt of attempts) {
+    try {
+      const rows = await searchFamilyAdminPeople(adminPhone, attempt, branch);
+      merged.push(...rows);
+      if (merged.length) return mergeFamilyAdminPeople(merged);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (branch) {
+    for (const attempt of attempts) {
+      try {
+        const rows = await searchFamilyAdminPeople(adminPhone, attempt, null);
+        merged.push(...rows);
+        if (merged.length) return mergeFamilyAdminPeople(merged);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastError) throw lastError;
+  return [];
 }
 
 export async function updateFamilyAdminPerson(args: {
