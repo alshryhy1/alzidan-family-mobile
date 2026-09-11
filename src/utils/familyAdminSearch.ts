@@ -19,7 +19,16 @@ export function familyAdminSearchAttempts(query: string, requestName: string) {
     .map((part) => part.trim())
     .filter((part) => part.length >= 2);
   const leaf = full.includes('/') ? full.split('/').pop()?.trim() || '' : parts.at(-1) || '';
-  return uniqueStrings([full, leaf, ...parts, parts.slice(-2).join(' '), parts.slice(-3).join(' ')]);
+  const attempts: string[] = [full, leaf, ...parts, parts.slice(-2).join(' '), parts.slice(-3).join(' ')];
+
+  if (parts.length >= 3) {
+    attempts.push(parts[2], `${parts[0]} ${parts[2]}`, `${parts[1]} ${parts[2]}`);
+  }
+  if (parts.length >= 2) {
+    attempts.push(parts[parts.length - 1], parts[0]);
+  }
+
+  return uniqueStrings(attempts);
 }
 
 export function mergeFamilyAdminPeople(rows: FamilyAdminPerson[]) {
