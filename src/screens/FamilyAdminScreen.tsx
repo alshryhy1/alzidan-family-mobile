@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
+import { AdminBackendStatusBanner } from '../components/AdminBackendStatus';
 import { ActionButton } from '../components/ActionButton';
 import { PhoneField } from '../components/PhoneField';
 import { SceneSection, SceneShell } from '../components/scene';
@@ -8,8 +9,6 @@ import {
   approveFamilyAdminRequest,
   bindFamilyAdminRequest,
   familyAdminActionMessage,
-  familyAdminDelegatesSqlHint,
-  FamilyAdminRpcMissingError,
   fetchFamilyAdminDelegates,
   fetchFamilyAdminDevices,
   fetchFamilyAdminRequests,
@@ -112,9 +111,7 @@ export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps
   const styles = useThemedStyles(familyAdminStyles);
   const phone = String(adminPhone || '').trim();
   const [tab, setTab] = useState<TabKey>('people');
-  const [sqlMissing, setSqlMissing] = useState(false);
   const [errorText, setErrorText] = useState('');
-  const markSqlMissing = useCallback(() => setSqlMissing(true), []);
 
   return (
     <SceneShell
@@ -127,8 +124,9 @@ export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps
       </Pressable>
       <SceneSection>
         <Text style={styles.lead}>
-          قبول ورفض طلبات الجوال والعضوية والمناديب، وتعديل صلاحيات المندوب كما في الموقع. الاستيراد والزوجات وبطاقة الشجرة تبقى في الموقع.
+          قبول ورفض طلبات الجوال والعضوية والمناديب، وتعديل صلاحيات المندوب — كل إجراء يُنفَّذ مباشرة على السيرفر من هذا الجهاز. الاستيراد والزوجات وبطاقة الشجرة تبقى في الموقع.
         </Text>
+        {phone ? <AdminBackendStatusBanner surface="family" phone={phone} /> : null}
       </SceneSection>
       <View style={styles.tabs}>
         {TABS.map((item) => {
@@ -147,51 +145,22 @@ export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps
           );
         })}
       </View>
-      {!phone ? (
-        <Text style={styles.warn}>لا توجد جلسة جوال لهذا المدخل.</Text>
-      ) : sqlMissing ? (
-        <Text style={styles.warn}>{familyAdminActionMessage(new FamilyAdminRpcMissingError())}</Text>
-      ) : null}
+      {!phone ? <Text style={styles.warn}>لا توجد جلسة جوال لهذا المدخل.</Text> : null}
       {errorText ? <Text style={styles.warn}>{errorText}</Text> : null}
-      {phone && !sqlMissing && tab === 'people' ? (
-        <PeopleTab
-          phone={phone}
-          styles={styles}
-          onSqlMissing={markSqlMissing}
-          onError={setErrorText}
-        />
+      {phone && tab === 'people' ? (
+        <PeopleTab phone={phone} styles={styles} onError={setErrorText} />
       ) : null}
-      {phone && !sqlMissing && tab === 'phones' ? (
-        <PhonesTab
-          phone={phone}
-          styles={styles}
-          onSqlMissing={markSqlMissing}
-          onError={setErrorText}
-        />
+      {phone && tab === 'phones' ? (
+        <PhonesTab phone={phone} styles={styles} onError={setErrorText} />
       ) : null}
-      {phone && !sqlMissing && tab === 'requests' ? (
-        <RequestsTab
-          phone={phone}
-          styles={styles}
-          onSqlMissing={markSqlMissing}
-          onError={setErrorText}
-        />
+      {phone && tab === 'requests' ? (
+        <RequestsTab phone={phone} styles={styles} onError={setErrorText} />
       ) : null}
-      {phone && !sqlMissing && tab === 'delegates' ? (
-        <DelegatesTab
-          phone={phone}
-          styles={styles}
-          onSqlMissing={markSqlMissing}
-          onError={setErrorText}
-        />
+      {phone && tab === 'delegates' ? (
+        <DelegatesTab phone={phone} styles={styles} onError={setErrorText} />
       ) : null}
-      {phone && !sqlMissing && tab === 'devices' ? (
-        <DevicesTab
-          phone={phone}
-          styles={styles}
-          onSqlMissing={markSqlMissing}
-          onError={setErrorText}
-        />
+      {phone && tab === 'devices' ? (
+        <DevicesTab phone={phone} styles={styles} onError={setErrorText} />
       ) : null}
     </SceneShell>
   );
@@ -200,11 +169,10 @@ export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps
 type TabProps = {
   phone: string;
   styles: Record<string, any>;
-  onSqlMissing: () => void;
   onError: (text: string) => void;
 };
 
-function PeopleTab({ phone, styles, onSqlMissing, onError }: TabProps) {
+function PeopleTab({ phone, styles, onError }: TabProps) {
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<FamilyAdminPerson[]>([]);
   const [selected, setSelected] = useState<FamilyAdminPerson | null>(null);
@@ -238,8 +206,7 @@ function PeopleTab({ phone, styles, onSqlMissing, onError }: TabProps) {
         if (next) fillForm(next);
       }
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setSearching(false);
     }
@@ -265,8 +232,7 @@ function PeopleTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       Alert.alert('تم الحفظ', 'حُفظ الاسم والجنس وحالة الوفاة.');
       await runSearch();
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setSaving(false);
     }
@@ -356,7 +322,7 @@ function PeopleTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   );
 }
 
-function PhonesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
+function PhonesTab({ phone, styles, onError }: TabProps) {
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<FamilyAdminPerson[]>([]);
   const [selected, setSelected] = useState<FamilyAdminPerson | null>(null);
@@ -385,8 +351,7 @@ function PhonesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       const rows = await searchFamilyAdminPeople(phone, q);
       setMatches(rows);
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setSearching(false);
     }
@@ -409,8 +374,7 @@ function PhonesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       Alert.alert('تم الحفظ', 'رُبط الجوال بالشخص.');
       await runSearch();
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setSaving(false);
     }
@@ -471,7 +435,7 @@ function PhonesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   );
 }
 
-function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
+function RequestsTab({ phone, styles, onError }: TabProps) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<FamilyAdminRequest[]>([]);
   const [selected, setSelected] = useState<FamilyAdminRequest | null>(null);
@@ -497,12 +461,11 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
         return next.find((row) => row.id === current.id) || null;
       });
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setLoading(false);
     }
-  }, [onError, onSqlMissing, phone]);
+  }, [onError, phone]);
 
   useEffect(() => {
     void load();
@@ -526,13 +489,12 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
         setHasSearched(true);
       } catch (error) {
         setHasSearched(false);
-        if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-        else onError(familyAdminActionMessage(error));
+        onError(familyAdminActionMessage(error));
       } finally {
         setSearching(false);
       }
     },
-    [onError, onSqlMissing, phone, selected],
+    [onError, phone, selected],
   );
 
   useEffect(() => {
@@ -568,8 +530,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       setSelected(null);
       await load();
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setBusyId(null);
     }
@@ -608,8 +569,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       setMatches([]);
       await load();
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setBusyId(null);
     }
@@ -639,11 +599,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       setMatches([]);
       await load();
     } catch (error) {
-      onError(
-        error instanceof FamilyAdminRpcMissingError
-          ? familyAdminDelegatesSqlHint()
-          : familyAdminActionMessage(error),
-      );
+      onError(familyAdminActionMessage(error));
     } finally {
       setBusyId(null);
     }
@@ -777,7 +733,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   );
 }
 
-function DelegatesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
+function DelegatesTab({ phone, styles, onError }: TabProps) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<FamilyAdminDelegate[]>([]);
   const [roles, setRoles] = useState<FamilyAdminDelegateRole[]>([]);
@@ -797,11 +753,7 @@ function DelegatesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       setRows(next.rows);
       setRoles(next.roles);
     } catch (error) {
-      onError(
-        error instanceof FamilyAdminRpcMissingError
-          ? familyAdminDelegatesSqlHint()
-          : familyAdminActionMessage(error),
-      );
+      onError(familyAdminActionMessage(error));
     } finally {
       setLoading(false);
     }
@@ -831,11 +783,7 @@ function DelegatesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       await setFamilyAdminDelegateRole({ adminPhone: phone, delegateId: id, roleKey });
       await load();
     } catch (error) {
-      onError(
-        error instanceof FamilyAdminRpcMissingError
-          ? familyAdminDelegatesSqlHint()
-          : familyAdminActionMessage(error),
-      );
+      onError(familyAdminActionMessage(error));
     } finally {
       setBusyId('');
     }
@@ -862,11 +810,7 @@ function DelegatesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       await setFamilyAdminDelegateEnabled({ adminPhone: phone, delegateId: id, enabled });
       await load();
     } catch (error) {
-      onError(
-        error instanceof FamilyAdminRpcMissingError
-          ? familyAdminDelegatesSqlHint()
-          : familyAdminActionMessage(error),
-      );
+      onError(familyAdminActionMessage(error));
     } finally {
       setBusyId('');
     }
@@ -913,7 +857,7 @@ function DelegatesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   );
 }
 
-function DevicesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
+function DevicesTab({ phone, styles, onError }: TabProps) {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<FamilyAdminDevice[]>([]);
   const [busyKey, setBusyKey] = useState('');
@@ -929,12 +873,11 @@ function DevicesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
     try {
       setItems(await fetchFamilyAdminDevices(phone));
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setLoading(false);
     }
-  }, [onError, onSqlMissing, phone]);
+  }, [onError, phone]);
 
   useEffect(() => {
     void load();
@@ -964,8 +907,7 @@ function DevicesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       await unbindFamilyAdminDevice(phone, phoneKey);
       await load();
     } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
+      onError(familyAdminActionMessage(error));
     } finally {
       setBusyKey('');
     }

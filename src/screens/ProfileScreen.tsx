@@ -807,7 +807,7 @@ export function ProfileScreen({
       {member && familyAdminEnabled ? (
         <SceneSection title="إدارة العائلة">
           <Text style={styles.note}>
-            صلاحية يومية من الإدارة الأصلية: قبول ورفض وتعديل صلاحيات المناديب من نفس مصدر الموقع، بلا رمز الإدارة.
+            قبول ورفض الطلبات وتعديل المناديب من التطبيق مباشرة — يتطلب تفعيل السيرفر (Supabase). بلا رمز الإدارة.
           </Text>
           <ActionButton
             label="فتح إدارة العائلة"

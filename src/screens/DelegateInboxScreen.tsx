@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
+import { AdminBackendStatusBanner } from '../components/AdminBackendStatus';
 import { ActionButton } from '../components/ActionButton';
 import { SceneSection, SceneShell } from '../components/scene';
 import {
@@ -246,8 +247,9 @@ export function DelegateInboxScreen({ onBack, delegatePhone }: DelegateInboxScre
       </Pressable>
       <SceneSection>
         <Text style={styles.lead}>
-          الطلبات المعلّقة لفرعك تصل هنا على الجهاز الموثوق. إضافة الفرد وتصحيح الشجرة يبقيان في موقع العائلة عند الحاجة.
+          الطلبات المعلّقة لفرعك تصل هنا على الجهاز الموثوق. قبول وربط الجوال يُنفَّذ مباشرة من التطبيق. إضافة فرد جديد أو تصحيح شجرة ثقيل يبقى في الموقع.
         </Text>
+        {phone ? <AdminBackendStatusBanner surface="delegate" phone={phone} /> : null}
         {session?.enabled ? (
           <Text style={styles.meta}>{roleLabel(session.roleKey)}</Text>
         ) : null}
