@@ -72,9 +72,17 @@
 SUPABASE_DB_URL='postgresql://postgres.[ref]:[PASSWORD]@...' npm run deploy:admin-rpcs
 ```
 
-## إذا البحث لا يجد الاسم (إدارة شكلية)
+## اعتماد طلب جوال (ضغطة واحدة)
 
-شغّل أيضًا في SQL Editor:
+شغّل في SQL Editor:
+
+`supabase/COPY-ME-family-admin-approve-phone-v1.sql`
+
+يعتمد الطلب ويربط الجوال بنفس منطق التحقق عند إرسال العضو — بدون بحث يدوي.
+
+## إذا البحث اليدوي لا يجد الاسم
+
+شغّل أيضًا:
 
 `supabase/COPY-ME-family-admin-search-patch-v1.sql`
 

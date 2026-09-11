@@ -379,6 +379,22 @@ export async function approveFamilyAdminRequest(adminPhone: string, requestId: n
   assertOk(row);
 }
 
+/** يجد الشخص بنفس منطق قبول الطلب عند الإرسال ثم يربط الجوال ويعتمد. */
+export async function approveMemberPhoneRequest(adminPhone: string, requestId: number): Promise<void> {
+  const cleaned = String(adminPhone || '').trim();
+  if (!cleaned || requestId < 1) throw new Error('bad_input');
+  let row: ActionRpc | undefined;
+  try {
+    row = await callPublicRpc<ActionRpc>('family_admin_approve_member_phone_request_v1', {
+      p_phone: cleaned,
+      p_request_id: requestId,
+    });
+  } catch (error) {
+    throwIfMissingRpc(error);
+  }
+  assertOk(row);
+}
+
 export async function fetchFamilyAdminDelegates(adminPhone: string): Promise<{
   rows: FamilyAdminDelegate[];
   roles: FamilyAdminDelegateRole[];
@@ -545,6 +561,8 @@ export function familyAdminActionMessage(error: unknown): string {
       return 'هذا النوع يُعالَج من مسار مختلف.';
     case 'bind_required':
       return 'سجّل الرقم على الشخص في الشجرة ثم اعتمد الطلب.';
+    case 'name_not_unique':
+      return 'لم يُعثر على شخص واحد بهذا الاسم في الفرع. اختره يدوياً من البحث أو صحّح الشجرة.';
     case 'unknown_role':
       return 'هذا الدور غير معروف.';
     case 'missing_secret_hash':

@@ -7,6 +7,7 @@ import { PhoneField } from '../components/PhoneField';
 import { SceneSection, SceneShell } from '../components/scene';
 import {
   approveFamilyAdminRequest,
+  approveMemberPhoneRequest,
   bindFamilyAdminRequest,
   familyAdminActionMessage,
   fetchFamilyAdminDelegates,
@@ -445,6 +446,7 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
   const [hasSearched, setHasSearched] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchScope, setSearchScope] = useState<'auto' | 'all' | 'branch'>('auto');
+  const [manualPick, setManualPick] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -506,15 +508,17 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
   );
 
   useEffect(() => {
+    setManualPick(false);
     if (!selected || !isFamilyAdminMemberRequest(selected)) {
       setHasSearched(false);
       setMatches([]);
+      setQuery('');
       return;
     }
-    const nextQuery = leafName(selected.name);
-    setQuery(nextQuery);
-    void runSearch(nextQuery);
-  }, [selected?.id, runSearch]);
+    setQuery(leafName(selected.name));
+    setHasSearched(false);
+    setMatches([]);
+  }, [selected?.id]);
 
   function confirmReject(row: FamilyAdminRequest) {
     Alert.alert('رفض الطلب', 'يُرفض هذا الطلب المعلّق دون ربط.', [
@@ -542,6 +546,45 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
       const message = familyAdminActionMessage(error);
       onError(message);
       Alert.alert('تعذر الرفض', message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function confirmAutoApprove(row: FamilyAdminRequest) {
+    Alert.alert(
+      'اعتماد وربط الجوال',
+      `تسجيل ${row.phone ? formatPhoneDisplay(row.phone) : 'الجوال'} على ${row.name || 'العضو'} في الشجرة؟`,
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'اعتماد',
+          onPress: () => {
+            void doAutoApprove(row);
+          },
+        },
+      ],
+    );
+  }
+
+  async function doAutoApprove(row: FamilyAdminRequest) {
+    setBusyId(row.id);
+    onError('');
+    try {
+      await approveMemberPhoneRequest(phone, row.id);
+      notifySubmitter(row, 'approved');
+      Alert.alert('تم الاعتماد', 'سُجّل الجوال على الشخص. يستطيع العضو الدخول بنفس الرقم.');
+      setSelected(null);
+      setMatches([]);
+      await load();
+    } catch (error) {
+      const message = familyAdminActionMessage(error);
+      onError(message);
+      if (/يدوياً|name_not_unique/i.test(message)) {
+        setManualPick(true);
+        void runSearch(query || leafName(row.name));
+      }
+      Alert.alert('تعذر الاعتماد', message);
     } finally {
       setBusyId(null);
     }
@@ -628,7 +671,7 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
   return (
     <SceneSection title="طلبات">
       <Text style={styles.hint}>
-        طلبات الجوال والعضوية والمناديب المعلّقة. عند اختيار طلب جوال أو عضوية يُبحث تلقائيًا عن الشخص ثم يُعتمد الربط من هنا. قبول المندوب يفعّل صلاحياته كما في الموقع.
+        طلب جوال = العضو يطلب ربط رقمه باسمه في الشجرة. اعتماد واحد يسجّل الجوال ثم يدخل العضو. المندوب: قبول يفعّل الصلاحية.
       </Text>
       {loading ? <Text style={styles.meta}>جاري تحميل الطلبات…</Text> : null}
       {selected ? (
@@ -646,7 +689,18 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
           </View>
           {selectedIsMember ? (
             <>
-              <Text style={styles.fieldLabel}>ابحث عن الشخص للربط</Text>
+              <ActionButton
+                label={busyId === selected.id ? 'جاري الاعتماد…' : 'اعتماد وربط الجوال'}
+                onPress={() => confirmAutoApprove(selected)}
+              />
+              {!manualPick ? (
+                <Pressable onPress={() => setManualPick(true)} style={styles.linkBtn}>
+                  <Text style={styles.linkText}>اختيار شخص آخر يدوياً</Text>
+                </Pressable>
+              ) : null}
+              {manualPick ? (
+                <>
+              <Text style={styles.fieldLabel}>اختيار الشخص يدوياً</Text>
               <TextInput
                 onChangeText={(value) => {
                   setQuery(value);
@@ -721,6 +775,8 @@ function RequestsTab({ phone, styles, onError }: TabProps) {
                   <Text style={styles.linkText}>اختيار هذا الشخص</Text>
                 </Pressable>
               ))}
+                </>
+              ) : null}
             </>
           ) : selectedIsDelegate ? (
             <ActionButton
