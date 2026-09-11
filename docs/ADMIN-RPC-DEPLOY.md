@@ -57,11 +57,33 @@
 6. `alzidan-family/supabase/sql/COPY-ME-women-manager-search-match-v1.sql`
 7. `alzidan-family/supabase/sql/COPY-ME-delegate-app-inbox-v1.sql`
 
+## النشر السريع (ملف واحد)
+
+الملف الجاهز: `supabase/deploy-admin-rpcs-bundle.sql` (~3079 سطر)
+
+### الطريقة أ — SQL Editor (بدون أدوات)
+1. افتح [Supabase Dashboard](https://supabase.com/dashboard) → مشروعك → **SQL Editor**
+2. انسخ محتوى `supabase/deploy-admin-rpcs-bundle.sql` والصقه
+3. اضغط **Run**
+
+### الطريقة ب — سطر أوامر (تلقائي)
+```bash
+# من Supabase → Settings → Database → Connection string (URI)
+SUPABASE_DB_URL='postgresql://postgres.[ref]:[PASSWORD]@...' npm run deploy:admin-rpcs
+```
+
 ## التحقق بعد النشر
 
 ```bash
-# أضف .env أو مرّر المتغيرات
-node scripts/verify-admin-rpcs.mjs
+npm run verify:admin-rpcs
 ```
 
 يجب أن تظهر 29/29 OK (أو exists_error مع not_allowed/device_required — هذا يعني الدالة موجودة).
+
+## إصلاح لوحة الإدارة على متصفح الجوال (الويب)
+
+```bash
+cd alzidan-family && git apply ../docs/web-admin-mobile-hub.patch
+```
+
+أو انسخ التعديلات من `docs/web-admin-mobile-hub.patch`.

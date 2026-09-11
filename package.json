@@ -39,6 +39,7 @@
     "verify:tree-card": "node scripts/verify-tree-card-compat.mjs",
     "verify:push": "node scripts/verify-push-readiness.mjs",
     "verify:admin-rpcs": "node scripts/verify-admin-rpcs.mjs",
+    "deploy:admin-rpcs": "node scripts/deploy-admin-rpcs.mjs",
     "verify:event-card": "node scripts/verify-event-card-compat.mjs",
     "verify:notifications": "node scripts/verify-notification-format.mjs",
     "verify:news-expiry": "node scripts/verify-news-expiry.mjs",
