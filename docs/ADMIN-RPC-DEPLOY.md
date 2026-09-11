@@ -72,6 +72,14 @@
 SUPABASE_DB_URL='postgresql://postgres.[ref]:[PASSWORD]@...' npm run deploy:admin-rpcs
 ```
 
+## إذا البحث لا يجد الاسم (إدارة شكلية)
+
+شغّل أيضًا في SQL Editor:
+
+`supabase/COPY-ME-family-admin-search-patch-v1.sql`
+
+ثم حدّث التطبيق من PR #2.
+
 ## التحقق بعد النشر
 
 ```bash
