@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
@@ -38,6 +38,7 @@ import {
   parsePhoneToParts,
   toE164,
 } from '../utils/phone';
+import { pickRequestBindTarget } from '../utils/requestPersonMatch';
 
 type FamilyAdminScreenProps = {
   onBack: () => void;
@@ -476,6 +477,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   const [selected, setSelected] = useState<FamilyAdminRequest | null>(null);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<FamilyAdminPerson[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
 
@@ -506,25 +508,43 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
     void load();
   }, [load]);
 
-  async function runSearch() {
-    if (!selected) return;
-    const q = query.trim() || leafName(selected.name);
-    if (q.length < 2) {
+  const runSearch = useCallback(
+    async (rawQuery: string) => {
+      if (!selected) return;
+      const q = rawQuery.trim() || leafName(selected.name);
+      if (q.length < 2) {
+        setMatches([]);
+        setHasSearched(false);
+        onError('اكتب حرفين على الأقل للبحث.');
+        return;
+      }
+      setSearching(true);
+      onError('');
+      try {
+        const next = await searchFamilyAdminPeople(phone, q);
+        setMatches(next);
+        setHasSearched(true);
+      } catch (error) {
+        setHasSearched(false);
+        if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
+        else onError(familyAdminActionMessage(error));
+      } finally {
+        setSearching(false);
+      }
+    },
+    [onError, onSqlMissing, phone, selected],
+  );
+
+  useEffect(() => {
+    if (!selected || !isFamilyAdminMemberRequest(selected)) {
+      setHasSearched(false);
       setMatches([]);
-      onError('اكتب حرفين على الأقل للبحث.');
       return;
     }
-    setSearching(true);
-    onError('');
-    try {
-      setMatches(await searchFamilyAdminPeople(phone, q));
-    } catch (error) {
-      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
-      else onError(familyAdminActionMessage(error));
-    } finally {
-      setSearching(false);
-    }
-  }
+    const nextQuery = leafName(selected.name);
+    setQuery(nextQuery);
+    void runSearch(nextQuery);
+  }, [selected?.id, runSearch]);
 
   function confirmReject(row: FamilyAdminRequest) {
     Alert.alert('رفض الطلب', 'يُرفض هذا الطلب المعلّق دون ربط.', [
@@ -631,11 +651,15 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
 
   const selectedIsMember = selected ? isFamilyAdminMemberRequest(selected) : false;
   const selectedIsDelegate = selected ? isFamilyAdminDelegateRequest(selected) : false;
+  const suggestedBind = useMemo(() => {
+    if (!selected || !selectedIsMember) return null;
+    return pickRequestBindTarget(query, selected.name, matches);
+  }, [matches, query, selected, selectedIsMember]);
 
   return (
     <SceneSection title="طلبات">
       <Text style={styles.hint}>
-        طلبات الجوال والعضوية والمناديب المعلّقة. قبول العضوية يربط بالجوال. قبول المندوب يفعّل صلاحياته كما في الموقع.
+        طلبات الجوال والعضوية والمناديب المعلّقة. عند اختيار طلب جوال أو عضوية يُبحث تلقائيًا عن الشخص ثم يُعتمد الربط من هنا. قبول المندوب يفعّل صلاحياته كما في الموقع.
       </Text>
       {loading ? <Text style={styles.meta}>جاري تحميل الطلبات…</Text> : null}
       {selected ? (
@@ -655,7 +679,10 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
             <>
               <Text style={styles.fieldLabel}>ابحث عن الشخص للربط</Text>
               <TextInput
-                onChangeText={setQuery}
+                onChangeText={(value) => {
+                  setQuery(value);
+                  setHasSearched(false);
+                }}
                 placeholder="اسم الشخص"
                 placeholderTextColor="#8A7A6A"
                 returnKeyType="search"
@@ -663,18 +690,44 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
                 textAlign="right"
                 value={query}
                 onSubmitEditing={() => {
-                  void runSearch();
+                  void runSearch(query);
                 }}
               />
-              <ActionButton label={searching ? 'جاري البحث…' : 'بحث'} onPress={() => void runSearch()} />
+              <ActionButton label={searching ? 'جاري البحث…' : 'بحث'} onPress={() => void runSearch(query)} />
+              {searching ? <Text style={styles.meta}>جاري البحث في الشجرة…</Text> : null}
+              {suggestedBind ? (
+                <ActionButton
+                  label={
+                    busyId === selected.id
+                      ? 'جاري الاعتماد…'
+                      : `اعتماد وربط بـ ${suggestedBind.displayName}`
+                  }
+                  onPress={() => confirmBind(suggestedBind)}
+                />
+              ) : null}
+              {hasSearched && !searching && matches.length === 0 ? (
+                <Text style={styles.warn}>
+                  لا يوجد شخص مطابق في الشجرة. عدّل الاسم وأعد البحث، أو صحّح بيانات الشخص من تبويب أشخاص.
+                </Text>
+              ) : null}
+              {hasSearched && !searching && matches.length > 1 && !suggestedBind ? (
+                <Text style={styles.meta}>عدة نتائج — اختر الشخص الصحيح:</Text>
+              ) : null}
               {matches.map((person) => (
                 <Pressable
                   key={person.id}
                   disabled={busyId != null}
                   onPress={() => confirmBind(person)}
-                  style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+                  style={({ pressed }) => [
+                    styles.card,
+                    suggestedBind?.id === person.id && styles.activeCard,
+                    pressed && styles.pressed,
+                  ]}
                 >
                   <Text style={styles.cardName}>{person.displayName}</Text>
+                  {person.path && person.path !== person.displayName ? (
+                    <Text style={styles.cardMeta}>{person.path}</Text>
+                  ) : null}
                   <Text style={styles.cardMeta}>
                     {person.branchKey || 'بدون فرع'}
                     {person.phone ? ` · ${formatPhoneDisplay(person.phone)}` : ''}
@@ -705,6 +758,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
               setSelected(row);
               setQuery(leafName(row.name));
               setMatches([]);
+              setHasSearched(false);
             }}
             style={({ pressed }) => [styles.card, pressed && styles.pressed]}
           >
@@ -1049,6 +1103,10 @@ function familyAdminStyles(p: ThemePalette) {
       marginTop: spacing.sm,
       paddingHorizontal: spacing.md,
       paddingVertical: 12,
+    },
+    activeCard: {
+      borderColor: p.primary,
+      borderWidth: 2,
     },
     cardName: {
       color: p.text,

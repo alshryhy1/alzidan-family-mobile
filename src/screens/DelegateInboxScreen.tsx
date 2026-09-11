@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
@@ -20,6 +20,7 @@ import { spacing, type ThemePalette } from '../theme';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { notifyRequesterStatusChanged } from '../services/eventOutboundNotify';
 import { formatPhoneDisplay } from '../utils/phone';
+import { pickRequestBindTarget } from '../utils/requestPersonMatch';
 
 type DelegateInboxScreenProps = {
   onBack: () => void;
@@ -56,6 +57,7 @@ export function DelegateInboxScreen({ onBack, delegatePhone }: DelegateInboxScre
   const [selected, setSelected] = useState<DelegateInboxRequest | null>(null);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<DelegateInboxPerson[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -95,25 +97,48 @@ export function DelegateInboxScreen({ onBack, delegatePhone }: DelegateInboxScre
     void load();
   }, [load]);
 
-  async function runSearch() {
-    if (!selected || selected.lane !== 'phone') return;
-    const q = query.trim() || leafName(selected.name);
-    if (q.length < 2) {
+  const runSearch = useCallback(
+    async (rawQuery: string) => {
+      if (!selected || selected.lane !== 'phone') return;
+      const q = rawQuery.trim() || leafName(selected.name);
+      if (q.length < 2) {
+        setMatches([]);
+        setHasSearched(false);
+        setErrorText('اكتب حرفين على الأقل للبحث.');
+        return;
+      }
+      setSearching(true);
+      setErrorText('');
+      try {
+        const next = await searchDelegateInboxPeople(phone, q);
+        setMatches(next);
+        setHasSearched(true);
+      } catch (error) {
+        setHasSearched(false);
+        if (error instanceof DelegateInboxRpcMissingError) setSqlMissing(true);
+        else setErrorText(delegateInboxActionMessage(error));
+      } finally {
+        setSearching(false);
+      }
+    },
+    [phone, selected],
+  );
+
+  useEffect(() => {
+    if (!selected || selected.lane !== 'phone') {
+      setHasSearched(false);
       setMatches([]);
-      setErrorText('اكتب حرفين على الأقل للبحث.');
       return;
     }
-    setSearching(true);
-    setErrorText('');
-    try {
-      setMatches(await searchDelegateInboxPeople(phone, q));
-    } catch (error) {
-      if (error instanceof DelegateInboxRpcMissingError) setSqlMissing(true);
-      else setErrorText(delegateInboxActionMessage(error));
-    } finally {
-      setSearching(false);
-    }
-  }
+    const nextQuery = leafName(selected.name);
+    setQuery(nextQuery);
+    void runSearch(nextQuery);
+  }, [selected?.id, runSearch]);
+
+  const suggestedBind = useMemo(() => {
+    if (!selected || selected.lane !== 'phone') return null;
+    return pickRequestBindTarget(query, selected.name, matches);
+  }, [matches, query, selected]);
 
   function confirmReject(row: DelegateInboxRequest) {
     Alert.alert('رفض الطلب', 'يُرفض هذا الطلب المعلّق دون تنفيذ.', [
@@ -259,7 +284,10 @@ export function DelegateInboxScreen({ onBack, delegatePhone }: DelegateInboxScre
               <>
                 <Text style={styles.fieldLabel}>ابحث عن الشخص في فرعك للربط</Text>
                 <TextInput
-                  onChangeText={setQuery}
+                  onChangeText={(value) => {
+                    setQuery(value);
+                    setHasSearched(false);
+                  }}
                   placeholder="اسم الشخص"
                   placeholderTextColor="#8A7A6A"
                   returnKeyType="search"
@@ -267,18 +295,44 @@ export function DelegateInboxScreen({ onBack, delegatePhone }: DelegateInboxScre
                   textAlign="right"
                   value={query}
                   onSubmitEditing={() => {
-                    void runSearch();
+                    void runSearch(query);
                   }}
                 />
-                <ActionButton label={searching ? 'جاري البحث…' : 'بحث'} onPress={() => void runSearch()} />
+                <ActionButton label={searching ? 'جاري البحث…' : 'بحث'} onPress={() => void runSearch(query)} />
+                {searching ? <Text style={styles.meta}>جاري البحث في فرعك…</Text> : null}
+                {suggestedBind ? (
+                  <ActionButton
+                    label={
+                      busyId === selected.id
+                        ? 'جاري الاعتماد…'
+                        : `اعتماد وربط بـ ${suggestedBind.displayName}`
+                    }
+                    onPress={() => confirmBind(suggestedBind)}
+                  />
+                ) : null}
+                {hasSearched && !searching && matches.length === 0 ? (
+                  <Text style={styles.warn}>
+                    لا يوجد شخص مطابق في فرعك. عدّل الاسم وأعد البحث.
+                  </Text>
+                ) : null}
+                {hasSearched && !searching && matches.length > 1 && !suggestedBind ? (
+                  <Text style={styles.meta}>عدة نتائج — اختر الشخص الصحيح:</Text>
+                ) : null}
                 {matches.map((person) => (
                   <Pressable
                     key={person.id}
                     disabled={busyId != null}
                     onPress={() => confirmBind(person)}
-                    style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+                    style={({ pressed }) => [
+                      styles.card,
+                      suggestedBind?.id === person.id && styles.activeCard,
+                      pressed && styles.pressed,
+                    ]}
                   >
                     <Text style={styles.cardName}>{person.displayName}</Text>
+                    {person.path && person.path !== person.displayName ? (
+                      <Text style={styles.cardMeta}>{person.path}</Text>
+                    ) : null}
                     <Text style={styles.cardMeta}>
                       {person.branchKey || 'بدون فرع'}
                       {person.phone ? ` · ${formatPhoneDisplay(person.phone)}` : ''}
@@ -312,6 +366,7 @@ export function DelegateInboxScreen({ onBack, delegatePhone }: DelegateInboxScre
                   setSelected(row);
                   setQuery(leafName(row.name));
                   setMatches([]);
+                  setHasSearched(false);
                   setErrorText('');
                 }}
                 style={({ pressed }) => [styles.card, pressed && styles.pressed]}
@@ -404,6 +459,10 @@ function delegateInboxStyles(p: ThemePalette) {
       marginTop: spacing.sm,
       paddingHorizontal: spacing.md,
       paddingVertical: 12,
+    },
+    activeCard: {
+      borderColor: p.primary,
+      borderWidth: 2,
     },
     cardName: {
       color: p.text,
