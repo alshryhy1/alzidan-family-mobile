@@ -1,14 +1,18 @@
-/* Family tree brochure — screen + A4 print */
+/* Family tree brochure — visual tree (root · branches · leaves) */
 :root {
   --ftb-ink: #14241e;
   --ftb-muted: #4b6359;
-  --ftb-line: rgba(6, 78, 59, 0.14);
+  --ftb-line: rgba(6, 78, 59, 0.18);
   --ftb-deep: #064e3b;
   --ftb-mid: #065f46;
+  --ftb-light: #34d399;
   --ftb-gold: #c9a227;
+  --ftb-trunk: #5c3d1e;
+  --ftb-soil: #8b6914;
   --ftb-soft: #e8f5ef;
   --ftb-cream: #f7faf8;
   --ftb-paper: #ffffff;
+  --ftb-wood: #2d6a4f;
 }
 
 * {
@@ -20,7 +24,7 @@ body {
   font-family: 'Segoe UI', Tahoma, 'Noto Naskh Arabic UI', 'Arabic Typesetting', sans-serif;
   background: #eef3f0;
   color: var(--ftb-ink);
-  line-height: 1.65;
+  line-height: 1.5;
 }
 
 a {
@@ -28,18 +32,12 @@ a {
   text-decoration: none;
 }
 
-a:hover {
-  text-decoration: underline;
-}
-
 .ftb-toolbar {
-  max-width: 920px;
+  max-width: 1200px;
   margin: 16px auto 10px;
   padding: 0 12px;
   display: flex;
   gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
 }
 
 .ftb-toolbar button {
@@ -53,7 +51,7 @@ a:hover {
 }
 
 .ftb-sheet {
-  max-width: 920px;
+  max-width: 1200px;
   margin: 0 auto 40px;
   background: var(--ftb-paper);
   border: 1px solid var(--ftb-line);
@@ -77,7 +75,6 @@ a:hover {
   margin: 0 auto 14px;
   border-radius: 28px;
   overflow: hidden;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
 }
 
 .ftb-logo svg {
@@ -89,7 +86,6 @@ a:hover {
 .ftb-brand {
   margin: 0 0 6px;
   font-weight: 800;
-  letter-spacing: 0.03em;
 }
 
 .ftb-cover h1 {
@@ -150,82 +146,144 @@ a:hover {
 }
 
 .ftb-root-diagram {
-  background: var(--ftb-cream);
+  background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 55%, #e8f0e8 100%);
   border: 1px solid var(--ftb-line);
   border-radius: 22px;
-  padding: 20px 16px;
-}
-
-.ftb-root-node {
+  padding: 12px 10px 18px;
   text-align: center;
-  font-weight: 900;
-  font-size: 1.15rem;
-  color: var(--ftb-deep);
-  margin-bottom: 16px;
 }
 
-.ftb-root-node small {
+.ftb-master-tree {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
   display: block;
-  font-weight: 600;
-  font-size: 0.85rem;
+}
+
+.ftb-svg-soil {
+  fill: #8b7355;
+  opacity: 0.45;
+}
+
+.ftb-svg-trunk {
+  fill: var(--ftb-trunk);
+}
+
+.ftb-svg-root {
+  fill: none;
+  stroke: #6b4a2a;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.ftb-svg-branch {
+  fill: none;
+  stroke: var(--ftb-wood);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.ftb-svg-leaf {
+  fill: var(--ftb-deep);
+  stroke: var(--ftb-light);
+  stroke-width: 3;
+}
+
+.ftb-svg-core {
+  fill: var(--ftb-gold);
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+.ftb-svg-leaf-text,
+.ftb-svg-root-text {
+  fill: #ecfdf5;
+  font-size: 15px;
+  font-weight: 800;
+  text-anchor: middle;
+  font-family: Tahoma, sans-serif;
+}
+
+.ftb-svg-leaf-sub,
+.ftb-svg-root-sub {
+  fill: #d1fae5;
+  font-size: 10px;
+  text-anchor: middle;
+  font-family: Tahoma, sans-serif;
+}
+
+.ftb-svg-caption,
+.ftb-root-caption {
+  fill: var(--ftb-muted);
   color: var(--ftb-muted);
-  margin-top: 4px;
-}
-
-.ftb-root-branches {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.ftb-overview-item {
-  background: #fff;
-  border: 1px solid var(--ftb-line);
-  border-radius: 16px;
-  padding: 12px 8px;
-  text-align: center;
-}
-
-.ftb-overview-name {
-  font-weight: 900;
-  color: var(--ftb-deep);
-}
-
-.ftb-overview-sub {
-  font-size: 0.78rem;
-  color: var(--ftb-muted);
-  margin: 4px 0 8px;
-}
-
-.ftb-overview-count {
   font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--ftb-mid);
+  text-anchor: middle;
+  margin: 8px 0 0;
 }
 
 .ftb-note {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   color: var(--ftb-muted);
   font-size: 0.95rem;
 }
 
+.ftb-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+  font-size: 0.88rem;
+  color: var(--ftb-muted);
+}
+
+.ftb-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ftb-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--ftb-line);
+}
+
+.ftb-swatch-root {
+  background: var(--ftb-trunk);
+  border-radius: 3px;
+}
+
+.ftb-swatch-bough {
+  background: var(--ftb-mid);
+}
+
+.ftb-swatch-twigs {
+  background: #a7f3d0;
+}
+
+.ftb-swatch-leaf {
+  background: var(--ftb-deep);
+  border-radius: 50%;
+}
+
 .ftb-branches {
   display: grid;
-  gap: 18px;
+  gap: 28px;
 }
 
 .ftb-branch-card {
   border: 1px solid var(--ftb-line);
   border-radius: 20px;
-  padding: 18px 18px 16px;
-  background: linear-gradient(180deg, #fff 0%, var(--ftb-cream) 100%);
+  padding: 18px;
+  background: linear-gradient(180deg, #fff 0%, #f8fcf9 100%);
   break-inside: avoid;
 }
 
 .ftb-branch-head h3 {
   margin: 0 0 4px;
   color: var(--ftb-deep);
-  font-size: 1.1rem;
 }
 
 .ftb-branch-full {
@@ -238,7 +296,7 @@ a:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   font-size: 0.9rem;
   color: var(--ftb-muted);
 }
@@ -247,84 +305,205 @@ a:hover {
   color: var(--ftb-deep);
 }
 
-.ftb-tree-root-list,
-.ftb-tree-children {
+/* ── Tree scene per branch ── */
+.ftb-tree-scene {
+  background:
+    radial-gradient(ellipse 90% 40% at 50% 100%, rgba(139, 105, 20, 0.12), transparent 70%),
+    linear-gradient(180deg, #f7fdf9 0%, #eef8f1 100%);
+  border: 1px solid var(--ftb-line);
+  border-radius: 18px;
+  padding: 12px 8px 16px;
+}
+
+.ftb-tree-ground {
+  text-align: center;
+  margin-bottom: 8px;
+  padding-bottom: 10px;
+  border-bottom: 3px solid #8b6914;
+  position: relative;
+}
+
+.ftb-tree-ground::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 28px;
+  background: var(--ftb-trunk);
+  border-radius: 6px 6px 4px 4px;
+}
+
+.ftb-ground-label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--ftb-soil);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.ftb-trunk-name {
+  display: block;
+  font-weight: 900;
+  color: var(--ftb-trunk);
+  font-size: 0.95rem;
+  margin-top: 4px;
+}
+
+.ftb-tree-scroll {
+  overflow-x: auto;
+  padding: 8px 4px 4px;
+}
+
+/* ── CSS genealogical tree connectors ── */
+.ftb-tree,
+.ftb-tree ul {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: table;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-.ftb-tree-root-list > .ftb-node {
-  margin-bottom: 6px;
+.ftb-tree ul {
+  padding-top: 18px;
+  position: relative;
 }
 
-.ftb-gen {
+.ftb-tree ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-left: 2px solid var(--ftb-wood);
+  width: 0;
+  height: 18px;
+}
+
+.ftb-tree li {
+  display: table-cell;
+  text-align: center;
+  vertical-align: top;
+  padding: 18px 3px 0;
+  position: relative;
+}
+
+.ftb-tree li::before,
+.ftb-tree li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 18px;
+  border-top: 2px solid var(--ftb-wood);
+}
+
+.ftb-tree li::before {
+  right: 50%;
+  border-right: 2px solid var(--ftb-wood);
+}
+
+.ftb-tree li::after {
+  left: 50%;
+  border-left: 2px solid var(--ftb-wood);
+}
+
+.ftb-tree li:only-child::before,
+.ftb-tree li:only-child::after {
+  display: none;
+}
+
+.ftb-tree li:first-child::before {
+  border: none;
+}
+
+.ftb-tree li:last-child::after {
+  border: none;
+}
+
+.ftb-tree > li::before,
+.ftb-tree > li::after {
+  display: none;
+}
+
+/* Node shapes */
+.ftb-bough,
+.ftb-twigs,
+.ftb-leaf {
   display: inline-block;
-  font-size: 0.68rem;
+  position: relative;
+  z-index: 1;
   font-weight: 700;
-  color: var(--ftb-mid);
-  background: var(--ftb-soft);
-  border: 1px solid var(--ftb-line);
-  border-radius: 6px;
-  padding: 0 5px;
-  margin-right: 4px;
-  vertical-align: middle;
+  line-height: 1.25;
+  max-width: 92px;
+  word-break: break-word;
 }
 
-.ftb-legend {
+.ftb-bough {
+  background: linear-gradient(180deg, var(--ftb-mid), var(--ftb-deep));
+  color: #ecfdf5;
+  border: 2px solid #a7f3d0;
+  border-radius: 12px;
+  padding: 7px 8px;
+  font-size: 0.82rem;
+  box-shadow: 0 4px 10px rgba(6, 78, 59, 0.2);
+}
+
+.ftb-twigs {
+  background: #d1fae5;
+  color: var(--ftb-deep);
+  border: 2px solid #6ee7b7;
+  border-radius: 10px;
+  padding: 5px 6px;
+  font-size: 0.72rem;
+}
+
+.ftb-leaf {
+  background: radial-gradient(circle at 30% 30%, #34d399, var(--ftb-deep));
+  color: #ecfdf5;
+  border: 2px solid #a7f3d0;
+  border-radius: 50%;
+  min-width: 54px;
+  min-height: 54px;
+  padding: 10px 6px;
+  font-size: 0.66rem;
+  box-shadow: 0 2px 6px rgba(6, 78, 59, 0.25);
+}
+
+.ftb-leaf::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 10px;
+  background: var(--ftb-wood);
+}
+
+.ftb-deceased-tag {
   display: block;
-  margin-top: 6px;
-  font-size: 0.85rem;
+  font-size: 0.58rem;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-top: 2px;
 }
 
-.ftb-gen-1 > .ftb-name {
-  font-size: 1.02rem;
+.ftb-tree-item.is-deceased .ftb-bough,
+.ftb-tree-item.is-deceased .ftb-twigs,
+.ftb-tree-item.is-deceased .ftb-leaf {
+  opacity: 0.72;
+  filter: grayscale(0.35);
 }
 
-.ftb-gen-4 .ftb-name,
-.ftb-gen-5 .ftb-name {
-  font-size: 0.9rem;
-}
-
-.ftb-branch-card .ftb-tree-root-list {
-  columns: 2;
-  column-gap: 22px;
-}
-
-.ftb-branch-card .ftb-tree-root-list > .ftb-node {
-  break-inside: avoid;
-}
-
-.ftb-tree-children {
-  margin-top: 6px;
-  padding-right: 18px;
-  border-right: 2px solid rgba(6, 78, 59, 0.12);
-}
-
-.ftb-name {
-  font-weight: 700;
-  color: var(--ftb-ink);
-}
-
-.ftb-deceased {
-  font-size: 0.78rem;
-  color: #7c6f5a;
-}
-
-.ftb-city {
-  font-size: 0.78rem;
-  color: var(--ftb-muted);
-}
-
-.ftb-node.is-deceased .ftb-name {
-  color: #5f6b66;
-}
-
-.ftb-more {
-  font-size: 0.85rem;
+.ftb-tree-more {
+  display: block;
+  font-size: 0.72rem;
   color: var(--ftb-muted);
   font-style: italic;
-  margin-top: 4px;
+  padding-top: 6px;
 }
 
 .ftb-cities {
@@ -338,10 +517,6 @@ a:hover {
   padding-right: 1.2em;
 }
 
-.ftb-digital li {
-  margin-bottom: 8px;
-}
-
 .ftb-footer {
   padding: 20px 28px 28px;
   border-top: 1px solid var(--ftb-line);
@@ -352,13 +527,8 @@ a:hover {
 }
 
 @media (max-width: 760px) {
-  .ftb-stats-grid,
-  .ftb-root-branches {
+  .ftb-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ftb-branch-card .ftb-tree-root-list {
-    columns: 1;
   }
 }
 
@@ -375,20 +545,19 @@ a:hover {
     max-width: none;
     margin: 0;
     border: none;
-    border-radius: 0;
     box-shadow: none;
+  }
+
+  .ftb-tree-scroll {
+    overflow: visible;
   }
 
   .ftb-branch-card {
     page-break-inside: avoid;
   }
-
-  .ftb-section {
-    page-break-inside: avoid;
-  }
 }
 
 @page {
-  size: A4;
-  margin: 12mm;
+  size: A4 landscape;
+  margin: 10mm;
 }
