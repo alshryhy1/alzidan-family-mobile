@@ -255,7 +255,44 @@ a:hover {
 }
 
 .ftb-tree-root-list > .ftb-node {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+}
+
+.ftb-gen {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ftb-mid);
+  background: var(--ftb-soft);
+  border: 1px solid var(--ftb-line);
+  border-radius: 6px;
+  padding: 0 5px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.ftb-legend {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.85rem;
+}
+
+.ftb-gen-1 > .ftb-name {
+  font-size: 1.02rem;
+}
+
+.ftb-gen-4 .ftb-name,
+.ftb-gen-5 .ftb-name {
+  font-size: 0.9rem;
+}
+
+.ftb-branch-card .ftb-tree-root-list {
+  columns: 2;
+  column-gap: 22px;
+}
+
+.ftb-branch-card .ftb-tree-root-list > .ftb-node {
+  break-inside: avoid;
 }
 
 .ftb-tree-children {
@@ -318,6 +355,10 @@ a:hover {
   .ftb-stats-grid,
   .ftb-root-branches {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ftb-branch-card .ftb-tree-root-list {
+    columns: 1;
   }
 }
 

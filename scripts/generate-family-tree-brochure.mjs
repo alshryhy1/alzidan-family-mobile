@@ -21,8 +21,8 @@ const SUPABASE_KEY =
 
 const BRANCH_ORDER = ['زيدان', 'مزيد', 'زايد', 'لاحم', 'ملحم'];
 const ROOT_NAME = 'مطلق بن زيدان';
-const MAX_DEPTH = 3;
-const MAX_CHILDREN_PER_NODE = 12;
+/** أبناء مطلق = الجيل 1؛ يُعرض حتى الجيل الخامس (5 مستويات تحت كل فرع). */
+const MAX_GENERATION = 5;
 
 function normalizeName(value) {
   return String(value || '')
@@ -38,6 +38,15 @@ function branchRootName(branchKey) {
 function leafName(path) {
   const parts = normalizeName(path).split('/').filter(Boolean);
   return parts.length ? parts[parts.length - 1] : normalizeName(path);
+}
+
+function generationFromBranchRoot(path, branchRoot) {
+  const p = normalizeName(path);
+  const root = normalizeName(branchRoot);
+  if (!p || !root || !p.startsWith(root)) return null;
+  const rest = p.slice(root.length).replace(/^\//, '');
+  if (!rest) return 0;
+  return rest.split('/').filter(Boolean).length;
 }
 
 function isHiddenGender(gender) {
@@ -98,44 +107,47 @@ function buildBranchGraph(rows, branchKey) {
     if (row.city) stats.cities.add(normalizeName(row.city));
   }
 
-  function nodeTree(parentPath, depth) {
+  function nodeTree(parentPath) {
     const kids = Array.from(childrenByParent.get(parentPath) || [])
-      .map((childPath) => ({
-        path: childPath,
-        name: leafName(childPath),
-        deceased: isDeceased(metaByPath.get(childPath) || {}),
-        city: normalizeName(metaByPath.get(childPath)?.city || ''),
-      }))
+      .map((childPath) => {
+        const gen = generationFromBranchRoot(childPath, root);
+        return {
+          path: childPath,
+          name: leafName(childPath),
+          generation: gen,
+          deceased: isDeceased(metaByPath.get(childPath) || {}),
+          city: normalizeName(metaByPath.get(childPath)?.city || ''),
+        };
+      })
+      .filter((kid) => kid.generation != null && kid.generation <= MAX_GENERATION)
       .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
 
     const unique = [];
     const seen = new Set();
     for (const kid of kids) {
-      const key = kid.name;
+      const key = kid.path || kid.name;
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(kid);
     }
 
-    const limited = unique.slice(0, MAX_CHILDREN_PER_NODE);
-    const overflow = unique.length - limited.length;
-
-    return limited.map((kid) => ({
-      ...kid,
-      children:
-        depth < MAX_DEPTH ? nodeTree(kid.path, depth + 1) : [],
-      overflow:
-        depth === MAX_DEPTH && (childrenByParent.get(kid.path)?.size || 0) > 0
-          ? (childrenByParent.get(kid.path)?.size || 0)
-          : 0,
-    })).concat(
-      overflow > 0
-        ? [{ name: `+${overflow} آخرون`, path: '', deceased: false, city: '', children: [], overflow: 0 }]
-        : [],
-    );
+    return unique.map((kid) => {
+      const childNodes = kid.generation < MAX_GENERATION ? nodeTree(kid.path) : [];
+      const overflowAtCap =
+        kid.generation === MAX_GENERATION
+          ? Array.from(childrenByParent.get(kid.path) || []).filter(
+              (p) => (generationFromBranchRoot(p, root) || 0) > MAX_GENERATION,
+            ).length
+          : 0;
+      return {
+        ...kid,
+        children: childNodes,
+        overflow: overflowAtCap,
+      };
+    });
   }
 
-  const topLevel = nodeTree(root, 1);
+  const topLevel = nodeTree(root);
   const houses = topLevel.filter((n) => !n.name.startsWith('+')).length;
 
   return { root, topLevel, stats, houses };
@@ -147,13 +159,16 @@ function renderTreeNodes(nodes, depth = 0) {
   const items = nodes
     .map((node) => {
       const tag = node.deceased ? ' <span class="ftb-deceased">رحمه الله</span>' : '';
-      const city = node.city ? ` <span class="ftb-city">${escapeHtml(node.city)}</span>` : '';
-      const more =
-        node.overflow > 0
-          ? `<li class="ftb-more">… و${node.overflow} من الذرية (في الموقع والتطبيق)</li>`
+      const gen =
+        node.generation != null
+          ? ` <span class="ftb-gen">ج${node.generation}</span>`
           : '';
       const kids = node.children?.length ? renderTreeNodes(node.children, depth + 1) : '';
-      return `<li class="ftb-node${node.deceased ? ' is-deceased' : ''}"><span class="ftb-name">${escapeHtml(node.name)}</span>${tag}${city}${kids ? `<ul class="${cls}">${kids}</ul>` : ''}${more}</li>`;
+      const more =
+        node.overflow > 0
+          ? `<li class="ftb-more">… و${node.overflow} من الجيل السادس فما بعد (في الموقع والتطبيق)</li>`
+          : '';
+      return `<li class="ftb-node ftb-gen-${node.generation || 0}${node.deceased ? ' is-deceased' : ''}"><span class="ftb-name">${escapeHtml(node.name)}</span>${gen}${tag}${kids ? `<ul class="${cls}">${kids}</ul>` : ''}${more}</li>`;
     })
     .join('');
   return items;
@@ -235,8 +250,8 @@ function buildHtml({ branches, generatedAt, logoSvg }) {
       <p class="ftb-brand">شجرة عائلة الزيدان</p>
       <h1>ذرية مطلق بن زيدان</h1>
       <p class="ftb-lead">
-        بروشور تعريفي يوثّق الفروع الخمسة للعائلة وعدد الأفراد المسجّلين في الشجرة الرقمية
-        المعتمدة على الموقع والتطبيق.
+        شجرة الفروع الخمسة من الجد الجامع <strong>مطلق بن زيدان</strong> (زيدان الأول) —
+        مع عرض الذرية حتى <strong>الجيل الخامس</strong> فقط لكل فرع.
       </p>
       <p class="ftb-date">تاريخ التوليد: ${escapeHtml(generatedAt)}</p>
     </header>
@@ -259,8 +274,9 @@ function buildHtml({ branches, generatedAt, logoSvg }) {
     <section class="ftb-section">
       <h2>الفروع والذرية</h2>
       <p class="ftb-note">
-        الأسماء من قاعدة بيانات الشجرة المعتمدة. يُعرض هنا أول ${MAX_DEPTH} أجيال لكل فرع؛
-        التفاصيل الكاملة في <a href="https://alzidan.org/">الموقع</a> وتطبيق العائلة.
+        الجيل 1 = أبناء مطلق (زيدان · مزيد · زايد · لاحم · ملحم). يُعرض هنا حتى الجيل الخامس فقط.
+        ما بعده في <a href="https://alzidan.org/">الموقع</a> وتطبيق العائلة.
+        <span class="ftb-legend">ج1 ج2 ج3 … = رقم الجيل من رأس الفرع.</span>
       </p>
       <div class="ftb-branches">${branchCards}</div>
     </section>
