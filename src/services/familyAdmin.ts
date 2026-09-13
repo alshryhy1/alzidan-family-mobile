@@ -1,3 +1,4 @@
+import { familyAdminSearchAttempts, mergeFamilyAdminPeople } from '../utils/familyAdminSearch';
 import { callPublicRpc } from './supabase';
 
 export type FamilyAdminSession = {
@@ -164,10 +165,11 @@ function throwIfMissingRpc(error: unknown): never {
   throw error instanceof Error ? error : new Error(message || 'تعذر الاتصال.');
 }
 
-function assertOk(row: ActionRpc | undefined) {
+function assertOk(row: ActionRpc | SearchRpc | ListRpc | undefined) {
   if (!row) throw new FamilyAdminRpcMissingError();
   if (row.error === 'sql_missing') throw new FamilyAdminRpcMissingError();
   if (row.ok === false) throw new Error(row.error || 'not_allowed');
+  if (row.error && row.error !== 'need_query') throw new Error(row.error);
 }
 
 export async function fetchFamilyAdminSession(phone: string): Promise<FamilyAdminSession> {
@@ -221,6 +223,45 @@ export async function searchFamilyAdminPeople(
   }
   assertOk(row);
   return (row?.rows || []).map(mapPerson).filter((item): item is FamilyAdminPerson => Boolean(item));
+}
+
+export async function searchFamilyAdminPeopleSmart(
+  adminPhone: string,
+  query: string,
+  requestName: string,
+  branchKey?: string | null,
+  scope: 'auto' | 'all' | 'branch' = 'auto',
+): Promise<FamilyAdminPerson[]> {
+  const attempts = familyAdminSearchAttempts(query, requestName);
+  const branch = branchKey ? String(branchKey).trim() : null;
+  let lastError: unknown = null;
+  const merged: FamilyAdminPerson[] = [];
+
+  const runAttempts = async (branchFilter: string | null) => {
+    for (const attempt of attempts) {
+      try {
+        const rows = await searchFamilyAdminPeople(adminPhone, attempt, branchFilter);
+        merged.push(...rows);
+        if (merged.length) return true;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    return false;
+  };
+
+  // Request branch_key is often submitter-selected — search all branches first.
+  if (scope === 'all') {
+    if (await runAttempts(null)) return mergeFamilyAdminPeople(merged);
+  } else if (scope === 'branch' && branch) {
+    if (await runAttempts(branch)) return mergeFamilyAdminPeople(merged);
+  } else {
+    if (await runAttempts(null)) return mergeFamilyAdminPeople(merged);
+    if (branch && (await runAttempts(branch))) return mergeFamilyAdminPeople(merged);
+  }
+
+  if (lastError) throw lastError;
+  return [];
 }
 
 export async function updateFamilyAdminPerson(args: {
@@ -329,6 +370,22 @@ export async function approveFamilyAdminRequest(adminPhone: string, requestId: n
   let row: ActionRpc | undefined;
   try {
     row = await callPublicRpc<ActionRpc>('family_admin_request_approve_v1', {
+      p_phone: cleaned,
+      p_request_id: requestId,
+    });
+  } catch (error) {
+    throwIfMissingRpc(error);
+  }
+  assertOk(row);
+}
+
+/** يجد الشخص بنفس منطق قبول الطلب عند الإرسال ثم يربط الجوال ويعتمد. */
+export async function approveMemberPhoneRequest(adminPhone: string, requestId: number): Promise<void> {
+  const cleaned = String(adminPhone || '').trim();
+  if (!cleaned || requestId < 1) throw new Error('bad_input');
+  let row: ActionRpc | undefined;
+  try {
+    row = await callPublicRpc<ActionRpc>('family_admin_approve_member_phone_request_v1', {
       p_phone: cleaned,
       p_request_id: requestId,
     });
@@ -504,6 +561,8 @@ export function familyAdminActionMessage(error: unknown): string {
       return 'هذا النوع يُعالَج من مسار مختلف.';
     case 'bind_required':
       return 'سجّل الرقم على الشخص في الشجرة ثم اعتمد الطلب.';
+    case 'name_not_unique':
+      return 'لم يُعثر على شخص واحد بهذا الاسم في الفرع. اختره يدوياً من البحث أو صحّح الشجرة.';
     case 'unknown_role':
       return 'هذا الدور غير معروف.';
     case 'missing_secret_hash':

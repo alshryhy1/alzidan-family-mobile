@@ -587,19 +587,20 @@ enum EventVisibility {
         if isDeath(event.rawType) {
             return isWithinDaysFromEventDay(event, keepDays: deathKeepDays, now: now)
         }
-        if isHealth(event.rawType) || isNewsNotice(event.rawType) {
-            return isCreatedWithinShowWindow(event, now: now)
-        }
 
         let showAt = event.showAt ?? event.sortDate.map { $0.addingTimeInterval(TimeInterval(-event.showBeforeDays * 24 * 60 * 60)) }
         let endAt = event.endAt ?? event.sortDate.map { endOfLocalDay($0) }
-        if event.sortDate != nil || showAt != nil || endAt != nil {
+        if event.sortDate != nil || event.endAt != nil || showAt != nil || endAt != nil {
             if let endAt, now > endAt { return false }
             if let showAt, now < showAt { return false }
             if event.endAt == nil, let diff = daysFromEventDay(event, now: now), diff < 0 {
                 return false
             }
             return true
+        }
+
+        if isHealth(event.rawType) || isNewsNotice(event.rawType) {
+            return isCreatedWithinShowWindow(event, now: now)
         }
 
         return isCreatedWithinShowWindow(event, now: now)
