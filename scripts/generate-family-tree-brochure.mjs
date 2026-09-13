@@ -78,21 +78,29 @@ function buildBranchGraph(rows, branchKey) {
   const childrenByParent = new Map();
   const metaByPath = new Map();
 
+  const linkParentChild = (parentPath, childPath) => {
+    const parent = normalizeName(parentPath);
+    const child = normalizeName(childPath);
+    if (!parent || !child || parent === child) return;
+    if (!child.startsWith(`${root}/`) && child !== root) return;
+    if (!childrenByParent.has(parent)) childrenByParent.set(parent, new Set());
+    childrenByParent.get(parent).add(child);
+  };
+
   for (const row of rows) {
     if (isHiddenGender(row.gender)) continue;
     const name = normalizeName(row.name || row.child_name);
-    const parent = normalizeName(row.parent_name);
-    if (!name || !parent) continue;
+    if (!name || !name.startsWith(`${root}/`)) continue;
 
     metaByPath.set(name, row);
-    if (!childrenByParent.has(parent)) childrenByParent.set(parent, new Set());
-    childrenByParent.get(parent).add(name);
-
     const parts = name.split('/').filter(Boolean);
-    if (parts.length > 1) {
-      const parentPath = parts.slice(0, -1).join('/');
-      if (!childrenByParent.has(parentPath)) childrenByParent.set(parentPath, new Set());
-      childrenByParent.get(parentPath).add(name);
+    if (parts.length < 2) continue;
+    const parentPath = parts.slice(0, -1).join('/');
+    linkParentChild(parentPath, name);
+
+    const parentFromRow = normalizeName(row.parent_name);
+    if (parentFromRow && parentFromRow !== parentPath) {
+      linkParentChild(parentFromRow, name);
     }
   }
 
@@ -119,19 +127,10 @@ function buildBranchGraph(rows, branchKey) {
           city: normalizeName(metaByPath.get(childPath)?.city || ''),
         };
       })
-      .filter((kid) => kid.generation != null && kid.generation <= MAX_GENERATION)
+      .filter((kid) => kid.generation != null && kid.generation > 0 && kid.generation <= MAX_GENERATION)
       .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
 
-    const unique = [];
-    const seen = new Set();
-    for (const kid of kids) {
-      const key = kid.path || kid.name;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(kid);
-    }
-
-    return unique.map((kid) => {
+    return kids.map((kid) => {
       const childNodes = kid.generation < MAX_GENERATION ? nodeTree(kid.path) : [];
       const overflowAtCap =
         kid.generation === MAX_GENERATION
