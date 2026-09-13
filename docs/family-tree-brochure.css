@@ -1,12 +1,13 @@
-/* شجرة الزيدان — صفحة واحدة (A4 عرضي) */
+/* شجرة من الأسفل: جذر → 5 أغصان → أوراق الأجيال */
 :root {
-  --deep: #064e3b;
-  --mid: #065f46;
-  --trunk: #5c3d1e;
-  --ink: #14241e;
-  --muted: #4b6359;
-  --line: rgba(6, 78, 59, 0.16);
-  --soft: #e8f5ef;
+  --deep: #0b5345;
+  --mid: #0f766e;
+  --leaf: #16a34a;
+  --leaf-light: #4ade80;
+  --trunk: #6b4423;
+  --soil: #8b6914;
+  --ink: #1a2e28;
+  --muted: #5f6f66;
 }
 
 * {
@@ -15,292 +16,231 @@
 
 body {
   margin: 0;
-  font-family: Tahoma, 'Segoe UI', 'Noto Naskh Arabic UI', sans-serif;
-  background: #e8efe9;
+  font-family: Tahoma, 'Segoe UI', sans-serif;
+  background: #dfece6;
   color: var(--ink);
 }
 
-a {
-  color: var(--mid);
-}
-
-.ftb-toolbar {
+.toolbar {
   max-width: 297mm;
-  margin: 10px auto 6px;
+  margin: 8px auto;
   padding: 0 8px;
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  font-size: 12px;
 }
 
-.ftb-toolbar button {
+.toolbar button {
   font: inherit;
-  border: 1px solid var(--line);
+  border: 1px solid #ccc;
   background: #fff;
   border-radius: 999px;
-  padding: 7px 14px;
+  padding: 6px 14px;
   cursor: pointer;
 }
 
-.ftb-page-wrap {
-  display: flex;
-  justify-content: center;
-  padding: 0 8px 20px;
-}
-
-/* صفحة واحدة ثابتة */
-.ftb-one-page {
+/* صفحة واحدة A4 عرضي */
+.poster {
   width: 297mm;
   height: 210mm;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  margin: 0 auto 16px;
+  background: linear-gradient(180deg, #f0fdf9 0%, #ecfdf5 55%, #e8f5e9 100%);
+  border: 1px solid rgba(11, 83, 69, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  position: relative;
-  padding: 3mm 3mm 2mm;
+  padding: 3mm 2mm 0;
 }
 
-.ftb-scale-inner {
-  width: 100%;
+.head {
+  text-align: center;
+  flex: 0 0 auto;
+  padding-bottom: 2mm;
+  border-bottom: 1px solid rgba(11, 83, 69, 0.12);
 }
 
-.ftb-top {
-  display: grid;
-  grid-template-columns: 1fr auto 200px;
-  gap: 8px;
-  align-items: center;
-  border-bottom: 2px solid var(--line);
-  padding-bottom: 4px;
-  margin-bottom: 4px;
-}
-
-.ftb-top h1 {
+.head h1 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--deep);
 }
 
-.ftb-top p {
+.head p {
   margin: 2px 0 0;
   font-size: 8px;
   color: var(--muted);
 }
 
-.ftb-top-stats {
+/* الغطاء الشجري — ينمو من الأسفل */
+.canopy {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  align-items: end;
+  min-height: 0;
+  padding: 0 1mm;
+}
+
+.branch-col {
   display: flex;
-  gap: 8px;
-  font-size: 8px;
-  color: var(--muted);
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+
+.gen-layer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1px;
+}
+
+.gen-stem {
+  width: 2px;
+  height: 4px;
+  background: var(--mid);
+  opacity: 0.6;
+}
+
+.leaves {
+  display: flex;
   flex-wrap: wrap;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  padding: 0 1px;
 }
 
-.ftb-top-stats b {
-  color: var(--deep);
-  font-size: 10px;
-}
-
-.ftb-master-tree {
-  width: 200px;
-  height: 52px;
-  display: block;
-}
-
-.ftb-svg-soil {
-  fill: #8b7355;
-  opacity: 0.4;
-}
-
-.ftb-svg-trunk {
-  fill: var(--trunk);
-}
-
-.ftb-svg-branch {
-  fill: none;
-  stroke: #2d6a4f;
-  stroke-width: 3;
-  stroke-linecap: round;
-}
-
-.ftb-svg-leaf {
-  fill: var(--deep);
-  stroke: #6ee7b7;
-  stroke-width: 2;
-}
-
-.ftb-svg-core {
-  fill: #c9a227;
-  stroke: #fff;
-  stroke-width: 2;
-}
-
-.ftb-svg-leaf-text,
-.ftb-svg-root-text {
-  fill: #ecfdf5;
-  font-size: 9px;
-  font-weight: 700;
-  text-anchor: middle;
-}
-
-.ftb-svg-leaf-sub {
-  fill: #d1fae5;
-  font-size: 6px;
-  text-anchor: middle;
-}
-
-.ftb-legend {
-  display: flex;
-  gap: 10px;
-  font-size: 7px;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
-
-.ftb-legend span {
+/* ورقة = شخص */
+.leaf {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-}
-
-.ftb-legend i {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-}
-
-.sw-root {
-  background: var(--trunk);
-}
-
-.sw-bough {
-  background: var(--mid);
-}
-
-.sw-twig {
-  background: #a7f3d0;
-}
-
-.sw-leaf {
-  background: var(--deep);
-  border-radius: 50%;
-}
-
-/* خمسة أعمدة = خمسة فروع */
-.ftb-forest {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 3px;
-  align-items: start;
-}
-
-.ftb-col {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: linear-gradient(180deg, #f8fffb 0%, #f2f9f4 100%);
-  min-height: 0;
-  padding: 3px;
-}
-
-.ftb-col-head {
+  justify-content: center;
+  min-width: 18px;
+  max-width: 52px;
+  padding: 1px 3px;
+  font-size: 5px;
+  line-height: 1.1;
+  font-weight: 600;
+  color: #f0fdf4;
   text-align: center;
-  border-bottom: 2px solid #8b6914;
-  padding-bottom: 3px;
-  margin-bottom: 3px;
-}
-
-.ftb-col-name {
-  display: block;
-  font-weight: 900;
-  font-size: 9px;
-  color: var(--deep);
-}
-
-.ftb-col-meta {
-  font-size: 6.5px;
-  color: var(--muted);
-}
-
-.ftb-col-stem {
-  width: 4px;
-  height: 8px;
-  background: var(--trunk);
-  margin: 0 auto 3px;
-  border-radius: 2px;
-}
-
-.ftb-col-body {
-  font-size: 6px;
-  line-height: 1.2;
-  max-height: 155mm;
+  background: radial-gradient(ellipse 70% 55% at 35% 25%, var(--leaf-light), var(--leaf) 45%, var(--deep) 100%);
+  border: 1px solid #86efac;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  word-break: break-word;
   overflow: hidden;
 }
 
-.ftb-block {
-  margin-bottom: 3px;
-  padding-right: 2px;
-  border-right: 1px solid rgba(45, 106, 79, 0.15);
+.leaf.dead {
+  opacity: 0.55;
+  filter: grayscale(0.5);
 }
 
-.ftb-children {
-  margin-top: 1px;
-  padding-right: 4px;
-}
-
-.ftb-bough-mini {
-  display: inline-block;
-  background: var(--mid);
-  color: #ecfdf5;
-  border-radius: 4px;
-  padding: 1px 3px;
-  font-weight: 700;
-  font-size: 7px;
-}
-
-.ftb-twigs-mini {
-  display: inline-block;
-  background: #d1fae5;
-  color: var(--deep);
-  border-radius: 3px;
+.g5 .leaf {
+  font-size: 4.5px;
+  min-width: 14px;
   padding: 0 2px;
-  font-size: 6.5px;
 }
 
-.ftb-leaf-cloud {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px;
-  margin-top: 1px;
+.g1 .leaf {
+  font-size: 6px;
+  background: radial-gradient(ellipse at 30% 20%, #6ee7b7, var(--mid) 50%, var(--deep));
 }
 
-.ftb-leaf-mini {
-  display: inline-block;
-  background: radial-gradient(circle at 30% 30%, #34d399, var(--deep));
+.branch-stem {
+  width: 3px;
+  height: 10px;
+  background: linear-gradient(180deg, var(--mid), var(--trunk));
+  border-radius: 2px;
+}
+
+/* الغصن الرئيسي = ابن مطلق */
+.bough {
+  background: linear-gradient(180deg, #047857, #064e3b);
   color: #ecfdf5;
-  border-radius: 8px;
-  padding: 0 2px;
-  font-size: 5px;
-  line-height: 1.15;
-  white-space: nowrap;
-}
-
-.ftb-more-mini {
-  font-size: 5.5px;
-  color: var(--muted);
-  font-style: italic;
-}
-
-.is-deceased {
-  opacity: 0.65;
-  filter: grayscale(0.4);
-}
-
-.ftb-foot {
-  margin-top: 4px;
-  padding-top: 3px;
-  border-top: 1px solid var(--line);
+  font-weight: 900;
+  font-size: 9px;
   text-align: center;
-  font-size: 6.5px;
+  padding: 4px 6px;
+  border-radius: 8px 8px 4px 4px;
+  border: 2px solid #a7f3d0;
+  box-shadow: 0 2px 6px rgba(6, 78, 59, 0.35);
+  min-width: 44px;
+  line-height: 1.2;
+}
+
+.bough small {
+  display: block;
+  font-size: 6px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+/* الجذر والقاعدة */
+.base {
+  flex: 0 0 auto;
+  position: relative;
+  height: 22mm;
+  margin-top: auto;
+}
+
+.trunk-svg {
+  position: absolute;
+  bottom: 14mm;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 18mm;
+  pointer-events: none;
+}
+
+.trunk-svg .soil {
+  fill: var(--soil);
+  opacity: 0.5;
+}
+
+.trunk-svg .trunk {
+  fill: var(--trunk);
+}
+
+.trunk-svg .trunk-branch {
+  fill: none;
+  stroke: var(--trunk);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+.roots {
+  position: absolute;
+  bottom: 2mm;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 2;
+}
+
+.root-name {
+  background: var(--trunk);
+  color: #fef3c7;
+  font-weight: 900;
+  font-size: 11px;
+  padding: 5px 14px;
+  border-radius: 10px;
+  border: 2px solid #d4a574;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.root-sub {
+  font-size: 7px;
   color: var(--muted);
+  margin-top: 2px;
 }
 
 @media print {
@@ -308,21 +248,17 @@ a {
     background: #fff;
   }
 
-  .ftb-toolbar {
+  .toolbar {
     display: none;
   }
 
-  .ftb-page-wrap {
-    padding: 0;
-  }
-
-  .ftb-one-page {
+  .poster {
     width: 297mm;
     height: 210mm;
+    margin: 0;
     border: none;
     border-radius: 0;
     box-shadow: none;
-    margin: 0;
     page-break-after: avoid;
     page-break-inside: avoid;
   }
