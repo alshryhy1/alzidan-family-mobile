@@ -43,6 +43,7 @@
     "verify:event-card": "node scripts/verify-event-card-compat.mjs",
     "verify:notifications": "node scripts/verify-notification-format.mjs",
     "verify:news-expiry": "node scripts/verify-news-expiry.mjs",
+    "generate:family-brochure": "node scripts/generate-family-tree-brochure.mjs",
     "verify:home-ticker": "node scripts/verify-home-ticker.mjs",
     "verify:tree-stats": "node scripts/verify-tree-stats.mjs",
     "verify:person-encounter": "node scripts/verify-person-encounter-identity.mjs",
