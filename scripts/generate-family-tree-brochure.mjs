@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 /**
- * Generates a print-ready family tree brochure from live Supabase data.
- * Output: docs/family-tree-brochure.html
- *
- * Usage: node scripts/generate-family-tree-brochure.mjs
+ * شجرة عائلة الزيدان — صفحة واحدة، نمو من الأسفل:
+ * جذر (مطلق) → 5 أغصان → أوراق ج2 → ج3 → ج4 → ج5
  */
 
 import { writeFileSync } from 'node:fs';
@@ -11,8 +9,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
-const OUT = join(ROOT, 'docs', 'family-tree-brochure.html');
+const ROOT_DIR = join(__dirname, '..');
+const OUT = join(ROOT_DIR, 'docs', 'family-tree-brochure.html');
 
 const SUPABASE_URL =
   process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://wbskjfdqpugnwvrykqcn.supabase.co';
@@ -21,23 +19,15 @@ const SUPABASE_KEY =
 
 const BRANCH_ORDER = ['زيدان', 'مزيد', 'زايد', 'لاحم', 'ملحم'];
 const ROOT_NAME = 'مطلق بن زيدان';
-/** أبناء مطلق = الجيل 1؛ يُعرض حتى الجيل الخامس (5 مستويات تحت كل فرع). */
 const MAX_GENERATION = 5;
 
 function normalizeName(value) {
-  return String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
 function branchRootName(branchKey) {
   const key = normalizeName(branchKey);
   return key ? `${key} بن مطلق بن زيدان` : '';
-}
-
-function leafName(path) {
-  const parts = normalizeName(path).split('/').filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : normalizeName(path);
 }
 
 function generationFromBranchRoot(path, branchRoot) {
@@ -47,6 +37,11 @@ function generationFromBranchRoot(path, branchRoot) {
   const rest = p.slice(root.length).replace(/^\//, '');
   if (!rest) return 0;
   return rest.split('/').filter(Boolean).length;
+}
+
+function leafName(path) {
+  const parts = normalizeName(path).split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : normalizeName(path);
 }
 
 function isHiddenGender(gender) {
@@ -78,11 +73,11 @@ function buildBranchGraph(rows, branchKey) {
   const childrenByParent = new Map();
   const metaByPath = new Map();
 
-  const linkParentChild = (parentPath, childPath) => {
+  const link = (parentPath, childPath) => {
     const parent = normalizeName(parentPath);
     const child = normalizeName(childPath);
     if (!parent || !child || parent === child) return;
-    if (!child.startsWith(`${root}/`) && child !== root) return;
+    if (!child.startsWith(`${root}/`)) return;
     if (!childrenByParent.has(parent)) childrenByParent.set(parent, new Set());
     childrenByParent.get(parent).add(child);
   };
@@ -91,32 +86,18 @@ function buildBranchGraph(rows, branchKey) {
     if (isHiddenGender(row.gender)) continue;
     const name = normalizeName(row.name || row.child_name);
     if (!name || !name.startsWith(`${root}/`)) continue;
-
     metaByPath.set(name, row);
     const parts = name.split('/').filter(Boolean);
     if (parts.length < 2) continue;
-    const parentPath = parts.slice(0, -1).join('/');
-    linkParentChild(parentPath, name);
-
+    link(parts.slice(0, -1).join('/'), name);
     const parentFromRow = normalizeName(row.parent_name);
-    if (parentFromRow && parentFromRow !== parentPath) {
-      linkParentChild(parentFromRow, name);
+    if (parentFromRow && parentFromRow !== parts.slice(0, -1).join('/')) {
+      link(parentFromRow, name);
     }
   }
 
-  if (!childrenByParent.has(root)) childrenByParent.set(root, new Set());
-
-  const stats = { total: 0, living: 0, deceased: 0, cities: new Set() };
-  for (const [path, row] of metaByPath.entries()) {
-    if (path === root) continue;
-    stats.total += 1;
-    if (isDeceased(row)) stats.deceased += 1;
-    else stats.living += 1;
-    if (row.city) stats.cities.add(normalizeName(row.city));
-  }
-
   function nodeTree(parentPath) {
-    const kids = Array.from(childrenByParent.get(parentPath) || [])
+    return Array.from(childrenByParent.get(parentPath) || [])
       .map((childPath) => {
         const gen = generationFromBranchRoot(childPath, root);
         return {
@@ -124,102 +105,37 @@ function buildBranchGraph(rows, branchKey) {
           name: leafName(childPath),
           generation: gen,
           deceased: isDeceased(metaByPath.get(childPath) || {}),
-          city: normalizeName(metaByPath.get(childPath)?.city || ''),
         };
       })
-      .filter((kid) => kid.generation != null && kid.generation > 0 && kid.generation <= MAX_GENERATION)
-      .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
-
-    return kids.map((kid) => {
-      const childNodes = kid.generation < MAX_GENERATION ? nodeTree(kid.path) : [];
-      const overflowAtCap =
-        kid.generation === MAX_GENERATION
-          ? Array.from(childrenByParent.get(kid.path) || []).filter(
-              (p) => (generationFromBranchRoot(p, root) || 0) > MAX_GENERATION,
-            ).length
-          : 0;
-      return {
-        ...kid,
-        children: childNodes,
-        overflow: overflowAtCap,
-      };
-    });
+      .filter((n) => n.generation != null && n.generation > 0 && n.generation <= MAX_GENERATION)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ar'))
+      .map((n) => ({
+        ...n,
+        children: n.generation < MAX_GENERATION ? nodeTree(n.path) : [],
+      }));
   }
 
   const topLevel = nodeTree(root);
-  const houses = topLevel.filter((n) => !n.name.startsWith('+')).length;
-
-  return { root, topLevel, stats, houses };
-}
-
-function renderLeafCloud(nodes) {
-  return nodes
-    .map(
-      (node) =>
-        `<span class="ftb-leaf-mini${node.deceased ? ' is-deceased' : ''}" title="ج5">${escapeHtml(node.name)}</span>`,
-    )
-    .join('');
-}
-
-function renderCompactNode(node) {
-  if (node.generation === 5) {
-    return `<span class="ftb-leaf-mini${node.deceased ? ' is-deceased' : ''}">${escapeHtml(node.name)}</span>`;
+  let living = 0;
+  let deceased = 0;
+  for (const row of metaByPath.values()) {
+    if (isDeceased(row)) deceased += 1;
+    else living += 1;
   }
 
-  const children = node.children || [];
-  const gen5 = children.filter((child) => child.generation === 5);
-  const younger = children.filter((child) => child.generation < 5);
-  const visual = node.generation === 1 ? 'ftb-bough-mini' : 'ftb-twigs-mini';
-  const subtrees = younger.map((child) => renderCompactNode(child)).join('');
-  const leaves = gen5.length ? `<div class="ftb-leaf-cloud">${renderLeafCloud(gen5)}</div>` : '';
-  const more = node.overflow > 0 ? `<span class="ftb-more-mini">+${node.overflow}</span>` : '';
-
-  return `<div class="ftb-block ftb-g${node.generation}${node.deceased ? ' is-deceased' : ''}">
-    <span class="${visual}">${escapeHtml(node.name)}</span>
-    ${subtrees ? `<div class="ftb-children">${subtrees}</div>` : ''}
-    ${leaves}
-    ${more}
-  </div>`;
+  return { root, topLevel, stats: { living, deceased, total: living + deceased } };
 }
 
-function renderBranchColumn(branch) {
-  return `<section class="ftb-col" aria-label="فرع ${escapeHtml(branch.key)}">
-    <header class="ftb-col-head">
-      <span class="ftb-col-name">${escapeHtml(branch.key)}</span>
-      <span class="ftb-col-meta">${branch.stats.living} حي</span>
-    </header>
-    <div class="ftb-col-stem" aria-hidden="true"></div>
-    <div class="ftb-col-body">${branch.topLevel.map((node) => renderCompactNode(node)).join('')}</div>
-  </section>`;
-}
-
-function renderMasterTreeSvg(branches) {
-  const sons = branches.map((b) => ({ key: b.key, living: b.stats.living }));
-  const xPositions = [70, 170, 270, 370, 470];
-  const branchPaths = sons
-    .map(
-      (_, i) =>
-        `<path class="ftb-svg-branch" d="M270 118 C270 98 ${xPositions[i]} 98 ${xPositions[i]} 72" />`,
-    )
-    .join('');
-  const leaves = sons
-    .map(
-      (son, i) => `
-      <g>
-        <circle class="ftb-svg-leaf" cx="${xPositions[i]}" cy="52" r="22" />
-        <text class="ftb-svg-leaf-text" x="${xPositions[i]}" y="50">${escapeHtml(son.key)}</text>
-        <text class="ftb-svg-leaf-sub" x="${xPositions[i]}" y="64">${son.living}</text>
-      </g>`,
-    )
-    .join('');
-  return `<svg class="ftb-master-tree" viewBox="0 0 540 140" role="img" aria-label="شجرة مطلق بن زيدان">
-    <ellipse class="ftb-svg-soil" cx="270" cy="132" rx="70" ry="8" />
-    <rect class="ftb-svg-trunk" x="258" y="84" width="24" height="46" rx="8" />
-    ${branchPaths}
-    ${leaves}
-    <circle class="ftb-svg-core" cx="270" cy="96" r="12" />
-    <text class="ftb-svg-root-text" x="270" y="99">مطلق</text>
-  </svg>`;
+function collectByGeneration(nodes) {
+  const rows = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+  function walk(list) {
+    for (const n of list) {
+      if (n.generation >= 1 && n.generation <= 5) rows[n.generation].push(n);
+      if (n.children?.length) walk(n.children);
+    }
+  }
+  walk(nodes);
+  return rows;
 }
 
 function escapeHtml(value) {
@@ -228,6 +144,44 @@ function escapeHtml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function renderLeaf(node) {
+  return `<span class="leaf${node.deceased ? ' dead' : ''}" title="ج${node.generation}">${escapeHtml(node.name)}</span>`;
+}
+
+function renderGenLayer(gen, nodes) {
+  if (!nodes.length) return '';
+  return `<div class="gen-layer g${gen}" data-gen="${gen}">
+    <div class="gen-stem"></div>
+    <div class="leaves">${nodes.map(renderLeaf).join('')}</div>
+  </div>`;
+}
+
+function renderBranchColumn(branch) {
+  const gens = collectByGeneration(branch.topLevel);
+  const layers = [5, 4, 3, 2, 1]
+    .map((g) => renderGenLayer(g, gens[g]))
+    .filter(Boolean)
+    .join('');
+
+  return `<section class="branch-col" data-branch="${escapeHtml(branch.key)}">
+    ${layers}
+    <div class="branch-stem"></div>
+    <div class="bough">${escapeHtml(branch.key)}<small>${branch.stats.living} حي</small></div>
+  </section>`;
+}
+
+function renderTrunkSvg() {
+  const xs = [10, 30, 50, 70, 90];
+  const paths = xs
+    .map((x) => `<path class="trunk-branch" d="M50 72 Q50 58 ${x} 42 L${x} 38" />`)
+    .join('');
+  return `<svg class="trunk-svg" viewBox="0 0 100 80" preserveAspectRatio="none" aria-hidden="true">
+    <ellipse class="soil" cx="50" cy="76" rx="38" ry="5" />
+    <rect class="trunk" x="46" y="38" width="8" height="36" rx="3" />
+    ${paths}
+  </svg>`;
 }
 
 function formatDateAr() {
@@ -241,77 +195,57 @@ function formatDateAr() {
 function buildHtml({ branches, generatedAt }) {
   const totalLiving = branches.reduce((s, b) => s + b.stats.living, 0);
   const totalAll = branches.reduce((s, b) => s + b.stats.total, 0);
-  const totalDeceased = branches.reduce((s, b) => s + b.stats.deceased, 0);
-  const masterTreeSvg = renderMasterTreeSvg(branches);
-  const columns = branches.map((b) => renderBranchColumn(b)).join('');
+  const columns = branches.map(renderBranchColumn).join('');
 
   return `<!doctype html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8" />
-  <title>شجرة عائلة الزيدان — صفحة واحدة</title>
+  <title>شجرة عائلة الزيدان</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="شجرة عائلة الزيدان في صفحة واحدة — ذرية مطلق بن زيدان حتى الجيل الخامس." />
   <link rel="stylesheet" href="family-tree-brochure.css" />
 </head>
 <body>
-  <div class="ftb-toolbar">
-    <button type="button" onclick="window.print()">طباعة / PDF — صفحة واحدة</button>
-    <a href="https://alzidan.org/" target="_blank" rel="noopener">alzidan.org</a>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">طباعة / PDF</button>
+    <span>alzidan.org</span>
   </div>
 
-  <div class="ftb-page-wrap">
-    <article class="ftb-one-page" id="ftb-page">
-      <div class="ftb-scale-inner" id="ftb-scale-inner">
-        <header class="ftb-top">
-          <div class="ftb-top-title">
-            <h1>شجرة عائلة الزيدان</h1>
-            <p>ذرية ${escapeHtml(ROOT_NAME)} · حتى الجيل الخامس · ${escapeHtml(generatedAt)}</p>
-          </div>
-          <div class="ftb-top-stats">
-            <span><b>${totalLiving}</b> حي</span>
-            <span><b>${totalDeceased}</b> متوفى</span>
-            <span><b>${totalAll}</b> مسجّل</span>
-            <span><b>5</b> فروع</span>
-          </div>
-          <div class="ftb-top-tree">${masterTreeSvg}</div>
-        </header>
+  <article class="poster" id="poster">
+    <header class="head">
+      <h1>شجرة عائلة الزيدان</h1>
+      <p>من ${escapeHtml(ROOT_NAME)} · حتى الجيل الخامس · ${escapeHtml(generatedAt)} · ${totalLiving} حي · ${totalAll} مسجّل</p>
+    </header>
 
-        <div class="ftb-legend">
-          <span><i class="sw-root"></i>جذر</span>
-          <span><i class="sw-bough"></i>غصن (ج1–2)</span>
-          <span><i class="sw-twig"></i>غصينات (ج3–4)</span>
-          <span><i class="sw-leaf"></i>ورقة (ج5)</span>
-        </div>
+    <div class="canopy" id="canopy">${columns}</div>
 
-        <div class="ftb-forest">${columns}</div>
-
-        <footer class="ftb-foot">
-          ${escapeHtml(ROOT_NAME)} — الجد الجامع · alzidan.org · alzidan990@gmail.com · 0551840058
-        </footer>
+    <footer class="base">
+      ${renderTrunkSvg()}
+      <div class="roots">
+        <div class="root-name">${escapeHtml(ROOT_NAME)}</div>
+        <div class="root-sub">الجد الجامع · زيدان الأول</div>
       </div>
-    </article>
-  </div>
+    </footer>
+  </article>
 
   <script>
-    (function fitOnePage() {
-      var page = document.getElementById('ftb-page');
-      var inner = document.getElementById('ftb-scale-inner');
-      if (!page || !inner) return;
-      function apply() {
-        inner.style.transform = 'none';
-        inner.style.width = '100%';
-        var ph = page.clientHeight;
-        var ih = inner.scrollHeight;
-        var scale = ih > ph ? ph / ih : 1;
-        inner.style.transform = 'scale(' + scale + ')';
-        inner.style.transformOrigin = 'top center';
-        inner.style.width = scale < 1 ? (100 / scale) + '%' : '100%';
+    (function () {
+      var poster = document.getElementById('poster');
+      var canopy = document.getElementById('canopy');
+      function fit() {
+        canopy.style.transform = 'none';
+        canopy.style.fontSize = '100%';
+        var ph = poster.clientHeight - poster.querySelector('.head').offsetHeight - poster.querySelector('.base').offsetHeight - 8;
+        var ch = canopy.scrollHeight;
+        if (ch > ph && ph > 0) {
+          var scale = ph / ch;
+          canopy.style.transform = 'scale(' + scale + ')';
+          canopy.style.transformOrigin = 'bottom center';
+        }
       }
-      window.addEventListener('load', apply);
-      window.addEventListener('resize', apply);
-      window.addEventListener('beforeprint', apply);
-      if (document.fonts && document.fonts.ready) document.fonts.ready.then(apply);
+      window.addEventListener('load', fit);
+      window.addEventListener('resize', fit);
+      window.addEventListener('beforeprint', fit);
     })();
   </script>
 </body>
@@ -322,11 +256,10 @@ async function main() {
   const [branchRows, childRows] = await Promise.all([
     fetchJson('/rest/v1/tree_branches?select=key,title&order=key'),
     fetchJson(
-      '/rest/v1/tree_children?select=branch_key,parent_name,name,child_name,gender,is_deceased,deceased,city&order=branch_key',
+      '/rest/v1/tree_children?select=branch_key,parent_name,name,child_name,gender,is_deceased,deceased&order=branch_key',
     ),
   ]);
 
-  const titleByKey = new Map(branchRows.map((r) => [r.key, r.title || r.key]));
   const byBranch = new Map();
   for (const row of childRows) {
     if (!byBranch.has(row.branch_key)) byBranch.set(row.branch_key, []);
@@ -335,24 +268,12 @@ async function main() {
 
   const branches = BRANCH_ORDER.map((key) => {
     const graph = buildBranchGraph(byBranch.get(key) || [], key);
-    return {
-      key,
-      title: titleByKey.get(key) || `ذرية ${branchRootName(key)}`,
-      ...graph,
-    };
+    const titleRow = branchRows.find((r) => r.key === key);
+    return { key, title: titleRow?.title || key, ...graph };
   });
 
-  const html = buildHtml({
-    branches,
-    generatedAt: formatDateAr(),
-  });
-
-  writeFileSync(OUT, html, 'utf8');
+  writeFileSync(OUT, buildHtml({ branches, generatedAt: formatDateAr() }), 'utf8');
   console.log(`Wrote ${OUT}`);
-  console.log(
-    'Branches:',
-    branches.map((b) => `${b.key}: ${b.stats.living} living / ${b.stats.total} total`).join(' · '),
-  );
 }
 
 main().catch((err) => {
