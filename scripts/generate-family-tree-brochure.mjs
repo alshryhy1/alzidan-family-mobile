@@ -152,25 +152,68 @@ function buildBranchGraph(rows, branchKey) {
   return { root, topLevel, stats, houses };
 }
 
-function renderTreeNodes(nodes, depth = 0) {
+function nodeVisualClass(generation) {
+  if (generation === 5) return 'ftb-leaf';
+  if (generation === 1) return 'ftb-bough';
+  if (generation >= 2 && generation <= 4) return 'ftb-twigs';
+  return 'ftb-twigs';
+}
+
+function renderTreeNodes(nodes) {
   if (!nodes.length) return '';
-  const cls = depth === 0 ? 'ftb-tree-root-list' : 'ftb-tree-children';
   const items = nodes
     .map((node) => {
-      const tag = node.deceased ? ' <span class="ftb-deceased">رحمه الله</span>' : '';
-      const gen =
-        node.generation != null
-          ? ` <span class="ftb-gen">ج${node.generation}</span>`
-          : '';
-      const kids = node.children?.length ? renderTreeNodes(node.children, depth + 1) : '';
+      const visual = nodeVisualClass(node.generation);
+      const kids = node.children?.length ? renderTreeNodes(node.children) : '';
       const more =
         node.overflow > 0
-          ? `<li class="ftb-more">… و${node.overflow} من الجيل السادس فما بعد (في الموقع والتطبيق)</li>`
+          ? `<li class="ftb-tree-more">… +${node.overflow} ورقة (ج6+)</li>`
           : '';
-      return `<li class="ftb-node ftb-gen-${node.generation || 0}${node.deceased ? ' is-deceased' : ''}"><span class="ftb-name">${escapeHtml(node.name)}</span>${gen}${tag}${kids ? `<ul class="${cls}">${kids}</ul>` : ''}${more}</li>`;
+      const deceased = node.deceased ? ' is-deceased' : '';
+      const tag = node.deceased ? '<span class="ftb-deceased-tag">رحمه الله</span>' : '';
+      return `<li class="ftb-tree-item ftb-gen-${node.generation || 0}${deceased}">
+        <span class="${visual}" title="الجيل ${node.generation}">${escapeHtml(node.name)}${tag}</span>
+        ${kids}
+        ${more}
+      </li>`;
     })
     .join('');
-  return items;
+  return `<ul class="ftb-tree">${items}</ul>`;
+}
+
+function renderMasterTreeSvg(branches) {
+  const sons = branches.map((b) => ({
+    key: b.key,
+    living: b.stats.living,
+  }));
+  const xPositions = [90, 210, 330, 450, 570];
+  const branchPaths = sons
+    .map(
+      (son, i) =>
+        `<path class="ftb-svg-branch" d="M330 250 C330 210 ${xPositions[i]} 210 ${xPositions[i]} 150" />`,
+    )
+    .join('');
+  const leaves = sons
+    .map(
+      (son, i) => `
+      <g class="ftb-svg-leaf-group">
+        <circle class="ftb-svg-leaf" cx="${xPositions[i]}" cy="118" r="34" />
+        <text class="ftb-svg-leaf-text" x="${xPositions[i]}" y="112">${escapeHtml(son.key)}</text>
+        <text class="ftb-svg-leaf-sub" x="${xPositions[i]}" y="132">${son.living} حي</text>
+      </g>`,
+    )
+    .join('');
+  return `<svg class="ftb-master-tree" viewBox="0 0 660 320" role="img" aria-label="شجرة مطلق بن زيدان والفروع الخمسة">
+    <ellipse class="ftb-svg-soil" cx="330" cy="292" rx="120" ry="18" />
+    <rect class="ftb-svg-trunk" x="312" y="170" width="36" height="112" rx="14" />
+    <path class="ftb-svg-root" d="M300 282 Q280 300 250 305 M360 282 Q380 300 410 305" />
+    ${branchPaths}
+    ${leaves}
+    <circle class="ftb-svg-core" cx="330" cy="188" r="22" />
+    <text class="ftb-svg-root-text" x="330" y="184">مطلق</text>
+    <text class="ftb-svg-root-sub" x="330" y="202">بن زيدان</text>
+    <text class="ftb-svg-caption" x="330" y="26">الغصون = الفروع الخمسة · الأوراق = الذرية حتى الجيل الخامس</text>
+  </svg>`;
 }
 
 function escapeHtml(value) {
@@ -205,9 +248,15 @@ function buildHtml({ branches, generatedAt, logoSvg }) {
         <div class="ftb-branch-metrics">
           <span><strong>${b.stats.living}</strong> حي</span>
           <span><strong>${b.stats.deceased}</strong> متوفى</span>
-          <span><strong>${b.houses}</strong> بيت</span>
+          <span><strong>${b.houses}</strong> غصن</span>
         </div>
-        <ul class="ftb-tree-root-list">${renderTreeNodes(b.topLevel)}</ul>
+        <div class="ftb-tree-scene" aria-label="شجرة ${escapeHtml(b.key)}">
+          <div class="ftb-tree-ground">
+            <span class="ftb-ground-label">الجذر</span>
+            <span class="ftb-trunk-name">${escapeHtml(b.root)}</span>
+          </div>
+          <div class="ftb-tree-scroll">${renderTreeNodes(b.topLevel)}</div>
+        </div>
         ${
           b.stats.cities.size
             ? `<p class="ftb-cities">مناطق: ${escapeHtml(Array.from(b.stats.cities).slice(0, 8).join(' · '))}${b.stats.cities.size > 8 ? ' …' : ''}</p>`
@@ -217,16 +266,7 @@ function buildHtml({ branches, generatedAt, logoSvg }) {
     )
     .join('');
 
-  const overviewBranches = branches
-    .map(
-      (b) => `
-      <div class="ftb-overview-item">
-        <div class="ftb-overview-name">${escapeHtml(b.key)}</div>
-        <div class="ftb-overview-sub">${escapeHtml(leafName(b.root))}</div>
-        <div class="ftb-overview-count">${b.stats.living} حي</div>
-      </div>`,
-    )
-    .join('');
+  const masterTreeSvg = renderMasterTreeSvg(branches);
 
   return `<!doctype html>
 <html dir="rtl" lang="ar">
@@ -265,18 +305,23 @@ function buildHtml({ branches, generatedAt, logoSvg }) {
       </div>
 
       <div class="ftb-root-diagram" aria-label="شجرة الجد الجامع">
-        <div class="ftb-root-node">${escapeHtml(ROOT_NAME)}<small>الجد الجامع</small></div>
-        <div class="ftb-root-branches">${overviewBranches}</div>
+        ${masterTreeSvg}
+        <p class="ftb-root-caption">${escapeHtml(ROOT_NAME)} — الجد الجامع · الفروع: زيدان · مزيد · زايد · لاحم · ملحم</p>
       </div>
     </section>
 
     <section class="ftb-section">
-      <h2>الفروع والذرية</h2>
+      <h2>الفروع والذرية — شكل شجرة</h2>
       <p class="ftb-note">
-        الجيل 1 = أبناء مطلق (زيدان · مزيد · زايد · لاحم · ملحم). يُعرض هنا حتى الجيل الخامس فقط.
-        ما بعده في <a href="https://alzidan.org/">الموقع</a> وتطبيق العائلة.
-        <span class="ftb-legend">ج1 ج2 ج3 … = رقم الجيل من رأس الفرع.</span>
+        <strong>جذر</strong> = رأس الفرع · <strong>غصن</strong> = ج1 وج2 · <strong>أغصان</strong> = ج3 وج4 ·
+        <strong>ورقة</strong> = الجيل الخامس. ما بعده في <a href="https://alzidan.org/">الموقع</a>.
       </p>
+      <div class="ftb-legend-row">
+        <span class="ftb-legend-item"><i class="ftb-swatch ftb-swatch-root"></i>جذر</span>
+        <span class="ftb-legend-item"><i class="ftb-swatch ftb-swatch-bough"></i>غصن</span>
+        <span class="ftb-legend-item"><i class="ftb-swatch ftb-swatch-twigs"></i>أغصان</span>
+        <span class="ftb-legend-item"><i class="ftb-swatch ftb-swatch-leaf"></i>ورقة (ج5)</span>
+      </div>
       <div class="ftb-branches">${branchCards}</div>
     </section>
 
