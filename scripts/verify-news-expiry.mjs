@@ -11,15 +11,10 @@ const require = createRequire(import.meta.url);
 
 const familyModule = join(
   __dirname,
-  '../../alzidan-family/assets/js/modules/events/event-visibility.js',
+  '../alzidan-family/assets/js/modules/events/event-visibility.js',
 );
 
-try {
-  require(familyModule);
-} catch (err) {
-  // fallback: sibling path from Downloads layout
-  require('/Users/ahshryhy/Downloads/alzidan-family/assets/js/modules/events/event-visibility.js');
-}
+require(familyModule);
 
 const vis = globalThis.AlzidanEventVisibility;
 if (!vis || typeof vis.isFamilyEventPubliclyVisible !== 'function') {
@@ -126,20 +121,24 @@ const cases = [
     expect: false,
   },
   {
-    name: 'birth notice stays after birth day when published recently',
+    name: 'birth notice hides after event day even if published recently',
     row: {
       type: 'birth',
       event_date: dayOffsetIso(-3),
       created_at: createdDaysAgo(0),
-      end_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      details: JSON.stringify({
-        v: 1,
-        kind: 'happy_notice',
-        showDays: 7,
-        end_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      }),
+      details: JSON.stringify({ v: 1, kind: 'happy_notice', showDays: 7 }),
     },
-    expect: true,
+    expect: false,
+  },
+  {
+    name: 'marriage with ISO event_date hides after that day',
+    row: {
+      type: 'marriage',
+      event_date: dayOffsetIso(-2),
+      created_at: createdDaysAgo(0),
+      details: JSON.stringify({ v: 1, kind: 'happy_notice', showDays: 7 }),
+    },
+    expect: false,
   },
   {
     name: 'birth notice ends after showDays from publish',

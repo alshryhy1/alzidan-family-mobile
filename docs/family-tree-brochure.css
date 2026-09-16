@@ -1,0 +1,270 @@
+/* شجرة من الأسفل: جذر → 5 أغصان → أوراق الأجيال */
+:root {
+  --deep: #0b5345;
+  --mid: #0f766e;
+  --leaf: #16a34a;
+  --leaf-light: #4ade80;
+  --trunk: #6b4423;
+  --soil: #8b6914;
+  --ink: #1a2e28;
+  --muted: #5f6f66;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Tahoma, 'Segoe UI', sans-serif;
+  background: #dfece6;
+  color: var(--ink);
+}
+
+.toolbar {
+  max-width: 297mm;
+  margin: 8px auto;
+  padding: 0 8px;
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.toolbar button {
+  font: inherit;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+/* صفحة واحدة A4 عرضي */
+.poster {
+  width: 297mm;
+  height: 210mm;
+  margin: 0 auto 16px;
+  background: linear-gradient(180deg, #f0fdf9 0%, #ecfdf5 55%, #e8f5e9 100%);
+  border: 1px solid rgba(11, 83, 69, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 3mm 2mm 0;
+}
+
+.head {
+  text-align: center;
+  flex: 0 0 auto;
+  padding-bottom: 2mm;
+  border-bottom: 1px solid rgba(11, 83, 69, 0.12);
+}
+
+.head h1 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--deep);
+}
+
+.head p {
+  margin: 2px 0 0;
+  font-size: 8px;
+  color: var(--muted);
+}
+
+/* الغطاء الشجري — ينمو من الأسفل */
+.canopy {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  align-items: end;
+  min-height: 0;
+  padding: 0 1mm;
+}
+
+.branch-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+
+.gen-layer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1px;
+}
+
+.gen-stem {
+  width: 2px;
+  height: 4px;
+  background: var(--mid);
+  opacity: 0.6;
+}
+
+.leaves {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  padding: 0 1px;
+}
+
+/* ورقة = شخص */
+.leaf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  max-width: 52px;
+  padding: 1px 3px;
+  font-size: 5px;
+  line-height: 1.1;
+  font-weight: 600;
+  color: #f0fdf4;
+  text-align: center;
+  background: radial-gradient(ellipse 70% 55% at 35% 25%, var(--leaf-light), var(--leaf) 45%, var(--deep) 100%);
+  border: 1px solid #86efac;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  word-break: break-word;
+  overflow: hidden;
+}
+
+.leaf.dead {
+  opacity: 0.55;
+  filter: grayscale(0.5);
+}
+
+.g5 .leaf {
+  font-size: 4.5px;
+  min-width: 14px;
+  padding: 0 2px;
+}
+
+.g1 .leaf {
+  font-size: 6px;
+  background: radial-gradient(ellipse at 30% 20%, #6ee7b7, var(--mid) 50%, var(--deep));
+}
+
+.branch-stem {
+  width: 3px;
+  height: 10px;
+  background: linear-gradient(180deg, var(--mid), var(--trunk));
+  border-radius: 2px;
+}
+
+/* الغصن الرئيسي = ابن مطلق */
+.bough {
+  background: linear-gradient(180deg, #047857, #064e3b);
+  color: #ecfdf5;
+  font-weight: 900;
+  font-size: 9px;
+  text-align: center;
+  padding: 4px 6px;
+  border-radius: 8px 8px 4px 4px;
+  border: 2px solid #a7f3d0;
+  box-shadow: 0 2px 6px rgba(6, 78, 59, 0.35);
+  min-width: 44px;
+  line-height: 1.2;
+}
+
+.bough small {
+  display: block;
+  font-size: 6px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+/* الجذر والقاعدة */
+.base {
+  flex: 0 0 auto;
+  position: relative;
+  height: 22mm;
+  margin-top: auto;
+}
+
+.trunk-svg {
+  position: absolute;
+  bottom: 14mm;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 18mm;
+  pointer-events: none;
+}
+
+.trunk-svg .soil {
+  fill: var(--soil);
+  opacity: 0.5;
+}
+
+.trunk-svg .trunk {
+  fill: var(--trunk);
+}
+
+.trunk-svg .trunk-branch {
+  fill: none;
+  stroke: var(--trunk);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+.roots {
+  position: absolute;
+  bottom: 2mm;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 2;
+}
+
+.root-name {
+  background: var(--trunk);
+  color: #fef3c7;
+  font-weight: 900;
+  font-size: 11px;
+  padding: 5px 14px;
+  border-radius: 10px;
+  border: 2px solid #d4a574;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.root-sub {
+  font-size: 7px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .toolbar {
+    display: none;
+  }
+
+  .poster {
+    width: 297mm;
+    height: 210mm;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    page-break-after: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+@page {
+  size: A4 landscape;
+  margin: 0;
+}

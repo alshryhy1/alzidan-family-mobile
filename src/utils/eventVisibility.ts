@@ -2,7 +2,8 @@
  * مصدر ظهور الأخبار الواحد (مسار C / NEWS-001 + جدولة).
  * القواعد مطابقة لـ web `isFamilyEventPubliclyVisible`:
  * - وفاة: 3 أيام تقويمية من يوم الحدث (أو created_at إن لم يوجد event_date)
- * - تهاني/صحة (مولود جديد…): ضمن نافذة showDays من created_at — تاريخ الواقعة لا يُنهي الخبر
+ * - تهاني/صحة بلا تاريخ: ضمن نافذة showDays من created_at
+ * - أي خبر/مناسبة لها event_date أو end_at: تنتهي بنهاية يوم ذلك التاريخ
  * - مناسبات مؤرخة (حفل/اجتماع): لا تظهر قبل show_at؛ تنتهي بنهاية يوم المناسبة
  * - event_date = null: يعتمد على created_at / showDays فقط (لا ظهور أبدي)
  */
@@ -143,6 +144,32 @@ function endOfLocalDayMs(dayMs: number) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
 }
 
+function eventDayMsForVisibility(event: EventVisibilityInput) {
+  return parseFamilyEventDayMs({
+    ...event,
+    eventDate: event.eventDate || event.event_date || event.date || event.dateLabel,
+  });
+}
+
+function explicitEndAtMs(event: EventVisibilityInput) {
+  return parseTimestampMs(readScheduleValue(event, 'end_at', 'endAt') ?? event.endAt ?? event.end_at);
+}
+
+/** null = لا جدولة؛ true/false = ظاهر/منتهي حسب show_at/end_at/يوم المناسبة */
+function visibilityFromScheduleWindow(event: EventVisibilityInput, now: Date = new Date()) {
+  const win = resolveScheduleWindow(event, now);
+  if (win.eventDayMs == null && win.endAtMs == null && win.showAtMs == null) {
+    return null;
+  }
+  if (win.endAtMs != null && win.nowMs > win.endAtMs) return false;
+  if (win.showAtMs != null && win.nowMs < win.showAtMs) return false;
+  if (win.endAtMs == null) {
+    const diff = daysFromEventDay(event, now);
+    if (diff !== null && diff < 0) return false;
+  }
+  return true;
+}
+
 function resolveScheduleWindow(event: EventVisibilityInput, now: Date = new Date()) {
   const dayMs = parseFamilyEventDayMs({
     ...event,
@@ -176,8 +203,8 @@ export function daysFromEventDay(event: EventVisibilityInput, now: Date = new Da
 }
 
 export function parseFamilyEventDayMs(event: EventVisibilityInput) {
-  const eventDate = normalizeArabicDigits(event.eventDate || event.event_date || '');
-  const ymd = eventDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  const eventDate = normalizeArabicDigits(event.eventDate || event.event_date || '').replace(/-/g, '/');
+  const ymd = eventDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
   if (ymd) {
     const year = Number(ymd[1]);
     const month = Number(ymd[2]);
@@ -258,19 +285,22 @@ export function isFamilyEventPubliclyVisible(
     return isWithinDaysFromEventDay(event, DEATH_KEEP_DAYS, now);
   }
 
+  const hasDatedEnd = eventDayMsForVisibility(event) != null || explicitEndAtMs(event) != null;
+  const scheduled = visibilityFromScheduleWindow(event, now);
+  if (hasDatedEnd) {
+    return scheduled ?? false;
+  }
+  if (scheduled !== null) {
+    return scheduled;
+  }
+
   if (isHealthEventType(event) || isPublishWindowEventType(event)) {
     return isCreatedWithinShowWindow(event, now);
   }
 
   const win = resolveScheduleWindow(event, now);
   if (win.eventDayMs != null || win.showAtMs != null || win.endAtMs != null) {
-    if (win.endAtMs != null && win.nowMs > win.endAtMs) return false;
-    if (win.showAtMs != null && win.nowMs < win.showAtMs) return false;
-    if (win.endAtMs == null) {
-      const diff = daysFromEventDay(event, now);
-      if (diff !== null && diff < 0) return false;
-    }
-    return true;
+    return visibilityFromScheduleWindow(event, now) ?? false;
   }
 
   // Dated happy/travel events must not fall back to "created recently → show".
