@@ -79,6 +79,61 @@ function tokenizeLineageInput(value: string): string[] {
     .filter((word) => !['بن', 'ابن', 'بنت'].includes(word));
 }
 
+/** Youngest-first nasab tokens: «عبدالرحمن بن نايف» → [عبدالرحمن, نايف]. */
+function nasabTokensYoungestFirst(value: string): string[] {
+  const n = normalizePersonName(value || '');
+  if (!n) return [];
+  if (n.includes('/')) {
+    return n
+      .split('/')
+      .map((part) => normalizePersonName(part))
+      .filter(Boolean)
+      .reverse();
+  }
+  const connected = tokenizeLineageInput(n);
+  if (/(^|\s)(?:بن|ابن|بنت)(\s|$)/.test(n)) return connected;
+  const words = n.split(/\s+/g).map((word) => normalizePersonName(word)).filter(Boolean);
+  if (words.length === 2) return words;
+  return connected;
+}
+
+function pathPartsOldestFirst(nodeId: string): string[] {
+  const n = normalizePersonName(nodeId || '');
+  if (!n) return [];
+  if (n.includes('/')) {
+    return n
+      .split('/')
+      .map((part) => normalizePersonName(part))
+      .filter(Boolean);
+  }
+  return [...nasabTokensYoungestFirst(n)].reverse();
+}
+
+function pathMatchesNasab(nodeId: string, nasabYoungestFirst: string[]): boolean {
+  if (!nasabYoungestFirst.length) return false;
+  const parts = pathPartsOldestFirst(nodeId);
+  for (let index = 0; index < nasabYoungestFirst.length; index += 1) {
+    const got = parts[parts.length - 1 - index];
+    if (got !== nasabYoungestFirst[index]) return false;
+  }
+  return true;
+}
+
+function stripMatchingParentPrefix(chainOldest: string[], parentId: string): string[] {
+  const parentParts = pathPartsOldestFirst(parentId);
+  if (!chainOldest.length || !parentParts.length) return chainOldest;
+  let strip = 0;
+  const max = Math.min(chainOldest.length - 1, parentParts.length);
+  for (let i = 1; i <= max; i += 1) {
+    const suffix = parentParts.slice(-i);
+    const prefix = chainOldest.slice(0, i);
+    if (suffix.every((part, index) => part === prefix[index])) {
+      strip = i;
+    }
+  }
+  return chainOldest.slice(strip);
+}
+
 function buildChildId(parentId: string, baseName: string): string {
   const parent = normalizePersonName(parentId || '');
   const base = normalizePersonName(baseName || '');
@@ -146,18 +201,29 @@ export function groupChildrenRows(
   const indexKnownId = (nodeId: string) => {
     const id = normalizePersonName(nodeId || '');
     if (!id) return;
+    const addBase = (base: string) => {
+      const leaf = normalizePersonName(base);
+      if (!leaf) return;
+      const existing = idsByBase.get(leaf);
+      if (existing) {
+        existing.add(id);
+        return;
+      }
+      idsByBase.set(leaf, new Set([id]));
+    };
+
     const parts = id
       .split('/')
       .map((part) => normalizePersonName(part))
       .filter(Boolean);
-    const base = parts.length ? parts[parts.length - 1] : id;
-    if (!base) return;
-    const existing = idsByBase.get(base);
-    if (existing) {
-      existing.add(id);
-      return;
+    const slashLeaf = parts.length ? parts[parts.length - 1] : id;
+    addBase(slashLeaf);
+    const given = nasabTokensYoungestFirst(slashLeaf)[0];
+    if (given) addBase(given);
+    if (!id.includes('/')) {
+      const tokens = nasabTokensYoungestFirst(id);
+      if (tokens[0]) addBase(tokens[0]);
     }
-    idsByBase.set(base, new Set([id]));
   };
 
   const addOrMergeChildById = (parentId: string, child: TreeChild) => {
@@ -210,7 +276,35 @@ export function groupChildrenRows(
       }
     }
 
-    const candidates = idsByBase.get(raw);
+    const parentNasab = nasabTokensYoungestFirst(raw);
+    const given = parentNasab[0] || raw;
+    const candidates = idsByBase.get(given);
+
+    const uniqueNasabMatch = (tokens: string[]): string => {
+      if (!tokens.length) return '';
+      const pool = idsByBase.get(tokens[0]);
+      if (!pool) return '';
+      const matched = Array.from(pool).filter((id) => pathMatchesNasab(id, tokens));
+      return matched.length === 1 ? matched[0] : '';
+    };
+
+    const childNasab = childFull.includes('/')
+      ? childFull
+          .split('/')
+          .map((part) => normalizePersonName(part))
+          .filter(Boolean)
+          .reverse()
+      : nasabTokensYoungestFirst(childFull);
+    if (childNasab.length >= 3) {
+      const hit = uniqueNasabMatch(childNasab.slice(1));
+      if (hit) return hit;
+    }
+
+    if (parentNasab.length >= 2) {
+      const hit = uniqueNasabMatch(parentNasab);
+      if (hit) return hit;
+    }
+
     if (candidates && candidates.size === 1) return Array.from(candidates)[0];
     if (candidates && candidates.size > 1) return raw;
 
@@ -345,11 +439,7 @@ export function groupChildrenRows(
     }
 
     if (tokens.length > 1) {
-      const chainOldest = [...tokens].reverse();
-      const parentBase = normalizePersonBaseName(parentId);
-      if (chainOldest.length && parentBase && chainOldest[0] === parentBase) {
-        chainOldest.shift();
-      }
+      const chainOldest = stripMatchingParentPrefix([...tokens].reverse(), parentId);
       addChain(parentId, chainOldest, row);
       continue;
     }

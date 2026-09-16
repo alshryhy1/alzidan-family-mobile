@@ -10,6 +10,7 @@ export type PublicScreen =
   | 'familyLab'
   | 'person'
   | 'giving'
+  | 'familyBoard'
   | 'womenAdmin'
   | 'familyAdmin'
   | 'delegateInbox';

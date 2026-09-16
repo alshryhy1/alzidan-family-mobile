@@ -3,7 +3,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { DataState } from '../components/DataState';
 import { PersonPhoto } from '../components/PersonPhoto';
-import { SceneSection, SceneShell } from '../components/scene';
+import { SceneShell } from '../components/scene';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
@@ -29,67 +29,6 @@ type TreeScreenProps = {
   onBackToHouses?: () => void;
   includePubliclyHiddenPeople?: boolean;
 };
-
-
-function parseYear(value?: string | null) {
-  const raw = String(value || '').trim();
-  const match = raw.match(/^(\d{3,4})/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  return Number.isFinite(year) ? year : null;
-}
-
-function isApproximateDate(value?: string | null) {
-  const raw = String(value || '').trim();
-  if (!raw) return true;
-  return /تقريب|تقريبا|تقريبًا|حوالي/.test(raw);
-}
-
-function currentHijriYear() {
-  return Number(new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { year: 'numeric' }).format(new Date()).replace(/\D/g, ''));
-}
-
-function ageFromYears(startYear: number | null, endYear: number | null) {
-  if (!startYear || !endYear) return null;
-  const age = endYear - startYear;
-  if (!Number.isFinite(age) || age < 0 || age > 130) return null;
-  return age;
-}
-
-function calculatePersonAge(person: {
-  birthDateGregorian?: string | null;
-  birthDateHijri?: string | null;
-  birthYear?: number | null;
-  deathDateGregorian?: string | null;
-  deathDateHijri?: string | null;
-  isDeceased?: boolean | null;
-}) {
-  const isDeceased = person.isDeceased === true;
-
-  const birthG = parseYear(person.birthDateGregorian);
-  const deathG = parseYear(person.deathDateGregorian);
-  if (birthG) {
-    const end = isDeceased && deathG ? deathG : new Date().getFullYear();
-    const age = ageFromYears(birthG, end);
-    if (age != null) return { label: isDeceased ? 'العمر عند الوفاة' : 'العمر', value: `${age} سنة` };
-  }
-
-  const birthH = parseYear(person.birthDateHijri) || person.birthYear || null;
-  const deathH = parseYear(person.deathDateHijri);
-  if (birthH) {
-    const end = isDeceased && deathH ? deathH : currentHijriYear();
-    const age = ageFromYears(birthH, end);
-    if (age != null) {
-      const approximate = isApproximateDate(person.birthDateHijri) || !person.birthDateHijri;
-      if (isDeceased) {
-        return { label: approximate ? 'العمر التقريبي عند الوفاة' : 'العمر عند الوفاة', value: `${age} سنة` };
-      }
-      return { label: approximate ? 'العمر التقريبي' : 'العمر', value: `${age} سنة` };
-    }
-  }
-
-  return null;
-}
 
 function personMeta(row: TreeChild) {
   const parts = [row.city, row.area].filter(Boolean);
@@ -125,22 +64,34 @@ function compactLineageName(value: string) {
   return uniqueOrdered.length ? uniqueOrdered.join(' بن ') : cleanNameSuffix(value);
 }
 
-function unifiedLineageFromPerson(person: Pick<TreePerson, 'name' | 'fullName'> | null) {
-  if (!person) return '';
-  const source = person.fullName || person.name;
-  const parts = source
-    .split('/')
-    .map((part) => cleanNameSuffix(part.trim()))
-    .filter(Boolean);
-
-  const ordered = parts.length > 1 ? [...parts].reverse() : parts;
-  const deduped = ordered.filter((part, index, arr) => (index === 0 ? true : part !== arr[index - 1]));
-  return deduped.join(' بن ');
-}
-
 function personDisplayName(person: Pick<TreePerson, 'name' | 'fullName' | 'isDeceased'>) {
   const base = compactLineageName(person.fullName || person.name);
   return person.isDeceased === true ? `${base} رحمه الله` : base;
+}
+
+function leafName(person: TreePerson) {
+  return displayPersonName(person.fullName || person.name);
+}
+
+function outlineName(person: TreePerson, parent?: TreePerson | null) {
+  const leaf = leafName(person);
+  const father = parent ? leafName(parent) : '';
+  const nasab = father ? `${leaf} بن ${father}` : leaf;
+  return person.isDeceased === true ? `${nasab} رحمه الله` : nasab;
+}
+
+function brotherLine(person: TreePerson, parent: TreePerson | null) {
+  const names = (parent?.children ?? [])
+    .filter((child) => child.id !== person.id)
+    .map((child) => leafName(child));
+  if (!names.length) return '';
+  if (names.length === 1) return `أخو ${names[0]}`;
+  if (names.length === 2) return `أخو ${names[0]} و${names[1]}`;
+  return `أخو ${names[0]} و${names[1]} و${names.length - 2} آخرين`;
+}
+
+function descendantCount(person: TreePerson): number {
+  return (person.children ?? []).reduce((sum, child) => sum + 1 + descendantCount(child), 0);
 }
 
 const curatedChildOrders: Record<string, string[]> = {
@@ -225,7 +176,13 @@ function buildBranchTree(
     if (!parentKey || visited.has(parentKey)) return [];
     const nextVisited = new Set(visited).add(parentKey);
 
-    return sortChildren(parentKey, byParent.get(parentKey) ?? []).map((child) => ({
+    return sortChildren(parentKey, byParent.get(parentKey) ?? []).filter((child) => {
+      const childPath = normalizePersonName(child.name);
+      if (!childPath.includes('/') || !parentKey.includes('/')) return true;
+      const prefix = `${parentKey}/`;
+      if (!childPath.startsWith(prefix)) return false;
+      return !childPath.slice(prefix.length).includes('/');
+    }).map((child) => ({
       id: String(child.id),
       name: displayPersonName(child.name),
       fullName: child.name,
@@ -275,6 +232,82 @@ function collectSearchResults(tree: TreePerson | null, branchKey: string, branch
   return results;
 }
 
+function OutlineNode({
+  person,
+  parent,
+  depth,
+  highlightedId,
+  onOpenPerson,
+  styles,
+}: {
+  person: TreePerson;
+  parent: TreePerson | null;
+  depth: number;
+  highlightedId: string | null;
+  onOpenPerson: (person: TreePerson) => void;
+  styles: Record<string, object>;
+}) {
+  const kids = person.children ?? [];
+  const inLineage = descendantCount(person);
+  const brothers = brotherLine(person, parent);
+  const highlighted = String(person.id) === String(highlightedId);
+  const canOpen = Number.isFinite(Number(person.id));
+
+  return (
+    <View>
+      <Pressable
+        accessibilityRole={canOpen ? 'button' : undefined}
+        onPress={canOpen ? () => onOpenPerson(person) : undefined}
+        style={({ pressed }) => [
+          styles.outlineRow,
+          depth === 0 && styles.outlineRoot,
+          highlighted && styles.outlineHighlight,
+          pressed && canOpen && styles.pressed,
+        ]}
+      >
+        <View style={styles.nodeText}>
+          <View style={styles.nodeNameRow}>
+            <PersonPhoto name={person.name} size="sm" uri={person.photoUrl} />
+            <Text style={[styles.nodeName, depth === 0 && styles.nodeNameRoot]}>
+              {outlineName(person, parent)}
+            </Text>
+          </View>
+          {parent ? (
+            <Text style={styles.kinLine}>
+              {`ابن ${leafName(parent)}`}
+              {brothers ? ` · ${brothers}` : ''}
+            </Text>
+          ) : null}
+          {inLineage ? (
+            <Text style={styles.descendantsText}>
+              {kids.length} أبناء
+              {inLineage > kids.length ? ` · ${inLineage} في السلالة` : ''}
+            </Text>
+          ) : person.meta && depth === 0 ? (
+            <Text style={styles.nodeMeta}>{person.meta}</Text>
+          ) : null}
+        </View>
+      </Pressable>
+      {kids.length ? (
+        <View style={styles.childrenBlock}>
+          <Text style={styles.childrenHeading}>أبناء {leafName(person)}</Text>
+          {kids.map((child) => (
+            <OutlineNode
+              key={child.id}
+              depth={depth + 1}
+              highlightedId={highlightedId}
+              onOpenPerson={onOpenPerson}
+              parent={person}
+              person={child}
+              styles={styles}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function TreeScreen({
   branchKey,
   branches,
@@ -306,36 +339,18 @@ export function TreeScreen({
         .filter((item): item is { branch: Branch; tree: TreePerson } => Boolean(item.tree)),
     [branches, childrenRows, parents, includePubliclyHiddenPeople],
   );
-  const [trail, setTrail] = useState<TreePerson[]>([]);
-  const [pendingTrail, setPendingTrail] = useState<TreePerson[] | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    if (pendingTrail && tree && pendingTrail[0]?.id === tree.id) {
-      setTrail(pendingTrail);
-      setPendingTrail(null);
+    if (focusedTreeChildId != null) {
+      setHighlightedId(String(focusedTreeChildId));
       setSearchQuery('');
-      return;
     }
+  }, [branch?.id, focusedTreeChildId]);
 
-    if (focusedTreeChildId && tree) {
-      const match = collectSearchResults(tree, branch?.id ?? '', branch?.name ?? '').find(
-        (result) => Number(result.person.id) === Number(focusedTreeChildId),
-      );
-      if (match) {
-        setTrail(match.path);
-        setSearchQuery('');
-        return;
-      }
-    }
+  const peopleInBranch = tree ? descendantCount(tree) : 0;
 
-    setTrail(tree ? [tree] : []);
-    setSearchQuery('');
-  }, [branch?.id, branch?.name, focusedTreeChildId, pendingTrail, tree]);
-
-  const currentPerson = trail.at(-1) ?? null;
-  const directChildren = currentPerson?.children ?? [];
-  const canGoBack = trail.length > 1;
   const searchResults = useMemo(() => {
     const query = searchQuery.trim();
     if (!query || query.length < 2) return [];
@@ -358,74 +373,31 @@ export function TreeScreen({
       .slice(0, 40);
   }, [allBranchTrees, searchQuery]);
 
-  const openPerson = (person: TreePerson) => {
-    setTrail((current) => [...current, person]);
-  };
-
-  const goBack = () => {
-    setTrail((current) => (current.length > 1 ? current.slice(0, -1) : current));
-  };
-
   const openSearchResult = (result: SearchResult) => {
-    if (result.branchKey !== branchKey) {
-      setPendingTrail(result.path);
-      onSelectBranch(result.branchKey);
-      return;
-    }
-
-    setTrail(result.path);
     setSearchQuery('');
+    setHighlightedId(String(result.person.id));
+    if (result.branchKey !== branchKey) {
+      onSelectBranch(result.branchKey);
+    }
   };
 
-  const lineageDisplay = unifiedLineageFromPerson(currentPerson);
-  const parentPerson = trail.length > 1 ? trail[trail.length - 2] : null;
-  const detailRows = currentPerson
-    ? [
-        currentPerson.birthOrder
-          ? { label: 'ترتيب الميلاد', value: String(currentPerson.birthOrder) }
-          : null,
-        currentPerson.birthDateHijri
-          ? { label: 'الميلاد الهجري', value: currentPerson.birthDateHijri }
-          : null,
-        currentPerson.birthDateGregorian
-          ? { label: 'الميلاد الميلادي', value: currentPerson.birthDateGregorian }
-          : null,
-        calculatePersonAge(currentPerson),
-        currentPerson.deathDateHijri
-          ? { label: 'الوفاة الهجرية', value: currentPerson.deathDateHijri }
-          : null,
-        currentPerson.deathDateGregorian
-          ? { label: 'الوفاة الميلادية', value: currentPerson.deathDateGregorian }
-          : null,
-        !currentPerson.birthDateGregorian && !currentPerson.birthDateHijri && currentPerson.birthYear
-          ? { label: 'سنة الميلاد التقريبية', value: String(currentPerson.birthYear) }
-          : null,
-        currentPerson.city ? { label: 'المدينة', value: currentPerson.city } : null,
-        currentPerson.area ? { label: 'الحي / القرية', value: currentPerson.area } : null,
-        currentPerson.isDeceased === true
-          ? { label: 'الحالة', value: 'متوفى، رحمه الله' }
-          : null,
-        { label: 'عدد الأبناء', value: String(directChildren.length) },
-      ].filter((row): row is { label: string; value: string } => Boolean(row))
-    : [];
+  const openPersonCard = (person: TreePerson) => {
+    const id = Number(person.id);
+    if (!onOpenEncounter || !branchKey || !Number.isFinite(id)) return;
+    onOpenEncounter(branchKey, id);
+  };
 
   return (
     <SceneShell
       english="FAMILY TREE"
       eyebrow="تسلسل العائلة"
       heroExtra={
-        currentPerson ? (
+        branch && tree ? (
           <View style={styles.heroPerson}>
-            <View style={styles.heroNameRow}>
-              <PersonPhoto name={currentPerson.name} size="md" uri={currentPerson.photoUrl} />
-              <View style={styles.heroNameText}>
-                <Text style={styles.heroEyebrow}>{canGoBack ? 'الشخص الحالي' : 'أصل الفرع'}</Text>
-                <Text style={styles.heroName}>{personDisplayName(currentPerson)}</Text>
-              </View>
-            </View>
-            {lineageDisplay ? <Text style={styles.heroLineage}>{lineageDisplay}</Text> : null}
+            <Text style={styles.heroEyebrow}>أصل الفرع</Text>
+            <Text style={styles.heroName}>{branch.fullName || branch.name}</Text>
             <Text style={styles.heroCount}>
-              {directChildren.length ? `${directChildren.length} من الأبناء` : 'لا يوجد أبناء مسجلون'}
+              {peopleInBranch ? `${peopleInBranch} في الشجرة · الكل في هذه الصفحة` : 'لا يوجد أبناء مسجلون'}
             </Text>
           </View>
         ) : (
@@ -434,7 +406,7 @@ export function TreeScreen({
       }
       onRefresh={onRetry}
       refreshing={loading}
-      subtitle="شجرة للقراءة فقط من القاعدة المعتمدة."
+      subtitle="الفرع كامل أمامك. التمرير يكفي، والضغط يفتح اللقاء."
       title="الشجرة"
       variant="lineage"
     >
@@ -484,22 +456,19 @@ export function TreeScreen({
                   <Pressable
                     key={`${result.person.id}-${result.path.map((item) => item.id).join('-')}`}
                     onPress={() => openSearchResult(result)}
-                    style={({ pressed }) => [
-                      styles.searchResult,
-                      pressed && styles.pressed,
-                    ]}
+                    style={({ pressed }) => [styles.searchResult, pressed && styles.pressed]}
                   >
                     <View style={styles.searchResultRow}>
                       <PersonPhoto name={result.person.name} size="sm" uri={result.person.photoUrl} />
                       <Text style={styles.searchResultName}>{personDisplayName(result.person)}</Text>
                     </View>
                     <Text numberOfLines={2} style={styles.searchResultPath}>
-                      {`${result.branchName} · ${result.path.map(personDisplayName).join(' ‹ ')}`}
+                      {`${result.branchName} · ${result.path.map(outlineName).join(' ‹ ')}`}
                     </Text>
                   </Pressable>
                 ))
               ) : (
-                <Text style={styles.searchEmpty}>لا يوجد اسم مطابق في هذا الفرع.</Text>
+                <Text style={styles.searchEmpty}>لا يوجد اسم مطابق.</Text>
               )}
             </View>
           ) : null}
@@ -514,76 +483,16 @@ export function TreeScreen({
         onRetry={onRetry}
       />
 
-      {!loading && !error && currentPerson ? (
-        <View style={styles.level}>
-          {canGoBack ? (
-            <Pressable onPress={goBack} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
-              <Text style={styles.backButtonText}>الرجوع إلى {personDisplayName(trail[trail.length - 2])}</Text>
-              <Text style={styles.backArrow}>‹</Text>
-            </Pressable>
-          ) : null}
-
-          <View style={styles.personCard}>
-            {currentPerson.meta ? <Text style={styles.personMeta}>{currentPerson.meta}</Text> : null}
-
-            {onOpenEncounter && branchKey && Number.isFinite(Number(currentPerson.id)) ? (
-              <Pressable
-                onPress={() => onOpenEncounter(branchKey, Number(currentPerson.id))}
-                style={({ pressed }) => [styles.encounterButton, pressed && styles.pressed]}
-              >
-                <Text style={styles.encounterButtonText}>لقاء الشخص</Text>
-              </Pressable>
-            ) : null}
-
-            {detailRows.length ? (
-              <View style={styles.detailRows}>
-                {detailRows.map((row) => (
-                  <View key={row.label} style={styles.detailRow}>
-                    <Text style={styles.detailValue}>{row.value}</Text>
-                    <Text style={styles.detailLabel}>{row.label}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-
-            {parentPerson ? (
-              <Pressable
-                onPress={goBack}
-                style={({ pressed }) => [styles.parentButton, pressed && styles.pressed]}
-              >
-                <Text style={styles.parentButtonText}>الأب: {personDisplayName(parentPerson)}</Text>
-              </Pressable>
-            ) : null}
-          </View>
-
-          {directChildren.length ? (
-            <SceneSection title="الأبناء المباشرون">
-              {directChildren.map((child) => {
-                const hasDescendants = Boolean(child.children?.length);
-                return (
-                  <Pressable
-                    key={child.id}
-                    onPress={() => openPerson(child)}
-                    style={({ pressed }) => [styles.childCard, pressed && styles.pressed]}
-                  >
-                    <View style={styles.nodeText}>
-                      <View style={styles.nodeNameRow}>
-                        <PersonPhoto name={child.name} size="sm" uri={child.photoUrl} />
-                        <Text style={styles.nodeName}>{personDisplayName(child)}</Text>
-                      </View>
-                      {child.meta ? <Text style={styles.nodeMeta}>{child.meta}</Text> : null}
-                      <Text style={styles.descendantsText}>
-                        {hasDescendants
-                          ? `${child.children?.length ?? 0} من الأبناء · اضغط للعرض`
-                          : 'اضغط لعرض التفاصيل'}
-                      </Text>
-                    </View>
-                    <Text style={styles.nodeControl}>‹</Text>
-                  </Pressable>
-                );
-              })}
-            </SceneSection>
-          ) : null}
+      {!loading && !error && tree ? (
+        <View style={styles.outline}>
+          <OutlineNode
+            depth={0}
+            highlightedId={highlightedId}
+            onOpenPerson={openPersonCard}
+            parent={null}
+            person={tree}
+            styles={styles}
+          />
         </View>
       ) : null}
     </SceneShell>
@@ -592,336 +501,219 @@ export function TreeScreen({
 
 function treeStyles(p: ThemePalette) {
   return {
-  housesBack: {
-    alignSelf: 'flex-end',
-    paddingBottom: 4,
-    paddingVertical: 4,
-  },
-  housesBackText: {
-    color: p.textMuted,
-    fontSize: typography.caption,
-    fontWeight: '700',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  branchPicker: {
-    flexDirection: 'row-reverse',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  branchChip: {
-    backgroundColor: 'transparent',
-    borderColor: p.gold,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  activeBranchChip: {
-    backgroundColor: p.green,
-    borderColor: p.green,
-  },
-  branchChipText: {
-    color: p.textMuted,
-    fontSize: typography.caption,
-    fontWeight: '800',
-    writingDirection: 'rtl',
-  },
-  activeBranchChipText: {
-    color: p.white,
-  },
-  searchBox: {
-    gap: spacing.xs,
-  },
-  searchInput: {
-    backgroundColor: p.creamLift,
-    borderColor: p.gold,
-    borderRadius: 18,
-    borderWidth: 1,
-    color: p.text,
-    fontSize: typography.body,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    writingDirection: 'rtl',
-  },
-  searchResults: {
-    backgroundColor: p.surface,
-    borderColor: p.border,
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  searchResult: {
-    borderBottomColor: p.border,
-    borderBottomWidth: 1,
-    gap: 2,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  searchResultRow: {
-    alignItems: 'center',
-    flexDirection: 'row-reverse',
-    gap: spacing.sm,
-  },
-  searchResultName: {
-    color: p.text,
-    fontSize: typography.body,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  searchResultPath: {
-    color: p.textMuted,
-    fontSize: 11,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  searchEmpty: {
-    color: p.textMuted,
-    fontSize: typography.caption,
-    padding: spacing.md,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  level: {
-    gap: spacing.md,
-  },
-  backButton: {
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    backgroundColor: p.primarySoft,
-    borderRadius: 14,
-    flexDirection: 'row-reverse',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  backButtonText: {
-    color: p.primaryDark,
-    fontSize: typography.caption,
-    fontWeight: '800',
-    writingDirection: 'rtl',
-  },
-  backArrow: {
-    color: p.primary,
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  personCard: {
-    backgroundColor: p.primaryDark,
-    borderRadius: 28,
-    gap: spacing.sm,
-    padding: spacing.lg,
-  },
-  personEyebrow: {
-    color: '#DABF8A',
-    fontSize: typography.caption,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  personName: {
-    color: p.white,
-    fontSize: typography.display,
-    fontWeight: '900',
-    lineHeight: 38,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  personLineage: {
-    color: '#E8D7B0',
-    fontSize: typography.body,
-    fontWeight: '700',
-    lineHeight: 24,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  personMeta: {
-    color: '#DCE8E3',
-    fontSize: typography.caption,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  childrenCount: {
-    color: '#DABF8A',
-    fontSize: typography.caption,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  detailRows: {
-    borderTopColor: 'rgba(255,255,255,0.16)',
-    borderTopWidth: 1,
-    marginTop: spacing.xs,
-  },
-  detailRow: {
-    alignItems: 'center',
-    borderBottomColor: 'rgba(255,255,255,0.10)',
-    borderBottomWidth: 1,
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    minHeight: 40,
-    paddingVertical: spacing.xs,
-  },
-  detailLabel: {
-    color: '#DABF8A',
-    fontSize: typography.caption,
-    fontWeight: '700',
-    writingDirection: 'rtl',
-  },
-  detailValue: {
-    color: p.white,
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '700',
-    textAlign: 'left',
-    writingDirection: 'rtl',
-  },
-  parentButton: {
-    alignItems: 'center',
-    backgroundColor: p.primarySoft,
-    borderRadius: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  parentButtonText: {
-    color: p.primaryDark,
-    fontSize: typography.caption,
-    fontWeight: '800',
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  encounterButton: {
-    alignItems: 'center',
-    backgroundColor: p.primaryDark,
-    borderColor: p.accent,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  encounterButtonText: {
-    color: p.accentSoft,
-    fontSize: typography.body,
-    fontWeight: '900',
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  directChildren: {
-    gap: spacing.sm,
-  },
-  sectionTitle: {
-    color: p.text,
-    fontSize: typography.title,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  childCard: {
-    alignItems: 'center',
-    backgroundColor: p.creamLift,
-    borderColor: 'rgba(196,163,90,0.4)',
-    borderRadius: 20,
-    borderRightColor: p.gold,
-    borderRightWidth: 4,
-    borderWidth: 1,
-    flexDirection: 'row-reverse',
-    gap: spacing.sm,
-    minWidth: 0,
-    padding: spacing.md,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  nodeText: {
-    flex: 1,
-    flexShrink: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  nodeNameRow: {
-    alignItems: 'center',
-    flexDirection: 'row-reverse',
-    gap: spacing.sm,
-  },
-  nodeName: {
-    color: p.text,
-    fontSize: typography.body,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  nodeMeta: {
-    color: p.textMuted,
-    fontSize: typography.caption,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  descendantsText: {
-    color: p.primary,
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  nodeControl: {
-    color: p.primary,
-    flexShrink: 0,
-    fontSize: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-    width: 24,
-  },
-  heroPerson: {
-    gap: 6,
-    paddingBottom: spacing.sm,
-  },
-  heroNameRow: {
-    alignItems: 'center',
-    flexDirection: 'row-reverse',
-    gap: spacing.sm,
-  },
-  heroNameText: {
-    flex: 1,
-    gap: 4,
-    minWidth: 0,
-  },
-  heroEyebrow: {
-    color: p.gold,
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  heroName: {
-    color: p.creamLift,
-    fontSize: 30,
-    fontWeight: '800',
-    lineHeight: 40,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  heroLineage: {
-    color: p.goldSoft,
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 22,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  heroCount: {
-    color: p.gold,
-    fontSize: 13,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  heroInvite: {
-    color: p.goldSoft,
-    fontSize: 15,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
+    housesBack: {
+      alignSelf: 'flex-end',
+      paddingBottom: 4,
+      paddingVertical: 4,
+    },
+    housesBackText: {
+      color: p.textMuted,
+      fontSize: typography.caption,
+      fontWeight: '700',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    branchPicker: {
+      flexDirection: 'row-reverse',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    branchChip: {
+      backgroundColor: 'transparent',
+      borderColor: p.gold,
+      borderRadius: 16,
+      borderWidth: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    activeBranchChip: {
+      backgroundColor: p.green,
+      borderColor: p.green,
+    },
+    branchChipText: {
+      color: p.textMuted,
+      fontSize: typography.caption,
+      fontWeight: '800',
+      writingDirection: 'rtl',
+    },
+    activeBranchChipText: {
+      color: p.white,
+    },
+    searchBox: {
+      gap: spacing.xs,
+    },
+    searchInput: {
+      backgroundColor: p.creamLift,
+      borderColor: p.gold,
+      borderRadius: 18,
+      borderWidth: 1,
+      color: p.text,
+      fontSize: typography.body,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      writingDirection: 'rtl',
+    },
+    searchResults: {
+      backgroundColor: p.surface,
+      borderColor: p.border,
+      borderRadius: 16,
+      borderWidth: 1,
+      overflow: 'hidden',
+    },
+    searchResult: {
+      borderBottomColor: p.border,
+      borderBottomWidth: 1,
+      gap: 2,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    searchResultRow: {
+      alignItems: 'center',
+      flexDirection: 'row-reverse',
+      gap: spacing.sm,
+    },
+    searchResultName: {
+      color: p.text,
+      fontSize: typography.body,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    searchResultPath: {
+      color: p.textMuted,
+      fontSize: 11,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    searchEmpty: {
+      color: p.textMuted,
+      fontSize: typography.caption,
+      padding: spacing.md,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    outline: {
+      gap: 6,
+    },
+    childrenBlock: {
+      backgroundColor: 'rgba(23, 63, 53, 0.07)',
+      borderColor: 'rgba(196,163,90,0.35)',
+      borderRadius: 18,
+      borderStartColor: p.gold,
+      borderStartWidth: 4,
+      borderWidth: 1,
+      gap: 8,
+      marginBottom: 10,
+      marginTop: 6,
+      padding: 10,
+      paddingStart: 12,
+    },
+    childrenHeading: {
+      color: p.green,
+      fontSize: 12,
+      fontWeight: '800',
+      paddingBottom: 2,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    outlineRow: {
+      backgroundColor: p.creamLift,
+      borderColor: 'rgba(196,163,90,0.4)',
+      borderRadius: 16,
+      borderRightColor: p.gold,
+      borderRightWidth: 4,
+      borderWidth: 1,
+      marginBottom: 6,
+      minWidth: 0,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    outlineRoot: {
+      backgroundColor: p.primarySoft,
+      borderRightWidth: 5,
+      paddingVertical: spacing.md,
+    },
+    outlineHighlight: {
+      borderColor: p.gold,
+      borderWidth: 2,
+    },
+    pressed: {
+      opacity: 0.7,
+    },
+    nodeText: {
+      flex: 1,
+      flexShrink: 1,
+      gap: 2,
+      minWidth: 0,
+    },
+    nodeNameRow: {
+      alignItems: 'center',
+      flexDirection: 'row-reverse',
+      gap: spacing.sm,
+    },
+    nodeName: {
+      color: p.text,
+      flex: 1,
+      fontSize: typography.body,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    nodeNameRoot: {
+      color: p.green,
+      fontSize: 18,
+    },
+    kinLine: {
+      color: p.green,
+      fontSize: 12,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    nodeMeta: {
+      color: p.textMuted,
+      fontSize: typography.caption,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    descendantsText: {
+      color: p.primary,
+      fontSize: 11,
+      fontWeight: '700',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    heroPerson: {
+      gap: 6,
+      paddingBottom: spacing.sm,
+    },
+    heroEyebrow: {
+      color: p.gold,
+      fontSize: 12,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    heroName: {
+      color: p.creamLift,
+      fontSize: 30,
+      fontWeight: '800',
+      lineHeight: 40,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    heroCount: {
+      color: p.gold,
+      fontSize: 13,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    heroInvite: {
+      color: p.goldSoft,
+      fontSize: 15,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
   };
 }

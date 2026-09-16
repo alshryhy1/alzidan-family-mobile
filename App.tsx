@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
   I18nManager,
@@ -24,11 +24,15 @@ import { PersonEncounterScreen } from './src/screens/PersonEncounterScreen';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { GivingScreen } from './src/screens/GivingScreen';
+import { FamilyBoardScreen } from './src/screens/FamilyBoardScreen';
 import { WomenAdminScreen } from './src/screens/WomenAdminScreen';
 import { FamilyAdminScreen } from './src/screens/FamilyAdminScreen';
 import { DelegateInboxScreen } from './src/screens/DelegateInboxScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
+import { fetchOccasionInbox, type OccasionInboxItem } from './src/services/occasionInteractions';
+import { loadLastSeen, markSurfaceSeen, type LastSeenMap } from './src/services/lastSeen';
+import { buildSinceLastVisit, countNewEvents, countNewInbox } from './src/utils/sinceLastVisit';
 import {
   formatFormalNotificationFromPayload,
   rememberPushPhone,
@@ -193,6 +197,7 @@ const APP_VIEW_PATH: Partial<Record<PublicScreen, string>> = {
   additions: 'app/mobile/additions',
   person: 'app/mobile/person',
   giving: 'app/mobile/giving',
+  familyBoard: 'app/mobile/family-board',
   womenAdmin: 'app/mobile/women-admin',
   familyAdmin: 'app/mobile/family-admin',
   delegateInbox: 'app/mobile/delegate-inbox',
@@ -239,6 +244,9 @@ function AppChrome() {
   const [memberViewerPerson, setMemberViewerPerson] = useState<TreeChild | null>(null);
   const [maternalKinshipById, setMaternalKinshipById] = useState<Record<number, string>>({});
   const [memberPhoneForRequests, setMemberPhoneForRequests] = useState('');
+  const [lastSeen, setLastSeen] = useState<LastSeenMap>({ home: 0, events: 0, profile: 0 });
+  const [occasionInbox, setOccasionInbox] = useState<OccasionInboxItem[]>([]);
+  const screenRef = useRef(screen);
   const [lineageChildren, setLineageChildren] = useState<TreeChild[] | null>(null);
   const [memberRequests, setMemberRequests] = useState<MemberRequest[]>([]);
   const [specialCards, setSpecialCards] = useState<SpecialCard[]>([]);
@@ -596,6 +604,42 @@ function AppChrome() {
   }, [publicData.reload, reloadMyRequests]);
 
   useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
+  useEffect(() => {
+    void loadLastSeen().then(setLastSeen);
+  }, []);
+
+  useEffect(() => {
+    if (screen === 'events') {
+      void markSurfaceSeen('events').then(setLastSeen);
+    }
+    if (screen === 'profile') {
+      void markSurfaceSeen('profile').then(setLastSeen);
+    }
+  }, [screen]);
+
+  useEffect(() => {
+    const phone = String(memberPhoneForRequests || '').trim();
+    if (!phone) {
+      setOccasionInbox([]);
+      return;
+    }
+    let alive = true;
+    fetchOccasionInbox(phone)
+      .then((rows) => {
+        if (alive) setOccasionInbox(rows);
+      })
+      .catch(() => {
+        if (alive) setOccasionInbox([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [memberPhoneForRequests, publicData.loading, screen]);
+
+  useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') void reloadPublished();
     });
@@ -701,6 +745,28 @@ function AppChrome() {
       targetTreeChildId: encounterPerson.id,
     });
   }, [encounterPerson, memberPhoneForRequests, memberTreeChildId]);
+
+  const sinceLastVisit = useMemo(
+    () =>
+      buildSinceLastVisit({
+        events: activeEvents,
+        inbox: occasionInbox,
+        homeSeenAt: lastSeen.home,
+        profileSeenAt: lastSeen.profile,
+      }),
+    [activeEvents, occasionInbox, lastSeen.home, lastSeen.profile],
+  );
+  const eventsBadge = countNewEvents(activeEvents, lastSeen.events);
+  const profileBadge = countNewInbox(occasionInbox, lastSeen.profile);
+
+  const goToScreen = useCallback((next: PublicScreen) => {
+    setScreen((current) => {
+      if (current === 'home' && next !== 'home') {
+        void markSurfaceSeen('home').then(setLastSeen);
+      }
+      return next;
+    });
+  }, []);
 
   const renderScreen = () => {
     switch (screen) {
@@ -809,6 +875,15 @@ function AppChrome() {
         );
       case 'giving':
         return <GivingScreen onBack={() => setScreen('profile')} />;
+      case 'familyBoard':
+        return (
+          <FamilyBoardScreen
+            memberBranchKey={memberBranchKey}
+            memberGreeting={memberGreeting}
+            memberPhone={memberPhoneForRequests}
+            onBack={() => setScreen('home')}
+          />
+        );
       case 'womenAdmin':
         return (
           <WomenAdminScreen
@@ -857,6 +932,9 @@ function AppChrome() {
             loading={publicData.loading}
             onRetry={reloadPublished}
             pulseOnline={pulseOnline}
+            sinceLastVisit={sinceLastVisit}
+            onOpenSinceVisit={(item) => goToScreen(item.target)}
+            onOpenFamilyBoard={() => goToScreen('familyBoard')}
             onOpenMyCard={
               memberTreeChildId != null && (memberBranchKey || encounterViewer?.branchKey)
                 ? () =>
@@ -897,7 +975,7 @@ function AppChrome() {
 
             <View style={styles.content}>{renderScreen()}</View>
 
-          {!specialCardVisible && remainingSpecialCards > 0 && legacyChrome && screen !== 'familyLab' && screen !== 'person' && screen !== 'giving' && screen !== 'womenAdmin' && screen !== 'familyAdmin' && screen !== 'delegateInbox' && (
+          {!specialCardVisible && remainingSpecialCards > 0 && legacyChrome && screen !== 'familyLab' && screen !== 'person' && screen !== 'giving' && screen !== 'familyBoard' && screen !== 'womenAdmin' && screen !== 'familyAdmin' && screen !== 'delegateInbox' && (
             <Pressable style={styles.nextSpecialCardButton} onPress={showNextSpecialCard}>
               <Text style={styles.nextSpecialCardText}>
                 🎉 تبقى {remainingSpecialCards} بطاقات تهنئة - عرض التالية
@@ -905,24 +983,33 @@ function AppChrome() {
             </Pressable>
           )}
 
-          {legacyChrome && screen !== 'familyLab' && screen !== 'person' && screen !== 'giving' && screen !== 'womenAdmin' && screen !== 'familyAdmin' && screen !== 'delegateInbox' ? (
+          {legacyChrome && screen !== 'familyLab' && screen !== 'person' && screen !== 'giving' && screen !== 'familyBoard' && screen !== 'womenAdmin' && screen !== 'familyAdmin' && screen !== 'delegateInbox' ? (
           <View style={styles.tabBar}>
             {tabs.map((tab) => {
               const tabScreen = screen === 'tree' ? 'branches' : screen;
               const active = tabScreen === tab.key;
+              const badge =
+                tab.key === 'events' ? eventsBadge : tab.key === 'profile' ? profileBadge : 0;
               return (
                 <Pressable
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                   key={tab.key}
-                  onPress={() => setScreen(tab.key)}
+                  onPress={() => goToScreen(tab.key)}
                   style={({ pressed }) => [
                     styles.tab,
                     active && styles.activeTab,
                     pressed && styles.pressedTab,
                   ]}
                 >
-                  <Text style={[styles.tabIcon, active && styles.activeTabText]}>{tab.icon}</Text>
+                  <View style={styles.tabIconWrap}>
+                    <Text style={[styles.tabIcon, active && styles.activeTabText]}>{tab.icon}</Text>
+                    {badge > 0 ? (
+                      <View style={styles.tabBadge}>
+                        <Text style={styles.tabBadgeText}>{badge > 9 ? '9+' : String(badge)}</Text>
+                      </View>
+                    ) : null}
+                  </View>
                   <Text style={[styles.tabLabel, active && styles.activeTabText]} numberOfLines={1}>
                     {tab.label}
                   </Text>
@@ -1067,6 +1154,29 @@ function appStyles(p: ThemePalette) {
     color: p.textMuted,
     fontSize: 19,
     fontWeight: '700',
+  },
+  tabIconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 22,
+    minWidth: 28,
+  },
+  tabBadge: {
+    alignItems: 'center',
+    backgroundColor: p.gold,
+    borderRadius: 8,
+    justifyContent: 'center',
+    minWidth: 16,
+    paddingHorizontal: 4,
+    position: 'absolute',
+    right: -8,
+    top: -4,
+  },
+  tabBadgeText: {
+    color: p.greenDeep,
+    fontSize: 9,
+    fontWeight: '800',
+    lineHeight: 12,
   },
   tabLabel: {
     color: p.textMuted,

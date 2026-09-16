@@ -12,7 +12,15 @@ import { useThemePalette } from '../theme/ThemeContext';
 import type { TreeChild } from '../types';
 import type { PulseBoardNotice } from '../utils/pulseNotices';
 import type { PulseWeatherSnap } from '../utils/pulseFocus';
+import {
+  familyBoardCategoryLabel,
+  familyBoardKindLabel,
+  familyBoardMetaLine,
+  loadFamilyBoardPosts,
+  type FamilyBoardPost,
+} from '../services/familyBoard';
 import { resolvePulseSeason } from '../utils/pulseSeason';
+import type { SinceVisitItem } from '../utils/sinceLastVisit';
 
 type HomeScreenProps = {
   memberGreeting?: string | null;
@@ -25,6 +33,9 @@ type HomeScreenProps = {
   onRetry: () => void;
   onOpenMyCard?: () => void;
   pulseOnline?: number | null;
+  sinceLastVisit?: SinceVisitItem[];
+  onOpenSinceVisit?: (item: SinceVisitItem) => void;
+  onOpenFamilyBoard?: () => void;
 };
 
 function firstNameOnly(full?: string | null) {
@@ -44,12 +55,16 @@ export function HomeScreen({
   onRetry,
   onOpenMyCard,
   pulseOnline = null,
+  sinceLastVisit = [],
+  onOpenSinceVisit,
+  onOpenFamilyBoard,
 }: HomeScreenProps) {
   const p = useThemePalette();
   const styles = useMemo(() => homeStyles(p), [p]);
   const [weather, setWeather] = useState<PulseWeatherSnap | null>(null);
   const [notices, setNotices] = useState<PulseBoardNotice[]>([]);
   const [delegates, setDelegates] = useState<PulseBoardNotice[]>([]);
+  const [boardPosts, setBoardPosts] = useState<FamilyBoardPost[]>([]);
   const [clock, setClock] = useState(() => Date.now());
 
   const loggedIn = Boolean(String(memberGreeting || '').trim());
@@ -100,6 +115,18 @@ export function HomeScreen({
     };
   }, [loading]);
 
+  useEffect(() => {
+    let cancelled = false;
+    loadFamilyBoardPosts()
+      .then((rows) => {
+        if (!cancelled) setBoardPosts(rows.slice(0, 4));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [loading]);
+
   return (
     <SceneShell
       english="FAMILY PULSE"
@@ -127,6 +154,71 @@ export function HomeScreen({
       <DataState error={error} loading={loading} onRetry={onRetry} />
 
       <View style={styles.creamStage}>
+        <View style={styles.sinceBox}>
+            <Text style={styles.sinceTitle}>منذ آخر زيارة</Text>
+            {sinceLastVisit.length ? (
+              sinceLastVisit.map((item) => (
+                <Pressable
+                  key={item.id}
+                  accessibilityRole="button"
+                  onPress={() => onOpenSinceVisit?.(item)}
+                  style={({ pressed }) => [styles.sinceRow, pressed && styles.pressed]}
+                >
+                  <View style={styles.sinceText}>
+                    <Text style={styles.sinceItemTitle}>{item.title}</Text>
+                    {item.subtitle ? <Text style={styles.sinceItemSub}>{item.subtitle}</Text> : null}
+                  </View>
+                  <Text style={styles.sinceGo}>عرض</Text>
+                </Pressable>
+              ))
+            ) : (
+              <Text style={styles.sinceEmpty}>المجلس هادئ. ما فاتك شيء.</Text>
+            )}
+          </View>
+
+        <View style={styles.boardBox}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOpenFamilyBoard}
+            style={({ pressed }) => [styles.boardHead, pressed && styles.pressed]}
+          >
+            <Text style={styles.boardTitle}>وش عند الزيدان؟</Text>
+            <Text style={styles.boardGo}>الكل</Text>
+          </Pressable>
+          <Text style={styles.boardSub}>اليوم داخل العائلة</Text>
+          {boardPosts.length ? (
+            boardPosts.map((post) => (
+              <Pressable
+                key={post.id}
+                accessibilityRole="button"
+                onPress={onOpenFamilyBoard}
+                style={({ pressed }) => [
+                  styles.boardRow,
+                  post.urgent && styles.boardRowUrgent,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View style={styles.sinceText}>
+                  <Text style={styles.sinceItemTitle}>{post.title}</Text>
+                  <Text style={styles.sinceItemSub}>
+                    {familyBoardKindLabel(post.kind)} · {familyBoardCategoryLabel(post.category)}
+                    {familyBoardMetaLine(post) ? ` · ${familyBoardMetaLine(post)}` : ''}
+                  </Text>
+                </View>
+              </Pressable>
+            ))
+          ) : (
+            <Text style={styles.sinceEmpty}>ما فيه شيء اليوم. كن أول من ينشر.</Text>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOpenFamilyBoard}
+            style={({ pressed }) => [styles.boardAdd, pressed && styles.pressed]}
+          >
+            <Text style={styles.boardAddText}>أضف عرض أو طلب</Text>
+          </Pressable>
+        </View>
+
         {!loading && !error ? (
           <PulseLiveBoard
             delegates={delegates}
@@ -168,13 +260,125 @@ function homeStyles(p: ThemePalette) {
   return StyleSheet.create({
   creamStage: {
     flexGrow: 1,
-    justifyContent: 'space-between',
+    gap: spacing.md,
     minHeight: 280,
   },
   creamFoot: {
     gap: spacing.sm,
     paddingBottom: spacing.md,
     paddingTop: spacing.md,
+  },
+  sinceBox: {
+    backgroundColor: p.creamLift,
+    borderColor: 'rgba(196,163,90,0.4)',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  sinceTitle: {
+    color: p.green,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  sinceRow: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(23,63,53,0.06)',
+    borderRadius: 14,
+    flexDirection: 'row-reverse',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  sinceText: {
+    flex: 1,
+    gap: 2,
+  },
+  sinceItemTitle: {
+    color: p.ink,
+    fontSize: typography.body,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  sinceItemSub: {
+    color: p.textMuted,
+    fontSize: typography.caption,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  sinceGo: {
+    color: p.gold,
+    fontSize: 12,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
+  sinceEmpty: {
+    color: p.textMuted,
+    fontSize: typography.caption,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  boardBox: {
+    backgroundColor: p.creamLift,
+    borderColor: 'rgba(196,163,90,0.45)',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  boardHead: {
+    alignItems: 'center',
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+  },
+  boardTitle: {
+    color: p.green,
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  boardGo: {
+    color: p.gold,
+    fontSize: 13,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
+  boardSub: {
+    color: p.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: -4,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  boardRow: {
+    backgroundColor: 'rgba(23,63,53,0.06)',
+    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  boardRowUrgent: {
+    backgroundColor: 'rgba(160,70,60,0.1)',
+  },
+  boardAdd: {
+    alignItems: 'center',
+    backgroundColor: p.greenDeep,
+    borderRadius: 14,
+    marginTop: 2,
+    paddingVertical: 12,
+  },
+  boardAddText: {
+    color: p.creamLift,
+    fontSize: 13,
+    fontWeight: '800',
+    writingDirection: 'rtl',
   },
   greetRow: {
     alignItems: 'center',

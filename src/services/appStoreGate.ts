@@ -110,6 +110,9 @@ async function fetchRemoteMinimum(): Promise<{ version: string; build: number; s
 
 /** Fail-open if the store or settings cannot be reached. Block only when a newer copy is known. */
 export async function checkAppStoreGate(): Promise<AppStoreGateResult> {
+  if (__DEV__) {
+    return { required: false, storeUrl: FALLBACK_STORE_URL };
+  }
   const localVersion = localAppVersion();
   const localBuild = localAppBuild();
   const [store, remote] = await Promise.all([fetchStoreListing(), fetchRemoteMinimum()]);
