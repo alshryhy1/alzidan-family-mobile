@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
+import { AdminBackendStatusBanner } from '../components/AdminBackendStatus';
 import { ActionButton } from '../components/ActionButton';
 import { PhoneField } from '../components/PhoneField';
 import { SceneSection, SceneShell } from '../components/scene';
@@ -31,6 +32,7 @@ import {
   parsePhoneToParts,
   toE164,
 } from '../utils/phone';
+import { pickRequestBindTarget } from '../utils/requestPersonMatch';
 
 type WomenAdminScreenProps = {
   onBack: () => void;
@@ -79,6 +81,7 @@ export function WomenAdminScreen({ onBack, managerPhone }: WomenAdminScreenProps
   const [selected, setSelected] = useState<WomenPhoneRequest | null>(null);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<WomenMemberMatch[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [searching, setSearching] = useState(false);
   const [bindingId, setBindingId] = useState<number | null>(null);
 
@@ -120,43 +123,56 @@ export function WomenAdminScreen({ onBack, managerPhone }: WomenAdminScreenProps
     void loadRequests('initial');
   }, [loadRequests]);
 
-  const selectedId = selected?.id ?? null;
+  const runSearch = useCallback(
+    async (rawQuery: string) => {
+      if (!phone || !selected) return;
+      const q = rawQuery.trim();
+      if (q.length < 2) {
+        setMatches([]);
+        setHasSearched(false);
+        setErrorText('اكتبي حرفين على الأقل للبحث عن العضوة.');
+        return;
+      }
+      setSearching(true);
+      setErrorText('');
+      try {
+        const rows = (await searchWomenMembers(phone, q)).filter(
+          (row) => row.kind === 'tree' && row.id > 0,
+        );
+        setSqlMissing(false);
+        setMatches(rows);
+        setHasSearched(true);
+        if (!rows.length) setErrorText('لا توجد عضوة بهذا الاسم ضمن نطاق البحث.');
+      } catch (error) {
+        setHasSearched(false);
+        if (error instanceof WomenManagerRpcMissingError) setSqlMissing(true);
+        else setErrorText(womenManagerActionMessage(error, 'requests'));
+        setMatches([]);
+      } finally {
+        setSearching(false);
+      }
+    },
+    [phone, selected],
+  );
+
   useEffect(() => {
-    setMatches([]);
     if (!selected) {
+      setMatches([]);
+      setHasSearched(false);
       setQuery('');
       return;
     }
-    const leaf = leafName(selected.name);
-    setQuery(leaf.length >= 2 ? leaf : '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only switch when the request id changes
-  }, [selectedId]);
+    const nextQuery = leafName(selected.name);
+    setQuery(nextQuery);
+    if (nextQuery.length >= 2) void runSearch(nextQuery);
+  }, [selected?.id, runSearch]);
 
-  async function runSearch() {
-    if (!phone || !selected) return;
-    const q = query.trim();
-    if (q.length < 2) {
-      setMatches([]);
-      setErrorText('اكتبي حرفين على الأقل للبحث عن العضوة.');
-      return;
-    }
-    setSearching(true);
-    setErrorText('');
-    try {
-      const rows = (await searchWomenMembers(phone, q)).filter(
-        (row) => row.kind === 'tree' && row.id > 0,
-      );
-      setSqlMissing(false);
-      setMatches(rows);
-      if (!rows.length) setErrorText('لا توجد عضوة بهذا الاسم ضمن نطاق البحث.');
-    } catch (error) {
-      if (error instanceof WomenManagerRpcMissingError) setSqlMissing(true);
-      else setErrorText(womenManagerActionMessage(error, 'requests'));
-      setMatches([]);
-    } finally {
-      setSearching(false);
-    }
-  }
+  const suggestedBind = useMemo(() => {
+    if (!selected) return null;
+    const target = pickRequestBindTarget(query, selected.name, matches);
+    if (!target || target.id < 1) return null;
+    return matches.find((row) => row.id === target.id) || null;
+  }, [matches, query, selected]);
 
   function confirmBind(member: WomenMemberMatch) {
     if (!selected || bindingId) return;
@@ -218,8 +234,9 @@ export function WomenAdminScreen({ onBack, managerPhone }: WomenAdminScreenProps
       </Pressable>
       <SceneSection>
         <Text style={styles.lead}>
-          هذا المدخل يظهر فقط لمن عيّنتها الإدارة الأصلية. لا يعدّل الرجال أو الفروع أو المناديب، ولا يُدخل ابنًا خارج النطاق إلى الشجرة.
+          هذا المدخل يظهر فقط لمن عيّنتها الإدارة الأصلية. كل إجراء يُنفَّذ مباشرة على السيرفر من هذا الجهاز.
         </Text>
+        {phone ? <AdminBackendStatusBanner surface="women" phone={phone} /> : null}
       </SceneSection>
 
       <SceneSection title="طلبات الجوال">
@@ -245,7 +262,10 @@ export function WomenAdminScreen({ onBack, managerPhone }: WomenAdminScreenProps
             </View>
             <Text style={styles.fieldLabel}>ابحثي عن العضوة في الشجرة</Text>
             <TextInput
-              onChangeText={setQuery}
+              onChangeText={(value) => {
+                setQuery(value);
+                setHasSearched(false);
+              }}
               placeholder="اسم العضوة"
               placeholderTextColor="#8A7A6A"
               returnKeyType="search"
@@ -253,10 +273,24 @@ export function WomenAdminScreen({ onBack, managerPhone }: WomenAdminScreenProps
               textAlign="right"
               value={query}
               onSubmitEditing={() => {
-                void runSearch();
+                void runSearch(query);
               }}
             />
-            <ActionButton label={searching ? 'جاري البحث…' : 'بحث'} onPress={() => void runSearch()} />
+            <ActionButton label={searching ? 'جاري البحث…' : 'بحث'} onPress={() => void runSearch(query)} />
+            {searching ? <Text style={styles.meta}>جاري البحث في الشجرة…</Text> : null}
+            {suggestedBind ? (
+              <ActionButton
+                label={
+                  bindingId === suggestedBind.id
+                    ? 'جاري الربط…'
+                    : `ربط وتفعيل — ${suggestedBind.displayName}`
+                }
+                onPress={() => confirmBind(suggestedBind)}
+              />
+            ) : null}
+            {hasSearched && !searching && matches.length > 1 && !suggestedBind ? (
+              <Text style={styles.meta}>عدة نتائج — اختاري العضوة الصحيحة:</Text>
+            ) : null}
             {matches.map((member) => (
               <Pressable
                 key={memberMatchKey(member)}
@@ -282,7 +316,11 @@ export function WomenAdminScreen({ onBack, managerPhone }: WomenAdminScreenProps
           requests.map((row) => (
             <Pressable
               key={row.id}
-              onPress={() => setSelected(row)}
+              onPress={() => {
+                setSelected(row);
+                setHasSearched(false);
+                setMatches([]);
+              }}
               style={({ pressed }) => [styles.card, pressed && styles.pressed]}
             >
               <Text style={styles.cardName}>{row.name || 'بدون اسم ثلاثي'}</Text>

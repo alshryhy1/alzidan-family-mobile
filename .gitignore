@@ -56,3 +56,4 @@ tmp-special-card/
 # Local backup copies (never commit)
 *.bak
 credentials.json
+alzidan-family/
