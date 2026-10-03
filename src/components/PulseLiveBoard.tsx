@@ -30,6 +30,7 @@ const SKY = {
 } as const;
 
 const FLAG_SA = require('../../assets/pulse/pulse-flag-sa.png');
+const TILE_HEIGHT = 156;
 
 type PulseLiveBoardProps = {
   model: PulseLiveModel;
@@ -83,7 +84,7 @@ function WeatherCard({ model }: { model: PulseLiveModel }) {
       imageStyle={styles.cover}
       resizeMode="cover"
       source={source}
-      style={styles.tile}
+      style={[styles.tile, { backgroundColor: sky.from }]}
     >
       <View style={[styles.scrim, sky.isNight || sky.kind === 'rain' ? styles.scrimDark : styles.scrimLight]}>
         <Text numberOfLines={1} style={[styles.weatherTemp, { color: sky.text }]}>
@@ -130,7 +131,7 @@ function CountdownCard({ model }: { model: PulseLiveModel }) {
         imageStyle={styles.cover}
         resizeMode="cover"
         source={photo}
-        style={[styles.tile, styles.tileTop]}
+        style={[styles.tile, styles.tileTop, { backgroundColor: theme.from }]}
       >
         <View style={[styles.scrim, styles.scrimDark]}>{copy}</View>
       </ImageBackground>
@@ -213,137 +214,139 @@ export function PulseLiveBoard({
 
 function pulseStyles(p: ThemePalette) {
   return StyleSheet.create({
-  wrap: {
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingBottom: spacing.md,
-    paddingTop: spacing.sm,
-  },
-  stage: {
-    alignItems: 'center',
-    flexGrow: 1,
-    gap: spacing.md,
-    justifyContent: 'flex-start',
-    paddingVertical: spacing.sm,
-  },
-  notice: {
-    alignSelf: 'stretch',
-    borderColor: 'rgba(196,163,90,0.72)',
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  noticeText: {
-    color: p.creamLift,
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 26,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  noticeKind: {
-    color: p.goldSoft,
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  tiles: {
-    alignSelf: 'stretch',
-    flexDirection: 'row-reverse',
-    gap: 10,
-  },
-  tile: {
-    borderColor: 'rgba(196,163,90,0.35)',
-    borderRadius: 18,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: 'flex-end',
-    minHeight: 156,
-    overflow: 'hidden',
-  },
-  tileTop: {
-    justifyContent: 'flex-start',
-  },
-  tileCenter: {
-    justifyContent: 'center',
-  },
-  cover: {
-    borderRadius: 17,
-  },
-  scrim: {
-    alignItems: 'center',
-    gap: 2,
-    paddingBottom: 12,
-    paddingHorizontal: 10,
-    paddingTop: 12,
-  },
-  scrimDark: {
-    backgroundColor: 'rgba(8,16,14,0.38)',
-  },
-  scrimLight: {
-    backgroundColor: 'rgba(255,248,236,0.22)',
-  },
-  mark: {
-    fontSize: 28,
-    lineHeight: 34,
-    textAlign: 'center',
-  },
-  weatherTemp: {
-    fontSize: 32,
-    fontWeight: '800',
-    lineHeight: 38,
-    textAlign: 'center',
-  },
-  weatherCaption: {
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 18,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  countdownKicker: {
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 18,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  countdownDays: {
-    fontSize: 20,
-    fontWeight: '800',
-    lineHeight: 26,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  presenceBand: {
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    borderColor: 'rgba(196,163,90,0.72)',
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 4,
-    minHeight: 108,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-  },
-  presenceValue: {
-    color: p.goldSoft,
-    fontSize: 36,
-    fontWeight: '800',
-    lineHeight: 44,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  presenceCaption: {
-    color: p.cream,
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
+    wrap: {
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingBottom: spacing.md,
+      paddingTop: spacing.sm,
+    },
+    stage: {
+      alignItems: 'center',
+      gap: spacing.md,
+      justifyContent: 'flex-start',
+      paddingVertical: spacing.sm,
+    },
+    notice: {
+      alignSelf: 'stretch',
+      borderColor: 'rgba(196,163,90,0.72)',
+      borderRadius: 18,
+      borderWidth: 1,
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+    },
+    noticeText: {
+      color: p.creamLift,
+      fontSize: 16,
+      fontWeight: '700',
+      lineHeight: 26,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    noticeKind: {
+      color: p.goldSoft,
+      fontSize: 12,
+      fontWeight: '800',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    tiles: {
+      alignSelf: 'stretch',
+      flexDirection: 'row-reverse',
+      gap: 10,
+      height: TILE_HEIGHT,
+    },
+    tile: {
+      borderColor: 'rgba(196,163,90,0.35)',
+      borderRadius: 18,
+      borderWidth: 1,
+      flex: 1,
+      height: TILE_HEIGHT,
+      justifyContent: 'flex-end',
+      overflow: 'hidden',
+    },
+    tileTop: {
+      justifyContent: 'flex-start',
+    },
+    tileCenter: {
+      justifyContent: 'center',
+    },
+    cover: {
+      borderRadius: 17,
+      height: TILE_HEIGHT,
+      width: '100%',
+    },
+    scrim: {
+      alignItems: 'center',
+      gap: 2,
+      paddingBottom: 12,
+      paddingHorizontal: 10,
+      paddingTop: 12,
+    },
+    scrimDark: {
+      backgroundColor: 'rgba(8,16,14,0.38)',
+    },
+    scrimLight: {
+      backgroundColor: 'rgba(255,248,236,0.22)',
+    },
+    mark: {
+      fontSize: 28,
+      lineHeight: 34,
+      textAlign: 'center',
+    },
+    weatherTemp: {
+      fontSize: 32,
+      fontWeight: '800',
+      lineHeight: 38,
+      textAlign: 'center',
+    },
+    weatherCaption: {
+      fontSize: 12,
+      fontWeight: '700',
+      lineHeight: 18,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    countdownKicker: {
+      fontSize: 12,
+      fontWeight: '700',
+      lineHeight: 18,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    countdownDays: {
+      fontSize: 20,
+      fontWeight: '800',
+      lineHeight: 26,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    presenceBand: {
+      alignItems: 'center',
+      alignSelf: 'stretch',
+      borderColor: 'rgba(196,163,90,0.72)',
+      borderRadius: 18,
+      borderWidth: 1,
+      gap: 4,
+      minHeight: 108,
+      justifyContent: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 18,
+    },
+    presenceValue: {
+      color: p.goldSoft,
+      fontSize: 36,
+      fontWeight: '800',
+      lineHeight: 44,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    presenceCaption: {
+      color: p.cream,
+      fontSize: 14,
+      fontWeight: '700',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
   });
 }

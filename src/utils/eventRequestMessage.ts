@@ -82,7 +82,15 @@ export function listMobileEventTypesByFamily(family: EventFamily) {
 }
 
 export function eventFamilyOf(type: string): EventFamily {
-  return findMobileEventType(type).family;
+  const normalized = normalizeMobileEventType(type);
+  const found = MOBILE_EVENT_TYPES.find((item) => item.key === normalized);
+  if (found) return found.family;
+  if (normalized === 'health') return 'health';
+  if (normalized === 'news' || normalized === 'happy') return 'news';
+  const raw = String(type || '');
+  if (/وفاة|تعز|عزاء/.test(raw)) return 'death';
+  if (/مرض|شفا|سلامة|عملية|عمليه|مستشفى/.test(raw)) return 'health';
+  return 'occasion';
 }
 
 export function isNoticeEventType(type: string) {
@@ -126,7 +134,10 @@ const TYPE_ALIASES: Record<string, string> = {
   تقاعد: 'retirement_notice',
   عقيقة: 'aqiqa',
   وفاة: 'death',
+  'إعلان وفاة': 'death',
+  'وفاة وتعزية': 'death',
   تعزية: 'condolence',
+  عزاء: 'condolence',
 };
 
 export function normalizeMobileEventType(raw?: string | null) {

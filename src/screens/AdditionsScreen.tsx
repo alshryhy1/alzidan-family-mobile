@@ -6,10 +6,8 @@ import { PhoneField } from '../components/PhoneField';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
-import { notifyAdminOfNewRequest } from '../services/eventOutboundNotify';
-import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
 import { rememberPushPhone, registerPushToken } from '../services/pushNotifications';
-import { insertPublicRow } from '../services/supabase';
+import { submitFamilyRequest } from '../services/submitFamilyRequest';
 import {
   MOBILE_EVENT_FAMILIES,
   buildMobileEventRequestMessage,
@@ -197,32 +195,15 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         createdAt,
       });
 
-      await insertPublicRow('approval_requests', {
-        request_id: reqId,
+      await submitFamilyRequest({
+        requestId: reqId,
         kind: 'event_card',
-        branch_key: branch,
+        branchKey: branch,
         name: submitterName.trim(),
         phone: submitterPhoneE164(),
         email: email.trim() || null,
         message,
-        status: 'pending',
-        created_at: createdAt,
-      });
-      await notifyBranchDelegatesOfRequest({
-        request_id: reqId,
-        kind: 'event_card',
-        branch_key: branch,
-        status: 'pending',
-        name: submitterName.trim(),
-        phone: submitterPhoneE164(),
-      });
-      await notifyAdminOfNewRequest({
-        request_id: reqId,
-        kind: 'event_card',
-        branch_key: branch,
-        status: 'pending',
-        name: submitterName.trim(),
-        phone: submitterPhoneE164(),
+        createdAt,
       });
       await rememberPushPhone(submitterPhoneE164());
       registerPushToken('event_submit').catch(() => {});
@@ -297,32 +278,15 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         submitterPhone: submitterPhoneE164(),
       });
 
-      await insertPublicRow('approval_requests', {
-        request_id: reqId,
+      await submitFamilyRequest({
+        requestId: reqId,
         kind: 'tree_card',
-        branch_key: branch,
+        branchKey: branch,
         name: submitterName.trim(),
         phone: submitterPhoneE164(),
         email: email.trim() || null,
         message,
-        status: 'pending',
-        created_at: createdAt,
-      });
-      await notifyBranchDelegatesOfRequest({
-        request_id: reqId,
-        kind: 'tree_card',
-        branch_key: branch,
-        status: 'pending',
-        name: submitterName.trim(),
-        phone: submitterPhoneE164(),
-      });
-      await notifyAdminOfNewRequest({
-        request_id: reqId,
-        kind: 'tree_card',
-        branch_key: branch,
-        status: 'pending',
-        name: submitterName.trim(),
-        phone: submitterPhoneE164(),
+        createdAt,
       });
       await rememberPushPhone(submitterPhoneE164());
       registerPushToken('request_submit').catch(() => {});
@@ -381,32 +345,15 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         createdAt,
       });
 
-      await insertPublicRow('approval_requests', {
-        request_id: reqId,
+      await submitFamilyRequest({
+        requestId: reqId,
         kind: 'tree_edit',
-        branch_key: branch,
+        branchKey: branch,
         name: submitterName.trim(),
         phone: submitterPhone,
         email: email.trim() || null,
         message,
-        status: 'pending',
-        created_at: createdAt,
-      });
-      await notifyBranchDelegatesOfRequest({
-        request_id: reqId,
-        kind: 'tree_edit',
-        branch_key: branch,
-        status: 'pending',
-        name: submitterName.trim(),
-        phone: submitterPhone,
-      });
-      await notifyAdminOfNewRequest({
-        request_id: reqId,
-        kind: 'tree_edit',
-        branch_key: branch,
-        status: 'pending',
-        name: submitterName.trim(),
-        phone: submitterPhone,
+        createdAt,
       });
       await rememberPushPhone(submitterPhone);
       registerPushToken('request_submit').catch(() => {});

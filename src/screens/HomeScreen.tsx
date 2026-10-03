@@ -117,13 +117,18 @@ export function HomeScreen({
 
   useEffect(() => {
     let cancelled = false;
-    loadFamilyBoardPosts()
-      .then((rows) => {
-        if (!cancelled) setBoardPosts(rows.slice(0, 4));
-      })
-      .catch(() => undefined);
+    function loadFamilyBoard() {
+      loadFamilyBoardPosts()
+        .then((rows) => {
+          if (!cancelled) setBoardPosts(rows.slice(0, 4));
+        })
+        .catch(() => undefined);
+    }
+    loadFamilyBoard();
+    const id = setInterval(loadFamilyBoard, 60 * 1000);
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
   }, [loading]);
 

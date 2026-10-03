@@ -11,10 +11,10 @@ import { PhoneField } from '../components/PhoneField';
 import { SceneShell } from '../components/scene';
 import { SectionCard } from '../components/SectionCard';
 import { appendTrackedRequest } from '../services/myRequestsTrack';
-import { notifyAdminOfNewRequest, notifyFamilyEventPublished } from '../services/eventOutboundNotify';
-import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
+import { notifyFamilyEventPublished } from '../services/eventOutboundNotify';
 import { rememberPushPhone, registerPushToken } from '../services/pushNotifications';
-import { insertPublicRow, uploadPublicFileUri } from '../services/supabase';
+import { submitFamilyRequest } from '../services/submitFamilyRequest';
+import { uploadPublicFileUri } from '../services/supabase';
 import {
   buildMemberOccasionRow,
   deleteMemberOccasion,
@@ -30,8 +30,10 @@ import {
   MOBILE_EVENT_FAMILIES,
   buildMobileEventRequestMessage,
   eventAllowsMedia,
+  eventFamilyOf,
   findMobileEventType,
   listMobileEventTypesByFamily,
+  normalizeMobileEventType,
   validateEventFacts,
   EVENT_PLACE_KINDS,
   formatVenueLine,
@@ -39,6 +41,7 @@ import {
   type MobileEventFamily,
 } from '../utils/eventRequestMessage';
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
+import { shareEventToWhatsAppGroup } from '../utils/eventShareCard';
 import { OccasionInteractCard } from '../components/OccasionInteractCard';
 import {
   DEFAULT_PHONE_COUNTRY_ID,
@@ -61,6 +64,7 @@ type EventsScreenProps = {
   memberPhone?: string | null;
   memberGreeting?: string | null;
   memberBranchKey?: string | null;
+  focusEventId?: string | null;
 };
 
 const filters: Array<{ key: Filter; label: string }> = [
@@ -124,11 +128,16 @@ function compactNameFromPath(value: string) {
 
 function whatsappUrl(phone: string, event: FamilyEvent) {
   const normalized = e164Digits(canonicalizePhone(phone) || phone);
+  const typeKey = normalizeMobileEventType(String(event.type || event.category || ''));
+  const family = eventFamilyOf(typeKey);
+  const recovered = typeKey === 'healing' || typeKey === 'discharge' || typeKey === 'safety';
   const message =
-    event.category === 'condolence'
+    event.category === 'condolence' || family === 'death'
       ? 'عظم الله أجركم وأحسن عزاءكم'
-      : event.category === 'health'
-        ? 'لا بأس طهور إن شاء الله'
+      : event.category === 'health' || family === 'health'
+        ? recovered
+          ? 'الحمد لله على السلامة'
+          : 'لا بأس طهور إن شاء الله'
         : 'ألف مبروك';
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
@@ -204,6 +213,7 @@ export function EventsScreen({
   memberPhone = null,
   memberGreeting = null,
   memberBranchKey = null,
+  focusEventId = null,
 }: EventsScreenProps) {
   const { occasionSocialEnabled } = useTheme();
   const p = useThemePalette();
@@ -239,15 +249,29 @@ export function EventsScreen({
   const [submitting, setSubmitting] = useState(false);
   const [pickingMedia, setPickingMedia] = useState<'image' | 'video' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [phoneRegistered, setPhoneRegistered] = useState(false);
   const sessionPhone = canonicalizePhone(memberPhone || '');
+  const focusedId = String(focusEventId || '').trim();
   const visibleEvents = filter === 'all' ? events : events.filter((event) => event.category === filter);
-  const featuredEvent = visibleEvents[0] ?? null;
+  const orderedEvents = focusedId
+    ? [
+        ...visibleEvents.filter((event) => String(event.id) === focusedId),
+        ...visibleEvents.filter((event) => String(event.id) !== focusedId),
+      ]
+    : visibleEvents;
+  const featuredEvent =
+    orderedEvents.find((event) => String(event.id) === focusedId) || orderedEvents[0] || null;
   const happyCount = events.filter((event) => event.category === 'happy').length;
   const healthCount = events.filter((event) => event.category === 'health').length;
   const condolenceCount = events.filter((event) => event.category === 'condolence').length;
   const typesForFamily = listMobileEventTypesByFamily(addFamily);
   const selectedType = findMobileEventType(addType);
   const allowsMedia = eventAllowsMedia(selectedType.key);
+
+  useEffect(() => {
+    if (!focusedId) return;
+    setFilter('all');
+  }, [focusedId]);
 
   useEffect(() => {
     const cleaned = canonicalizePhone(memberPhone || '');
@@ -266,6 +290,24 @@ export function EventsScreen({
       setSubmitterName((current) => (current.trim() ? current : String(memberGreeting).trim()));
     }
   }, [memberBranchKey, memberGreeting]);
+
+  useEffect(() => {
+    if (!isValidPhone(phoneCountryId, phoneNational)) {
+      setPhoneRegistered(Boolean(sessionPhone));
+      return;
+    }
+    const phone = toE164(phoneCountryId, phoneNational);
+    let alive = true;
+    const timer = setTimeout(() => {
+      void isRegisteredMemberPhone(phone).then((ok) => {
+        if (alive) setPhoneRegistered(ok);
+      });
+    }, 350);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [phoneCountryId, phoneNational, sessionPhone]);
 
   const pickMedia = async (kind: 'image' | 'video') => {
     if (pickingMedia) return;
@@ -330,6 +372,14 @@ export function EventsScreen({
   function isOwnedEvent(event: FamilyEvent) {
     if (!sessionPhone) return false;
     return phonesMatch(sessionPhone, event.sourcePhone);
+  }
+
+  async function shareEventCard(event: FamilyEvent) {
+    try {
+      await shareEventToWhatsAppGroup(event);
+    } catch {
+      Alert.alert('تعذر المشاركة', 'ما قدرنا نفتح واتساب. انسخ الخبر يدويًا أو أعد المحاولة.');
+    }
   }
 
   function resetAddForm() {
@@ -508,10 +558,12 @@ export function EventsScreen({
         if (!result?.ok) {
           const err = String(result?.error || '');
           throw new Error(
-            err === 'not_registered'
+              err === 'not_registered'
               ? 'هذا الجوال غير مسجّل في العائلة.'
               : err === 'not_owner'
                 ? 'لا يمكنك تعديل مناسبة ليست من مصدرك.'
+                : err === 'device_required'
+                  ? 'الجوال مسجّل. حدّث مسار النشر في الإدارة ثم أعد المحاولة.'
                 : 'تعذر النشر المباشر الآن. راجِع الإدارة إن استمر.',
           );
         }
@@ -561,32 +613,14 @@ export function EventsScreen({
         createdAt,
       });
 
-      await insertPublicRow('approval_requests', {
-        request_id: requestIdValue,
+      await submitFamilyRequest({
+        requestId: requestIdValue,
         kind: 'event_card',
-        branch_key: addBranch,
+        branchKey: addBranch,
         name: submitterName.trim(),
         phone,
-        email: null,
         message,
-        status: 'pending',
-        created_at: createdAt,
-      });
-      await notifyAdminOfNewRequest({
-        request_id: requestIdValue,
-        kind: 'event_card',
-        branch_key: addBranch,
-        status: 'pending',
-        name: submitterName.trim(),
-        phone,
-      });
-      await notifyBranchDelegatesOfRequest({
-        request_id: requestIdValue,
-        kind: 'event_card',
-        branch_key: addBranch,
-        status: 'pending',
-        name: submitterName.trim(),
-        phone,
+        createdAt,
       });
       await rememberPushPhone(phone);
       registerPushToken('event_submit').catch(() => {});
@@ -698,7 +732,7 @@ export function EventsScreen({
       />
 
       {!loading && !error
-        ? visibleEvents.map((event) => (
+        ? orderedEvents.map((event) => (
             <View
               key={event.id}
               style={[
@@ -761,6 +795,12 @@ export function EventsScreen({
                   <Text style={styles.actionText}>الموقع على الخريطة</Text>
                 </Pressable>
               ) : null}
+              <Pressable
+                onPress={() => void shareEventCard(event)}
+                style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.shareButtonText}>شارك للقروب</Text>
+              </Pressable>
               {occasionSocialEnabled && event.contactPhone ? (
                 <View style={styles.actions}>
                   <Pressable
@@ -1108,9 +1148,9 @@ export function EventsScreen({
             <Text style={styles.addHint}>
               {editingId
                 ? 'تحفظ التعديل على المصدر نفسه.'
-                : sessionPhone
-                  ? `المسجّل بجواله ينشر مباشرة في مناسبات فرع ${addBranch || 'العائلة'}.`
-                  : 'غير المسجّل يُرسل الطلب للإدارة للمراجعة.'}
+                : phoneRegistered
+                  ? `الجوال مسجّل — تنشر مباشرة في مناسبات فرع ${addBranch || 'العائلة'}.`
+                  : 'إذا الجوال مسجّل في التطبيق تُنشر مباشرة. غير المسجّل يُرسل للإدارة.'}
             </Text>
             <View style={styles.submitterCol}>
               <TextInput
@@ -1138,18 +1178,18 @@ export function EventsScreen({
                   : editingId
                     ? 'حفظ التعديل'
                     : selectedType.family === 'death'
-                      ? sessionPhone
+                      ? phoneRegistered
                         ? 'نشر إعلان الوفاة'
                         : 'إرسال إعلان الوفاة'
                       : selectedType.family === 'health'
-                        ? sessionPhone
+                        ? phoneRegistered
                           ? 'نشر الحالة الصحية'
                           : 'إرسال الحالة الصحية'
                         : selectedType.mode === 'notice'
-                          ? sessionPhone
+                          ? phoneRegistered
                             ? 'نشر التهنئة / الخبر'
                             : 'إرسال التهنئة / الخبر'
-                          : sessionPhone
+                          : phoneRegistered
                             ? 'نشر المناسبة'
                             : 'إرسال المناسبة'
               }
@@ -1520,6 +1560,22 @@ function eventsStyles(p: ThemePalette) {
     flex: 1,
     minHeight: 42,
     justifyContent: 'center',
+  },
+  shareButton: {
+    alignItems: 'center',
+    backgroundColor: p.greenDeep || p.primaryDark,
+    borderColor: p.gold,
+    borderRadius: 14,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  shareButtonText: {
+    color: p.white,
+    fontSize: 15,
+    fontWeight: '900',
+    writingDirection: 'rtl',
   },
   secondaryAction: {
     backgroundColor: p.primarySoft,

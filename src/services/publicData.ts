@@ -652,6 +652,7 @@ export type SelfPathLoadedFacts = {
   spouseRole: 'husband' | 'wife' | null;
   childNames: string[];
   daughterNames: string[];
+  daughters: { id: number; name: string }[];
   sisterNames: string[];
   externalOffspringNames: string[];
 };
@@ -790,6 +791,7 @@ export async function loadSelfPathFacts(
     spouseRole: null,
     childNames: [],
     daughterNames: [],
+    daughters: [],
     sisterNames: [],
     externalOffspringNames: [],
   };
@@ -892,6 +894,7 @@ export async function loadSelfPathFacts(
 
   let childNames: string[] = [];
   let daughterNames: string[] = [];
+  let daughters: { id: number; name: string }[] = [];
   try {
     const spouseIds = picked ? [picked.spouse.id] : [];
     const childLinks = spouseIds.length ? await loadMotherLinksForSpouseIds(spouseIds) : [];
@@ -933,17 +936,19 @@ export async function loadSelfPathFacts(
           ? normalizePathKey(nodePathId(picked.partner.husband))
           : '';
     const sons: string[] = [];
-    const daughters: string[] = [];
+    const daughterNameList: string[] = [];
+    const daughterRows: { id: number; name: string }[] = [];
     const seenLeaf: Record<string, boolean> = {};
     rpcChildren.forEach((row) => {
       const person = children.find((item) => Number(item.id) === Number(row.id));
+      const hiddenDaughter = isPublicLineageHiddenPerson({ gender: row.gender });
       if (person) {
         const parentKey = normalizePathKey(person.parentName);
         if (parentKey && siblingKeys.has(parentKey)) return;
         const underViewer = Boolean(viewerKey && parentKey === viewerKey);
         const underHusband = Boolean(husbandKey && parentKey === husbandKey);
         if (!underViewer && !underHusband) return;
-      } else if (!picked) {
+      } else if (!hiddenDaughter) {
         return;
       }
       const name = leafPersonName(String(row.leaf_name || ''));
@@ -951,11 +956,15 @@ export async function loadSelfPathFacts(
       const key = selfChildLeafKey(name);
       if (seenLeaf[key]) return;
       seenLeaf[key] = true;
-      if (isPublicLineageHiddenPerson({ gender: row.gender })) daughters.push(name);
-      else sons.push(name);
+      if (isPublicLineageHiddenPerson({ gender: row.gender })) {
+        daughterNameList.push(name);
+        const id = Number(row.id || 0);
+        if (id > 0) daughterRows.push({ id, name });
+      } else sons.push(name);
     });
     childNames = sons;
-    daughterNames = daughters;
+    daughterNames = daughterNameList;
+    daughters = daughterRows;
   }
 
   const daughterKeys = new Set(daughterNames.map((name) => selfChildLeafKey(name)));
@@ -984,6 +993,7 @@ export async function loadSelfPathFacts(
     spouseRole: currentMarriage?.partner.role || null,
     childNames,
     daughterNames,
+    daughters,
     sisterNames,
     externalOffspringNames,
   };

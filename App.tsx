@@ -30,6 +30,7 @@ import { FamilyAdminScreen } from './src/screens/FamilyAdminScreen';
 import { DelegateInboxScreen } from './src/screens/DelegateInboxScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
+import { isPublicLineageHiddenPerson } from './src/utils/personVisibility';
 import { fetchOccasionInbox, type OccasionInboxItem } from './src/services/occasionInteractions';
 import { loadLastSeen, markSurfaceSeen, type LastSeenMap } from './src/services/lastSeen';
 import { buildSinceLastVisit, countNewEvents, countNewInbox } from './src/utils/sinceLastVisit';
@@ -57,6 +58,7 @@ import { DeviceLockGate } from './src/components/DeviceLockGate';
 import { ForceUpdateGate } from './src/components/ForceUpdateGate';
 import type { MemberRequest, PublicScreen, TreeChild } from './src/types';
 import { isFamilyEventPubliclyVisible } from './src/utils/eventVisibility';
+import { eventIdFromOpenUrl } from './src/utils/eventShareCard';
 import { kinshipLabelForPerson } from './src/utils/maternalKinship';
 import { canonicalizePhone } from './src/utils/phone';
 import { resolveEncounterMode } from './src/utils/personEncounter';
@@ -85,7 +87,7 @@ function screenFromPushData(data: Record<string, unknown> | null): PublicScreen 
   const screen = String(data?.screen || '').toLowerCase();
   if (screen === 'womenadmin' || mode === 'women_manager_new_request') return 'womenAdmin';
   if (screen === 'delegate' || mode === 'branch_delegate_new_request') return 'delegateInbox';
-  if (screen === 'admin' || mode === 'admin_new_request') return 'familyAdmin';
+  if (screen === 'familyadmin' || screen === 'admin' || mode === 'admin_new_request') return 'familyAdmin';
   if (mode === 'status_changed' || mode === 'inbox_share') return 'profile';
   return 'events';
 }
@@ -254,6 +256,7 @@ function AppChrome() {
   const [specialCardVisible, setSpecialCardVisible] = useState(false);
   const [specialCardTickerItems, setSpecialCardTickerItems] = useState<string[]>([]);
   const [pulseOnline, setPulseOnline] = useState<number | null>(null);
+  const [focusEventId, setFocusEventId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!__DEV__) return;
@@ -349,9 +352,17 @@ function AppChrome() {
 
   useEffect(() => {
     const openFromUrl = (url: string | null) => {
+      const eventId = eventIdFromOpenUrl(url);
+      if (eventId) {
+        setLegacyChrome(true);
+        setFocusEventId(eventId);
+        setScreen('events');
+        return;
+      }
       const next = screenFromOpenUrl(url);
       if (!next) return;
       setLegacyChrome(true);
+      if (next === 'events') setFocusEventId(null);
       setScreen(next);
     };
 
@@ -436,7 +447,12 @@ function AppChrome() {
     return () => {
       alive = false;
     };
-  }, [memberPhoneForRequests]);
+  }, [memberPhoneForRequests, screen, encounterTreeChildId]);
+
+  useEffect(() => {
+    if (screen !== 'person' || !encounterTreeChildId) return;
+    void publicData.reload();
+  }, [screen, encounterTreeChildId, publicData.reload]);
 
   const includePubliclyHiddenPeople = Boolean(lineageChildren && lineageChildren.length);
   const treeChildren = useMemo(() => {
@@ -447,6 +463,7 @@ function AppChrome() {
       const id = Number(row.id);
       if (!id) return;
       const prev = byId.get(id);
+      if (!prev && !isPublicLineageHiddenPerson(row)) return;
       byId.set(id, {
         ...(prev || row),
         ...row,
@@ -759,7 +776,10 @@ function AppChrome() {
   const eventsBadge = countNewEvents(activeEvents, lastSeen.events);
   const profileBadge = countNewInbox(occasionInbox, lastSeen.profile);
 
-  const goToScreen = useCallback((next: PublicScreen) => {
+  const goToScreen = useCallback((next: PublicScreen, opts?: { eventId?: string | null }) => {
+    if (next === 'events') {
+      setFocusEventId(opts?.eventId ? String(opts.eventId) : null);
+    }
     setScreen((current) => {
       if (current === 'home' && next !== 'home') {
         void markSurfaceSeen('home').then(setLastSeen);
@@ -826,6 +846,9 @@ function AppChrome() {
             kinshipById={maternalKinshipById}
             memberPhone={memberPhoneForRequests}
             includePubliclyHiddenPeople={includePubliclyHiddenPeople}
+            onAdded={() => {
+              void reloadPublished();
+            }}
             onClose={closePersonEncounter}
           />
         );
@@ -835,6 +858,7 @@ function AppChrome() {
             branches={branches}
             error={publicData.error}
             events={activeEvents}
+            focusEventId={focusEventId}
             loading={publicData.loading}
             memberBranchKey={memberBranchKey}
             memberGreeting={memberGreeting}
@@ -933,7 +957,13 @@ function AppChrome() {
             onRetry={reloadPublished}
             pulseOnline={pulseOnline}
             sinceLastVisit={sinceLastVisit}
-            onOpenSinceVisit={(item) => goToScreen(item.target)}
+            onOpenSinceVisit={(item) => {
+              if (item.target === 'events' && item.eventId) {
+                goToScreen('events', { eventId: item.eventId });
+                return;
+              }
+              goToScreen(item.target);
+            }}
             onOpenFamilyBoard={() => goToScreen('familyBoard')}
             onOpenMyCard={
               memberTreeChildId != null && (memberBranchKey || encounterViewer?.branchKey)

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   AppState,
   Pressable,
@@ -11,14 +12,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { OccasionInteractCard } from '../components/OccasionInteractCard';
+import { OwnTreeAddPanel } from '../components/OwnTreeAddPanel';
+import { OwnTreeEditPanel } from '../components/OwnTreeEditPanel';
 import { PersonPhoto } from '../components/PersonPhoto';
+import { getCachedDeviceSession, resumeTrustedDevice } from '../services/deviceAuth';
+import { isAccountChild, isOwnTreeNode } from '../services/memberAddPerson';
 import { loadSelfPathFacts } from '../services/publicData';
-import { spacing, typography, type ThemePalette } from '../theme';
+import { spacing, typography, MEMBER_PHONE_KEY, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch, FamilyEvent, TreeChild } from '../types';
 import { kinshipLabelForPerson } from '../utils/maternalKinship';
 import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
+import { canonicalizePhone } from '../utils/phone';
 import {
   findDirectSons,
   findPersonOccasions,
@@ -31,6 +37,7 @@ import {
 } from '../utils/personEncounter';
 import {
   buildSelfPathRings,
+  childrenOfPersonInGraph,
   siblingsInGraph,
   type SelfPathRing,
 } from '../utils/selfPath';
@@ -46,6 +53,7 @@ type Props = {
   kinshipById?: Record<number, string>;
   memberPhone?: string | null;
   includePubliclyHiddenPeople?: boolean;
+  onAdded?: () => void;
   onClose: () => void;
 };
 
@@ -82,6 +90,7 @@ export function PersonEncounterScreen({
   kinshipById,
   memberPhone,
   includePubliclyHiddenPeople = false,
+  onAdded,
   onClose,
 }: Props) {
   const p = useThemePalette();
@@ -91,8 +100,13 @@ export function PersonEncounterScreen({
   const branch = branchLabel(branches, person.branchKey);
   const lineage = publicLineageChain(person.name, mode === 'self' ? 8 : 3);
   const [resumeTick, setResumeTick] = useState(0);
+  const [sessionPhone, setSessionPhone] = useState(() => getCachedDeviceSession()?.phone || '');
   const [selfPathRings, setSelfPathRings] = useState<SelfPathRing[]>([]);
   const [selfPathLoading, setSelfPathLoading] = useState(false);
+  const [ownDaughters, setOwnDaughters] = useState<{ id: number; name: string }[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editChildId, setEditChildId] = useState<number | null>(null);
   const maternal =
     maternalLabel || kinshipLabelForPerson(kinshipById, person, childrenRows) || null;
   const kinship =
@@ -100,21 +114,22 @@ export function PersonEncounterScreen({
       ? resolveProvenKinshipLabel(viewer, person, maternal, childrenRows)
       : null;
   const directSons =
-    mode === 'visitor' || mode === 'member'
+    mode === 'visitor' || mode === 'member' || mode === 'self'
       ? findDirectSons(childrenRows, person, {
           includePubliclyHidden: includePubliclyHiddenPeople,
         })
       : [];
-  const linkedSons = useMemo(() => {
-    if (mode !== 'self' || !kinshipById) return [];
-    const ids = Object.keys(kinshipById)
-      .map(Number)
-      .filter((id) => kinshipById[id] === 'ابنك');
-    return ids
-      .map((id) => childrenRows.find((row) => Number(row.id) === id))
-      .filter((row): row is TreeChild => Boolean(row));
-  }, [mode, kinshipById, childrenRows]);
-  const sons = mode === 'self' ? linkedSons : directSons;
+  const sons =
+    mode === 'self'
+      ? childrenOfPersonInGraph(person, childrenRows).filter(
+          (row) => includePubliclyHiddenPeople || !isPublicLineageHiddenPerson(row),
+        )
+      : directSons;
+  const activePhone = String(memberPhone || sessionPhone || '').trim();
+  const treeOwner = viewer || (mode === 'self' ? person : null);
+  const canEditOpened = Boolean(
+    activePhone && treeOwner && (mode === 'self' || isAccountChild(treeOwner, person)),
+  );
   const occasions = useMemo(
     () => findPersonOccasions(events, person, childrenRows),
     [events, person, childrenRows],
@@ -139,6 +154,12 @@ export function PersonEncounterScreen({
     mode === 'member' && !kinship ? resolveSharedAncestorBadge(viewer, person) : null;
 
   useEffect(() => {
+    setAddOpen(false);
+    setEditOpen(false);
+    setEditChildId(null);
+  }, [person.id, mode]);
+
+  useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') setResumeTick((n) => n + 1);
     });
@@ -147,8 +168,32 @@ export function PersonEncounterScreen({
 
   useEffect(() => {
     let alive = true;
+    if (activePhone) {
+      return () => {
+        alive = false;
+      };
+    }
+    void resumeTrustedDevice()
+      .then((session) => {
+        if (alive && session?.phone) setSessionPhone(session.phone);
+      })
+      .catch(() => undefined);
+    void AsyncStorage.getItem(MEMBER_PHONE_KEY)
+      .then((stored) => {
+        const cleaned = canonicalizePhone(stored || '');
+        if (alive && cleaned) setSessionPhone((current) => current || cleaned);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [activePhone, resumeTick]);
+
+  useEffect(() => {
+    let alive = true;
     if (mode !== 'self') {
       setSelfPathRings([]);
+      setOwnDaughters([]);
       setSelfPathLoading(false);
       return () => {
         alive = false;
@@ -167,7 +212,7 @@ export function PersonEncounterScreen({
       }),
     );
     setSelfPathLoading(true);
-    loadSelfPathFacts(person, childrenRows, memberPhone)
+    loadSelfPathFacts(person, childrenRows, activePhone || memberPhone)
       .then((facts) => {
         if (!alive) return;
         const selfLeaf = leafPersonName(person.name);
@@ -175,6 +220,16 @@ export function PersonEncounterScreen({
           (name) => name && name !== selfLeaf,
         );
         const sisterSet = new Set(sisterNames);
+        const treeSonNames = childrenOfPersonInGraph(person, childrenRows)
+          .filter((row) => includePubliclyHiddenPeople || !isPublicLineageHiddenPerson(row))
+          .map((row) => leafPersonName(row.name))
+          .filter(Boolean);
+        const daughterNames = (facts.daughters || [])
+          .map((row) => row.name)
+          .filter((name) => name && name !== selfLeaf);
+        setOwnDaughters(
+          (facts.daughters || []).filter((row) => row.name && row.name !== selfLeaf && row.id > 0),
+        );
         setSelfPathRings(
           buildSelfPathRings(person, {
             motherName: facts.motherName,
@@ -182,8 +237,8 @@ export function PersonEncounterScreen({
             spouseRole: facts.spouseRole,
             siblingNames: siblingNames.filter((name) => !sisterSet.has(name)),
             sisterNames,
-            childNames: facts.childNames,
-            daughterNames: facts.daughterNames,
+            childNames: treeSonNames,
+            daughterNames,
             externalOffspringNames: facts.externalOffspringNames,
             branchLabel: branch,
           }),
@@ -196,7 +251,7 @@ export function PersonEncounterScreen({
     return () => {
       alive = false;
     };
-  }, [mode, person.id, person.name, person.parentName, person.branchKey, branch, childrenRows, memberPhone, resumeTick]);
+  }, [mode, person.id, person.name, person.parentName, person.branchKey, branch, childrenRows, memberPhone, activePhone, resumeTick]);
 
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
@@ -275,6 +330,66 @@ export function PersonEncounterScreen({
             </View>
           ) : null}
 
+          {mode === 'self' || (activePhone && treeOwner && isOwnTreeNode(treeOwner, person)) || canEditOpened ? (
+            <View style={styles.heroAdd}>
+              <View style={styles.heroAddActions}>
+                {mode === 'self' || (activePhone && treeOwner && isOwnTreeNode(treeOwner, person)) ? (
+                  <Pressable
+                    onPress={() => {
+                      setAddOpen((open) => !open);
+                      setEditOpen(false);
+                    }}
+                    style={({ pressed }) => [styles.heroAddButton, pressed && { opacity: 0.75 }]}
+                  >
+                    <Text style={styles.heroAddButtonText}>{addOpen ? 'إخفاء' : 'إضافة'}</Text>
+                  </Pressable>
+                ) : null}
+                {canEditOpened ? (
+                  <Pressable
+                    onPress={() => {
+                      setEditOpen((open) => !open);
+                      setAddOpen(false);
+                    }}
+                    style={({ pressed }) => [styles.heroAddButton, pressed && { opacity: 0.75 }]}
+                  >
+                    <Text style={styles.heroAddButtonText}>{editOpen ? 'إخفاء' : 'تعديل'}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {addOpen && mode === 'self' && !activePhone ? (
+                <Text style={styles.heroAddHint}>جاري تجهيز الإضافة من جوالك الموثّق…</Text>
+              ) : null}
+              {addOpen && activePhone && treeOwner ? (
+                <View style={styles.heroAddForm}>
+                  <Text style={styles.heroAddTitle}>
+                    {mode === 'self' ? 'أضف في شجرتك' : `أضف تحت ${name}`}
+                  </Text>
+                  <OwnTreeAddPanel
+                    owner={treeOwner}
+                    parent={person}
+                    phone={activePhone}
+                    submitterName={leafPersonName(treeOwner.name)}
+                    tone="hero"
+                    onAdded={onAdded}
+                  />
+                </View>
+              ) : null}
+              {editOpen && activePhone ? (
+                <View style={styles.heroAddForm}>
+                  <Text style={styles.heroAddTitle}>
+                    {mode === 'self' ? 'تعديل اسمك أو ميلادك' : `تعديل ${name}`}
+                  </Text>
+                  <OwnTreeEditPanel
+                    phone={activePhone}
+                    target={person}
+                    tone="hero"
+                    onSaved={onAdded}
+                  />
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
           <View style={styles.heroCurve}>
             <View style={styles.heroCurveGold} />
           </View>
@@ -339,18 +454,88 @@ export function PersonEncounterScreen({
             </View>
           ) : null}
 
-          {mode !== 'self' && sons.length ? (
+          {mode === 'self' && ownDaughters.length ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>بناتك</Text>
+              <OrnamentDivider />
+              <View style={styles.familyList}>
+                {ownDaughters.map((daughter) => (
+                  <View key={daughter.id} style={styles.familyItem}>
+                    <View style={styles.familyCard}>
+                      <PersonPhoto name={daughter.name} size="sm" />
+                      <Text style={styles.familyName}>{daughter.name} — ابنتك</Text>
+                      {activePhone ? (
+                        <Pressable
+                          onPress={() =>
+                            setEditChildId((current) =>
+                              current === daughter.id ? null : daughter.id,
+                            )
+                          }
+                          style={({ pressed }) => [styles.familyEdit, pressed && { opacity: 0.75 }]}
+                        >
+                          <Text style={styles.familyEditText}>
+                            {editChildId === daughter.id ? 'إخفاء' : 'تعديل'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                    {activePhone && editChildId === daughter.id ? (
+                      <OwnTreeEditPanel
+                        keepBlankDates
+                        phone={activePhone}
+                        target={{
+                          id: daughter.id,
+                          branchKey: person.branchKey,
+                          parentName: person.name,
+                          name: person.name ? `${person.name}/${daughter.name}` : daughter.name,
+                          birthOrder: null,
+                          birthDateGregorian: null,
+                          birthDateHijri: null,
+                          birthYear: null,
+                          city: null,
+                          area: null,
+                          isDeceased: null,
+                          gender: 'daughter',
+                          photoUrl: null,
+                        }}
+                        onSaved={onAdded}
+                      />
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {sons.length ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{mode === 'self' ? 'أبناؤك' : 'عائلته'}</Text>
               <OrnamentDivider />
               <View style={styles.familyList}>
                 {sons.map((son) => (
-                  <View key={son.id} style={styles.familyCard}>
-                    <PersonPhoto name={leafPersonName(son.name)} size="sm" uri={son.photoUrl} />
-                    <Text style={styles.familyName}>
-                      {leafPersonName(son.name)}
-                      {mode === 'self' ? ' — ابنك' : ''}
-                    </Text>
+                  <View key={son.id} style={styles.familyItem}>
+                    <View style={styles.familyCard}>
+                      <PersonPhoto name={leafPersonName(son.name)} size="sm" uri={son.photoUrl} />
+                      <Text style={styles.familyName}>
+                        {leafPersonName(son.name)}
+                        {mode === 'self' ? ' — ابنك' : ''}
+                      </Text>
+                      {mode === 'self' && activePhone ? (
+                        <Pressable
+                          onPress={() =>
+                            setEditChildId((current) => (current === son.id ? null : son.id))
+                          }
+                          style={({ pressed }) => [styles.familyEdit, pressed && { opacity: 0.75 }]}
+                        >
+                          <Text style={styles.familyEditText}>
+                            {editChildId === son.id ? 'إخفاء' : 'تعديل'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                    {mode === 'self' && activePhone && editChildId === son.id ? (
+                      <OwnTreeEditPanel phone={activePhone} target={son} onSaved={onAdded} />
+                    ) : null}
                   </View>
                 ))}
               </View>
@@ -397,9 +582,7 @@ export function PersonEncounterScreen({
                 <View style={styles.interactWrap}>
                   <OccasionInteractCard
                     occasionId={Number(liveOccasion.id)}
-                    eventType={String(
-                      liveOccasion.type || liveOccasion.category || 'occasion',
-                    )}
+                    eventType={String(liveOccasion.type || '')}
                     person={
                       occasionOwnerDisplayName(liveOccasion) ||
                       liveOccasion.person ||
@@ -622,6 +805,48 @@ function encounterStyles(p: ThemePalette) {
     marginBottom: -18,
     marginTop: spacing.lg,
   },
+  heroAdd: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    width: '100%',
+  },
+  heroAddActions: {
+    flexDirection: 'row-reverse',
+    gap: spacing.sm,
+  },
+  heroAddButton: {
+    backgroundColor: 'rgba(15,42,36,0.55)',
+    borderColor: p.gold,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 8,
+  },
+  heroAddButtonText: {
+    color: p.goldSoft,
+    fontSize: typography.body,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  heroAddForm: {
+    gap: spacing.sm,
+    width: '100%',
+  },
+  heroAddTitle: {
+    color: p.goldSoft,
+    fontSize: typography.body,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  heroAddHint: {
+    color: p.cream,
+    fontSize: typography.caption,
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
   heroCurveGold: {
     backgroundColor: p.gold,
     borderTopLeftRadius: 40,
@@ -739,6 +964,9 @@ function encounterStyles(p: ThemePalette) {
   familyList: {
     gap: spacing.sm,
   },
+  familyItem: {
+    gap: spacing.sm,
+  },
   familyCard: {
     alignItems: 'center',
     backgroundColor: p.surface,
@@ -760,6 +988,19 @@ function encounterStyles(p: ThemePalette) {
     fontSize: typography.body,
     fontWeight: '900',
     textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  familyEdit: {
+    borderColor: p.gold,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  familyEditText: {
+    color: p.greenDeep,
+    fontSize: typography.caption,
+    fontWeight: '900',
     writingDirection: 'rtl',
   },
   infoCard: {

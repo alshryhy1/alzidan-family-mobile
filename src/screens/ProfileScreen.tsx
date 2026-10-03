@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, Pressable, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
 import { PersonPhoto } from '../components/PersonPhoto';
@@ -21,9 +21,8 @@ import {
 } from '../services/deviceLock';
 import { saveMemberPhoto, uploadMemberPhoto } from '../services/personPhoto';
 import { clearPushPhone, rememberPushPhone, registerPushToken } from '../services/pushNotifications';
-import { callPublicRpc, classifyPublicRpcError, insertPublicRow, selectPublicRows } from '../services/supabase';
-import { notifyAdminOfNewRequest, notifyWomenManagersOfRequest } from '../services/eventOutboundNotify';
-import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
+import { callPublicRpc, classifyPublicRpcError, selectPublicRows } from '../services/supabase';
+import { submitFamilyRequest } from '../services/submitFamilyRequest';
 import { brandCircleSize, spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
@@ -354,6 +353,18 @@ export function ProfileScreen({
       .catch(() => setDelegateInboxEnabled(false));
   }, [member?.phone, savedPhone]);
 
+  useEffect(() => {
+    const p = canonicalizePhone(member?.phone || savedPhone || '');
+    if (!p) return undefined;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      fetchOccasionInbox(p)
+        .then(setInbox)
+        .catch(() => undefined);
+    });
+    return () => sub.remove();
+  }, [member?.phone, savedPhone]);
+
   const logout = () => {
     void logoutTrustedDevice().then(() => {
       void clearPushPhone();
@@ -469,40 +480,14 @@ export function ProfileScreen({
         }),
       ].join('\n');
 
-      await insertPublicRow('approval_requests', {
-        request_id: requestId,
+      await submitFamilyRequest({
+        requestId,
         kind: 'member_phone_register',
-        branch_key: branch,
+        branchKey: branch,
         name: tripleText,
         phone,
-        email: null,
         message,
-        status: 'pending',
-        created_at: createdAt,
-      });
-      await notifyBranchDelegatesOfRequest({
-        request_id: requestId,
-        kind: 'member_phone_register',
-        branch_key: branch,
-        status: 'pending',
-        name: tripleText,
-        phone,
-      });
-      await notifyAdminOfNewRequest({
-        request_id: requestId,
-        kind: 'member_phone_register',
-        branch_key: branch,
-        status: 'pending',
-        name: tripleText,
-        phone,
-      });
-      await notifyWomenManagersOfRequest({
-        request_id: requestId,
-        kind: 'member_phone_register',
-        branch_key: branch,
-        status: 'pending',
-        name: tripleText,
-        phone,
+        createdAt,
       });
       setRegisterSent(true);
       setStatus({

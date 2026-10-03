@@ -57,18 +57,31 @@ const CEREMONY_TYPES = new Set([
 ]);
 const DROP_REPLY_KEYS = new Set(['inv_details', 'inv_contact']);
 
+const ILLNESS_ONLY_KEYS = new Set(['heal_ask', 'heal_tahoor']);
+const SICKNESS_PRAYER_KEYS = new Set(['heal_ask', 'heal_tahoor', 'heal_shifa']);
+
 export function filterCatalogForType(
   items: OccasionInteractionType[] | null | undefined,
   eventType: string,
 ) {
   const typeKey = normalizeMobileEventType(eventType);
+  const family = eventFamilyOf(typeKey);
   let list = Array.isArray(items) ? items.slice() : [];
   list = list.filter((item) => {
     if (!item || DROP_REPLY_KEYS.has(item.key)) return false;
     const types = item.applies_to_types;
-    if (Array.isArray(types) && types.length) return types.includes(typeKey);
+    if (!Array.isArray(types) || !types.length || !types.includes(typeKey)) return false;
+    if (family === 'death' && item.family && item.family !== 'death') return false;
+    if (family === 'health' && item.family && item.family !== 'health') return false;
+    if ((family === 'news' || family === 'occasion') && item.family === 'death') return false;
     return true;
   });
+  if (typeKey === 'healing') {
+    list = list.filter((item) => !ILLNESS_ONLY_KEYS.has(item.key));
+  }
+  if (typeKey === 'safety') {
+    list = list.filter((item) => !SICKNESS_PRAYER_KEYS.has(item.key));
+  }
   if (RSVP_TYPES.has(typeKey)) {
     list = list.filter(
       (item) =>

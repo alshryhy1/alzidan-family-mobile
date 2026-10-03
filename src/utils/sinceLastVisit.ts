@@ -11,6 +11,7 @@ export type SinceVisitItem = {
   subtitle: string;
   target: SinceVisitTarget;
   at: number;
+  eventId?: string;
 };
 
 const KIND_ORDER: Record<SinceVisitItem['kind'], number> = {
@@ -95,6 +96,7 @@ export function buildSinceLastVisit(input: {
       subtitle: copy.subtitle,
       target: 'events',
       at: at || Date.now(),
+      eventId: String(event.id),
     });
   }
 

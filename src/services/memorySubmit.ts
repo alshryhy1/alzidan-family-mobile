@@ -2,7 +2,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import type { ImagePickerAsset } from 'expo-image-picker';
 
 import { canonicalizePhone, isValidStoredPhone } from '../utils/phone';
-import { uploadPublicFileUri, insertPublicRow } from './supabase';
+import { submitFamilyRequest } from './submitFamilyRequest';
+import { uploadPublicFileUri } from './supabase';
 
 export type MemoryUiKind = 'image' | 'video' | 'audio' | 'story' | 'document';
 
@@ -208,14 +209,12 @@ export async function submitMemoryItem(input: MemorySubmitInput) {
   // جسر لطلبات المندوب — طابور الفرع يقرأ approval_requests فقط.
   const requestIdForDelegate = requestId;
   try {
-    await insertPublicRow('approval_requests', {
-      request_id: requestIdForDelegate,
+    await submitFamilyRequest({
+      requestId: requestIdForDelegate,
       kind: 'memory_card',
-      branch_key: cleanText(input.branchKey),
+      branchKey: cleanText(input.branchKey),
       name: cleanText(input.personName) || cleanText(input.title),
       phone: cleanPhone(input.submittedByPhone),
-      email: null,
-      status: 'pending',
       message: [
         'طلب: ذكرى',
         `العنوان: ${cleanText(input.title)}`,

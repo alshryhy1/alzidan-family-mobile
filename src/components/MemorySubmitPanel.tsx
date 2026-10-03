@@ -11,8 +11,6 @@ import {
   type MemoryPickedFile,
   type MemoryUiKind,
 } from '../services/memorySubmit';
-import { notifyAdminOfNewRequest } from '../services/eventOutboundNotify';
-import { notifyBranchDelegatesOfRequest } from '../services/notifyBranchDelegates';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
@@ -127,7 +125,7 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
     setSubmitting(true);
     try {
       const phone = toE164(phoneCountryId, phoneNational);
-      const result = await submitMemoryItem({
+      await submitMemoryItem({
         branchKey: branch,
         uiKind: memoryType,
         personName: memoryPerson.trim(),
@@ -141,23 +139,6 @@ export function MemorySubmitPanel({ branches, defaultBranch }: MemorySubmitPanel
         submittedByName: submitterName.trim(),
         submittedByPhone: phone,
         submittedByRelation: 'تطبيق الجوال',
-      });
-
-      await notifyBranchDelegatesOfRequest({
-        request_id: String(result?.requestId || result?.id || `MEM-${Date.now()}`),
-        kind: 'memory_card',
-        branch_key: branch,
-        status: 'pending',
-        name: memoryPerson.trim() || memoryTitle.trim(),
-        phone,
-      });
-      await notifyAdminOfNewRequest({
-        request_id: String(result?.requestId || result?.id || `MEM-${Date.now()}`),
-        kind: 'memory_card',
-        branch_key: branch,
-        status: 'pending',
-        name: memoryPerson.trim() || memoryTitle.trim(),
-        phone,
       });
 
       setMemoryPerson('');

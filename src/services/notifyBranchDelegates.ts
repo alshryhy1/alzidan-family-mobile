@@ -1,21 +1,11 @@
 import { invokePublicEdgeFunction } from './supabase';
 
-const DELEGATE_NOTIFY_KINDS = new Set([
-  'event_card',
-  'family_event',
-  'event_request',
-  'occasion',
-  'patient',
-  'health',
-  'event_death',
-  'tree_card',
-  'add_person',
-  'tree_edit',
-  'member_phone_register',
-  'member_registration',
-  'memory_card',
-  'memory',
-  'tree_founder',
+const ADMIN_ONLY_KINDS = new Set([
+  'special_card',
+  'tree_delegate',
+  'events_delegate',
+  'org_role',
+  'delegate_secret_reset',
 ]);
 
 export type BranchRequestNotifyRow = {
@@ -29,14 +19,16 @@ export type BranchRequestNotifyRow = {
 
 /**
  * Same path as web: email + push to branch delegates.
- * Never forwards the request message. Notify failure must not undo a saved request.
+ * Any branch request except البطاقة / طلبات المندوبية. Notify failure must not undo a saved request.
  */
 export async function notifyBranchDelegatesOfRequest(row: BranchRequestNotifyRow) {
   const kind = String(row.kind || '').trim();
   const branch = String(row.branch_key || '').trim();
   const requestId = String(row.request_id || '').trim();
   if (!kind || !branch || !requestId) return { ok: false as const, skipped: 'missing' };
-  if (!DELEGATE_NOTIFY_KINDS.has(kind)) return { ok: false as const, skipped: 'kind' };
+  if (ADMIN_ONLY_KINDS.has(kind) || /_audit$|^eva-|^aud-/i.test(kind)) {
+    return { ok: false as const, skipped: 'kind' };
+  }
 
   const record = {
     request_id: requestId,
@@ -52,15 +44,15 @@ export async function notifyBranchDelegatesOfRequest(row: BranchRequestNotifyRow
   const body = { mode: 'branch_delegate_new_request', record };
 
   try {
-    await invokePublicEdgeFunction('alzidan-email-notify', body);
+    await invokePublicEdgeFunction('alzidan-push-notify', body);
   } catch {
-    // Keep request; email is best-effort.
+    // Keep request; app push is best-effort.
   }
 
   try {
-    await invokePublicEdgeFunction('alzidan-push-notify', body);
+    await invokePublicEdgeFunction('alzidan-email-notify', body);
   } catch {
-    // Keep request; push is best-effort.
+    // Keep request; email is extra.
   }
 
   return { ok: true as const };

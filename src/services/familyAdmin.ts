@@ -88,6 +88,7 @@ type SearchRpc = {
 type ActionRpc = {
   ok?: boolean;
   error?: string;
+  detail?: unknown;
 };
 
 type ListRpc = {
@@ -167,7 +168,20 @@ function throwIfMissingRpc(error: unknown): never {
 function assertOk(row: ActionRpc | undefined) {
   if (!row) throw new FamilyAdminRpcMissingError();
   if (row.error === 'sql_missing') throw new FamilyAdminRpcMissingError();
-  if (row.ok === false) throw new Error(row.error || 'not_allowed');
+  if (row.ok === false) {
+    const detail =
+      typeof row.detail === 'string'
+        ? row.detail
+        : row.detail && typeof row.detail === 'object'
+          ? JSON.stringify(row.detail)
+          : '';
+    throw new Error(
+      JSON.stringify({
+        error: row.error || 'not_allowed',
+        detail,
+      }),
+    );
+  }
 }
 
 export async function fetchFamilyAdminSession(phone: string): Promise<FamilyAdminSession> {
@@ -478,13 +492,32 @@ export function familyAdminDelegatesSqlHint() {
 }
 
 export function familyAdminActionMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || '');
+  if (/[\u0600-\u06FF]/.test(raw) && raw.length < 220 && !raw.trim().startsWith('{')) {
+    return raw.trim();
+  }
   if (
     error instanceof FamilyAdminRpcMissingError ||
-    isMissingRpcMessage(String(error instanceof Error ? error.message : error || ''))
+    isMissingRpcMessage(raw)
   ) {
     return 'تعذر فتح إدارة العائلة الآن. راجِع الإدارة إن استمر.';
   }
   const code = rpcFailureCode(error);
+  let detail = '';
+  try {
+    const parsed = JSON.parse(raw) as { detail?: unknown; message?: string };
+    if (typeof parsed.detail === 'string') detail = parsed.detail;
+    else if (parsed.detail && typeof parsed.detail === 'object') {
+      const nested = parsed.detail as { error?: string; message?: string };
+      detail = String(nested.error || nested.message || '');
+    }
+    if (typeof parsed.message === 'string' && /[\u0600-\u06FF]/.test(parsed.message)) {
+      return parsed.message.trim();
+    }
+  } catch {
+    // not json
+  }
+  if (/[\u0600-\u06FF]/.test(detail) && detail.length < 220) return detail.trim();
   switch (code) {
     case 'sql_missing':
       return 'تعذر فتح إدارة العائلة الآن. راجِع الإدارة إن استمر.';
@@ -504,6 +537,8 @@ export function familyAdminActionMessage(error: unknown): string {
       return 'هذا النوع يُعالَج من مسار مختلف.';
     case 'bind_required':
       return 'سجّل الرقم على الشخص في الشجرة ثم اعتمد الطلب.';
+    case 'bind_failed':
+      return 'ما تم الربط. شغّل أمر «قبول طلب الجوال في التطبيق» من صيانة الإدارة ثم أعد القبول.';
     case 'unknown_role':
       return 'هذا الدور غير معروف.';
     case 'missing_secret_hash':
@@ -511,6 +546,6 @@ export function familyAdminActionMessage(error: unknown): string {
     case 'no_delegate_target':
       return 'لا يوجد مندوب مطابق لتحديث رقمه السري.';
     default:
-      return 'تعذر إتمام العملية. أعد المحاولة.';
+      return 'ما تم القبول. أعد المحاولة.';
   }
 }

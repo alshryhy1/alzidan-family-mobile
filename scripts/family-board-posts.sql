@@ -12,10 +12,17 @@ create table if not exists public.family_board_posts (
   author_name text,
   author_phone text not null,
   created_at timestamptz not null default now(),
+  starts_at timestamptz,
   expires_at timestamptz,
   is_active boolean not null default true,
   urgent boolean not null default false
 );
+
+alter table public.family_board_posts
+  add column if not exists starts_at timestamptz;
+
+alter table public.family_board_posts
+  add column if not exists coming_count integer not null default 0;
 
 alter table public.family_board_posts enable row level security;
 

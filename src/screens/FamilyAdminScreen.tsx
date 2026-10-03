@@ -62,6 +62,77 @@ function leafName(value: string) {
   return parts.at(-1) || value.trim();
 }
 
+function foldAr(value: string) {
+  return leafName(value)
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function nameTokens(value: string) {
+  return foldAr(value)
+    .split(' ')
+    .filter((part) => part && part !== 'بن' && part !== 'ابن');
+}
+
+function personHay(person: FamilyAdminPerson) {
+  return foldAr(`${person.displayName} ${String(person.path || '').replace(/\//g, ' ')}`);
+}
+
+function peopleMatchingTokens(people: FamilyAdminPerson[], tokens: string[]) {
+  if (!tokens.length) return people;
+  const all = people.filter((person) => tokens.every((token) => personHay(person).includes(token)));
+  if (all.length) return all;
+  const firstTwo = tokens.slice(0, 2);
+  if (firstTwo.length < 2) return [];
+  return people.filter((person) => firstTwo.every((token) => personHay(person).includes(token)));
+}
+
+function searchNamesFor(value: string) {
+  const tokens = nameTokens(value);
+  return [...new Set(tokens.filter((item) => item.length >= 2))];
+}
+
+function pickPersonForRequest(people: FamilyAdminPerson[], row: FamilyAdminRequest) {
+  if (!people.length) return null;
+  const tokens = nameTokens(row.name);
+  const first = tokens[0] || '';
+  const wanted = foldAr(row.name);
+  const leafEq = people.filter((person) => foldAr(person.displayName) === first);
+  const inBranch = people.filter((person) => person.branchKey && person.branchKey === row.branchKey);
+  const leafInBranch = leafEq.filter((person) => person.branchKey === row.branchKey);
+  const exact = people.find((person) => foldAr(person.displayName) === wanted);
+  if (exact) return exact;
+  if (leafInBranch.length === 1) return leafInBranch[0];
+  if (leafEq.length === 1) return leafEq[0];
+  const pathHits = peopleMatchingTokens(people, tokens);
+  const pathInBranch = pathHits.filter((person) => person.branchKey === row.branchKey);
+  if (pathInBranch.length === 1) return pathInBranch[0];
+  if (pathHits.length === 1) return pathHits[0];
+  if (inBranch.length === 1) return inBranch[0];
+  if (people.length === 1) return people[0];
+  return null;
+}
+
+function preferShownPeople(people: FamilyAdminPerson[], row: FamilyAdminRequest) {
+  const tokens = nameTokens(row.name);
+  const matched = peopleMatchingTokens(people, tokens);
+  const pool = matched.length ? matched : tokens.length >= 2 ? [] : people;
+  if (!pool.length) return [];
+  const first = tokens[0] || '';
+  const leafEq = pool.filter((person) => foldAr(person.displayName) === first);
+  const leafInBranch = leafEq.filter((person) => person.branchKey === row.branchKey);
+  if (leafInBranch.length) return leafInBranch;
+  if (leafEq.length) return leafEq;
+  const inBranch = pool.filter((person) => person.branchKey === row.branchKey);
+  return inBranch.length ? inBranch : pool;
+}
+
 function formatWhen(value: string | null) {
   if (!value) return '';
   const date = new Date(value);
@@ -126,7 +197,7 @@ export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps
       </Pressable>
       <SceneSection>
         <Text style={styles.lead}>
-          قبول ورفض طلبات الجوال والعضوية والمناديب، وتعديل صلاحيات المندوب كما في الموقع. الاستيراد والزوجات وبطاقة الشجرة تبقى في الموقع.
+          اعتماد طلب الجوال من النموذج هنا: ابحث عن الشخص ثم اربطه. صلاحيات المناديب أيضاً من التطبيق. الشجرة والاستيراد يبقيان في الموقع.
         </Text>
       </SceneSection>
       <View style={styles.tabs}>
@@ -478,6 +549,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   const [matches, setMatches] = useState<FamilyAdminPerson[]>([]);
   const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [doneText, setDoneText] = useState('');
 
   const load = useCallback(async () => {
     if (!phone) {
@@ -506,6 +578,48 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
     void load();
   }, [load]);
 
+  const findPeople = useCallback(async (row: FamilyAdminRequest, rawName: string) => {
+    const names = searchNamesFor(rawName.trim() || row.name);
+    let found: FamilyAdminPerson[] = [];
+    for (const name of names) {
+      found = await searchFamilyAdminPeople(phone, name, row.branchKey || null);
+      if (found.length) {
+        const shown = preferShownPeople(found, row);
+        if (shown.length) return shown;
+      }
+    }
+    for (const name of names) {
+      found = await searchFamilyAdminPeople(phone, name);
+      if (found.length) {
+        const shown = preferShownPeople(found, row);
+        if (shown.length) return shown;
+      }
+    }
+    return [];
+  }, [phone]);
+
+  useEffect(() => {
+    if (!selected || !isFamilyAdminMemberRequest(selected)) return;
+    let alive = true;
+    setSearching(true);
+    findPeople(selected, selected.name)
+      .then((rows) => {
+        if (!alive) return;
+        setMatches(rows);
+      })
+      .catch((error) => {
+        if (!alive) return;
+        if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
+        else onError(familyAdminActionMessage(error));
+      })
+      .finally(() => {
+        if (alive) setSearching(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [findPeople, onError, onSqlMissing, selected]);
+
   async function runSearch() {
     if (!selected) return;
     const q = query.trim() || leafName(selected.name);
@@ -517,12 +631,46 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
     setSearching(true);
     onError('');
     try {
-      setMatches(await searchFamilyAdminPeople(phone, q));
+      const found = await findPeople(selected, query.trim() || selected.name);
+      setMatches(found);
+      if (!found.length) onError('ما ظهر أحد بهذا الاسم في الشجرة.');
     } catch (error) {
       if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
       else onError(familyAdminActionMessage(error));
     } finally {
       setSearching(false);
+    }
+  }
+
+  async function acceptSelected() {
+    if (!selected || busyId != null) return;
+    if (isFamilyAdminDelegateRequest(selected)) {
+      confirmApprove(selected);
+      return;
+    }
+    setBusyId(selected.id);
+    onError('');
+    try {
+      let found = matches;
+      if (!found.length) {
+        found = await findPeople(selected, query.trim() || selected.name);
+        setMatches(found);
+      }
+      const person = pickPersonForRequest(found, selected);
+      if (!person) {
+        onError(
+          found.length
+            ? 'ظهر أكثر من شخص. اختر الاسم الصحيح من القائمة ثم اضغط قبول.'
+            : 'ما لقيت الشخص في الشجرة. عدّل الاسم ثم اضغط قبول.',
+        );
+        return;
+      }
+      confirmBind(person);
+    } catch (error) {
+      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
+      else onError(familyAdminActionMessage(error));
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -546,6 +694,8 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
       await rejectFamilyAdminRequest(phone, row.id);
       notifySubmitter(row, 'rejected');
       setSelected(null);
+      setMatches([]);
+      setDoneText(`تم رفض طلب ${row.name || 'العضو'}.`);
       await load();
     } catch (error) {
       if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
@@ -556,36 +706,28 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   }
 
   function confirmBind(person: FamilyAdminPerson) {
-    if (!selected) return;
-    Alert.alert(
-      'اعتماد وربط',
-      `ربط ${selected.phone ? formatPhoneDisplay(selected.phone) : 'الطلب'} بـ ${person.displayName}؟`,
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        {
-          text: 'اعتماد',
-          onPress: () => {
-            void doBind(person);
-          },
-        },
-      ],
-    );
+    void doBind(person);
   }
 
   async function doBind(person: FamilyAdminPerson) {
-    if (!selected) return;
-    setBusyId(selected.id);
+    if (!selected || busyId != null) return;
+    const row = selected;
+    setBusyId(row.id);
     onError('');
+    setDoneText('');
     try {
       await bindFamilyAdminRequest({
         adminPhone: phone,
-        requestId: selected.id,
+        requestId: row.id,
         treeChildId: person.id,
       });
-      notifySubmitter(selected, 'approved');
-      Alert.alert('تم الاعتماد', 'اعتُمد الطلب ورُبط بالشخص.');
+      notifySubmitter(row, 'approved');
       setSelected(null);
       setMatches([]);
+      setQuery('');
+      setDoneText(
+        `تم قبول الطلب. رُبط ${row.phone ? formatPhoneDisplay(row.phone) : 'الجوال'} بـ ${person.displayName}.`,
+      );
       await load();
     } catch (error) {
       if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
@@ -614,9 +756,9 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
     try {
       await approveFamilyAdminRequest(phone, row.id);
       notifySubmitter(row, 'approved');
-      Alert.alert('تم القبول', 'اعتُمد الطلب وحُدّثت صلاحية المندوب إن لزم.');
       setSelected(null);
       setMatches([]);
+      setDoneText(`تم قبول ${kind}.`);
       await load();
     } catch (error) {
       onError(
@@ -635,8 +777,9 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   return (
     <SceneSection title="طلبات">
       <Text style={styles.hint}>
-        طلبات الجوال والعضوية والمناديب المعلّقة. قبول العضوية يربط بالجوال. قبول المندوب يفعّل صلاحياته كما في الموقع.
+        اضغط قبول لربط الجوال بالشخص الظاهر وإنهاء الطلب فورًا.
       </Text>
+      {doneText ? <Text style={styles.okText}>{doneText}</Text> : null}
       {loading ? <Text style={styles.meta}>جاري تحميل الطلبات…</Text> : null}
       {selected ? (
         <>
@@ -667,6 +810,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
                 }}
               />
               <ActionButton label={searching ? 'جاري البحث…' : 'بحث'} onPress={() => void runSearch()} />
+              {matches.length ? <Text style={styles.fieldLabel}>وجد في الشجرة</Text> : null}
               {matches.map((person) => (
                 <Pressable
                   key={person.id}
@@ -675,22 +819,30 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
                   style={({ pressed }) => [styles.card, pressed && styles.pressed]}
                 >
                   <Text style={styles.cardName}>{person.displayName}</Text>
+                  {person.path ? <Text style={styles.cardMeta}>{person.path}</Text> : null}
                   <Text style={styles.cardMeta}>
-                    {person.branchKey || 'بدون فرع'}
-                    {person.phone ? ` · ${formatPhoneDisplay(person.phone)}` : ''}
+                    {[
+                      person.branchKey,
+                      `الرقم: ${person.id}`,
+                      person.personId ? `الأبوي: ${person.personId}` : '',
+                      person.phone ? formatPhoneDisplay(person.phone) : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </Text>
-                  <Text style={styles.linkText}>اختيار هذا الشخص</Text>
+                  <Text style={styles.linkText}>قبول الربط بهذا الشخص</Text>
                 </Pressable>
               ))}
             </>
-          ) : selectedIsDelegate ? (
-            <ActionButton
-              label={busyId === selected.id ? 'جاري القبول…' : 'قبول الطلب'}
-              onPress={() => confirmApprove(selected)}
-            />
-          ) : (
+          ) : selectedIsDelegate ? null : (
             <Text style={styles.meta}>هذا النوع يُعالَج من الموقع.</Text>
           )}
+          {selectedIsMember || selectedIsDelegate ? (
+            <ActionButton
+              label={busyId === selected.id ? 'جاري القبول…' : 'قبول'}
+              onPress={() => void acceptSelected()}
+            />
+          ) : null}
           <ActionButton
             label={busyId === selected.id ? 'جاري الرفض…' : 'رفض الطلب'}
             variant="secondary"
@@ -705,6 +857,7 @@ function RequestsTab({ phone, styles, onSqlMissing, onError }: TabProps) {
               setSelected(row);
               setQuery(leafName(row.name));
               setMatches([]);
+              setDoneText('');
             }}
             style={({ pressed }) => [styles.card, pressed && styles.pressed]}
           >
@@ -978,6 +1131,15 @@ function familyAdminStyles(p: ThemePalette) {
       fontSize: 14,
       fontWeight: '700' as const,
       lineHeight: 22,
+      marginTop: 10,
+      textAlign: 'right' as const,
+      writingDirection: 'rtl' as const,
+    },
+    okText: {
+      color: p.primaryDark,
+      fontSize: 15,
+      fontWeight: '800' as const,
+      lineHeight: 24,
       marginTop: 10,
       textAlign: 'right' as const,
       writingDirection: 'rtl' as const,

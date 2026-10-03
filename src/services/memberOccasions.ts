@@ -1,5 +1,5 @@
-import { canonicalizePhone, phonesMatch } from '../utils/phone';
-import { callPublicRpc } from './supabase';
+import { canonicalizePhone, memberProfilePhoneQuery, phonesMatch } from '../utils/phone';
+import { callPublicRpc, classifyPublicRpcError, selectPublicRows } from './supabase';
 import {
   eventFamilyOf,
   findMobileEventType,
@@ -107,18 +107,32 @@ export function buildMemberOccasionRow(input: {
 type RpcResult = { ok?: boolean; id?: number; error?: string };
 
 export async function publishMemberOccasion(phone: string, row: MemberOccasionRow) {
-  return callPublicRpc<RpcResult>('member_publish_occasion_v1', {
-    p_phone: phone,
-    p_row: row,
-  });
+  try {
+    return await callPublicRpc<RpcResult>('member_publish_occasion_v1', {
+      p_phone: phone,
+      p_row: row,
+    });
+  } catch (error) {
+    if (classifyPublicRpcError(error) === 'device_required') {
+      return { ok: false, error: 'device_required' };
+    }
+    throw error;
+  }
 }
 
 export async function updateMemberOccasion(phone: string, id: number, row: MemberOccasionRow) {
-  return callPublicRpc<RpcResult>('member_update_occasion_v1', {
-    p_phone: phone,
-    p_id: id,
-    p_row: row,
-  });
+  try {
+    return await callPublicRpc<RpcResult>('member_update_occasion_v1', {
+      p_phone: phone,
+      p_id: id,
+      p_row: row,
+    });
+  } catch (error) {
+    if (classifyPublicRpcError(error) === 'device_required') {
+      return { ok: false, error: 'device_required' };
+    }
+    throw error;
+  }
 }
 
 export async function deleteMemberOccasion(phone: string, id: number) {
@@ -129,15 +143,35 @@ export async function deleteMemberOccasion(phone: string, id: number) {
 }
 
 export async function isRegisteredMemberPhone(phone: string) {
+  const wanted = canonicalizePhone(phone);
+  if (!wanted) return false;
+
   try {
     const { resumeTrustedDevice, getCachedDeviceSession } = await import('./deviceAuth');
-    const wanted = canonicalizePhone(phone);
     const cached = getCachedDeviceSession();
-    if (cached?.phone && (!wanted || phonesMatch(cached.phone, wanted))) return true;
+    if (cached?.phone && phonesMatch(cached.phone, wanted)) return true;
     const session = await resumeTrustedDevice();
-    if (!session?.phone) return false;
-    if (!wanted) return true;
-    return phonesMatch(session.phone, wanted);
+    if (session?.phone && phonesMatch(session.phone, wanted)) return true;
+  } catch {
+    /* keep checking the family register */
+  }
+
+  try {
+    const registered = await callPublicRpc<string | null>('member_phone_registered_v1', {
+      p_phone: wanted,
+    });
+    if (typeof registered === 'string' && registered.trim()) return true;
+  } catch (error) {
+    if (classifyPublicRpcError(error) === 'device_required') {
+      /* live function still gated by device; fall through to profiles */
+    }
+  }
+
+  try {
+    const path = memberProfilePhoneQuery(wanted);
+    if (!path) return false;
+    const rows = await selectPublicRows<{ id?: number }>(path);
+    return Array.isArray(rows) && rows.length > 0;
   } catch {
     return false;
   }

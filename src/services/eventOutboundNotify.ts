@@ -29,15 +29,15 @@ export async function notifyAdminOfNewRequest(row: AdminRequestRow) {
   const body = { mode: 'admin_new_request', record };
 
   try {
-    await invokePublicEdgeFunction('alzidan-email-notify', body);
+    await invokePublicEdgeFunction('alzidan-push-notify', body);
   } catch {
-    // Keep request; email is best-effort.
+    // Keep request; app push to family admin is first.
   }
 
   try {
-    await invokePublicEdgeFunction('alzidan-push-notify', body);
+    await invokePublicEdgeFunction('alzidan-email-notify', body);
   } catch {
-    // Keep request; push is best-effort.
+    // Keep request; email is extra.
   }
 
   return { ok: true as const };

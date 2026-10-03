@@ -11,14 +11,21 @@ import {
 import { DataState } from '../components/DataState';
 import { SceneShell } from '../components/scene';
 import {
+  MAJLIS_START_HOURS,
+  buildTwelveHourWindow,
   createFamilyBoardPost,
   deleteFamilyBoardPost,
+  extendFamilyBoardHour,
   familyBoardCategoriesForKind,
   familyBoardCategoryLabel,
   familyBoardCategoryMeta,
+  familyBoardComingLabel,
   familyBoardKindLabel,
   familyBoardMetaLine,
+  familyBoardWindowLabel,
+  formatBoardHour,
   loadFamilyBoardPosts,
+  toggleFamilyBoardComing,
   type FamilyBoardCategory,
   type FamilyBoardKind,
   type FamilyBoardPost,
@@ -66,11 +73,16 @@ export function FamilyBoardScreen({
   const [body, setBody] = useState('');
   const [place, setPlace] = useState('');
   const [daysAlive, setDaysAlive] = useState(3);
+  const [windowStartHour, setWindowStartHour] = useState(16);
 
   const sessionPhone = canonicalizePhone(memberPhone || '');
   const canPost = Boolean(sessionPhone);
   const categoryOptions = useMemo(() => familyBoardCategoriesForKind(kind), [kind]);
   const categoryMeta = useMemo(() => familyBoardCategoryMeta(category), [category]);
+  const majlisWindow = useMemo(
+    () => (category === 'majlis' ? buildTwelveHourWindow(windowStartHour) : null),
+    [category, windowStartHour],
+  );
 
   useEffect(() => {
     if (!categoryOptions.some((row) => row.id === category)) {
@@ -82,7 +94,7 @@ export function FamilyBoardScreen({
     setLoading(true);
     setError(null);
     try {
-      const rows = await loadFamilyBoardPosts();
+      const rows = await loadFamilyBoardPosts(sessionPhone || memberPhone);
       setPosts(rows);
       if (initialPostId) {
         const hit = rows.find((row) => row.id === initialPostId);
@@ -96,16 +108,59 @@ export function FamilyBoardScreen({
     } finally {
       setLoading(false);
     }
-  }, [initialPostId]);
+  }, [initialPostId, memberPhone, sessionPhone]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
+  useEffect(() => {
+    if (pane !== 'list') return undefined;
+    const id = setInterval(() => {
+      void reload();
+    }, 60 * 1000);
+    return () => clearInterval(id);
+  }, [pane, reload]);
+
   const openDetail = (post: FamilyBoardPost) => {
     setSelected(post);
     setPane('detail');
     setStatus('');
+  };
+
+  const syncPost = (post: FamilyBoardPost) => {
+    setPosts((prev) => [post, ...prev.filter((row) => row.id !== post.id)]);
+    setSelected(post);
+  };
+
+  const extendSelected = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setStatus('');
+    try {
+      const post = await extendFamilyBoardHour({ id: selected.id, authorPhone: sessionPhone });
+      syncPost(post);
+      setStatus('تم التمديد ساعة.');
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'تعذر التمديد.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleComing = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setStatus('');
+    try {
+      const post = await toggleFamilyBoardComing({ id: selected.id, phone: sessionPhone });
+      syncPost(post);
+      setStatus(post.iAmComing ? 'تم: أنت جاي.' : 'تم إلغاء حضورك.');
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'تعذر التسجيل.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openCompose = () => {
@@ -120,6 +175,7 @@ export function FamilyBoardScreen({
     setBody('');
     setPlace('');
     setDaysAlive(3);
+    setWindowStartHour(16);
     setPane('compose');
   };
 
@@ -141,6 +197,7 @@ export function FamilyBoardScreen({
         authorName: memberGreeting || '',
         authorPhone: sessionPhone,
         daysAlive,
+        windowStartHour: category === 'majlis' ? windowStartHour : undefined,
         urgent: category === 'faza',
       });
       setPosts((prev) => [post, ...prev.filter((row) => row.id !== post.id)]);
@@ -253,12 +310,39 @@ export function FamilyBoardScreen({
           <View style={[styles.detailCard, selected.urgent && styles.cardUrgent]}>
             {selected.urgent ? <Text style={styles.urgentBadge}>طلب عاجل</Text> : null}
             <Text style={styles.detailTitle}>{selected.title}</Text>
+            {familyBoardWindowLabel(selected) ? (
+              <Text style={styles.windowLine}>
+                {familyBoardWindowLabel(selected)}
+                {selected.category === 'majlis' ? ' · ينحذف عند الانتهاء' : ''}
+              </Text>
+            ) : null}
+            {selected.category === 'majlis' && (selected.comingCount || 0) > 0 ? (
+              <Text style={styles.comingLine}>{familyBoardComingLabel(selected.comingCount)}</Text>
+            ) : null}
             <Text style={styles.cardMeta}>{familyBoardMetaLine(selected)}</Text>
             {selected.body ? <Text style={styles.detailBody}>{selected.body}</Text> : null}
             <Text style={styles.author}>
               {selected.authorName || 'فرد من العائلة'}
               {selected.branchKey ? ` · فرع ${selected.branchKey}` : ''}
             </Text>
+            {selected.category === 'majlis' &&
+            sessionPhone &&
+            canonicalizePhone(selected.authorPhone) !== sessionPhone ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy}
+                onPress={() => void toggleComing()}
+                style={({ pressed }) => [
+                  styles.comingBtn,
+                  selected.iAmComing && styles.comingBtnOn,
+                  (pressed || busy) && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.comingBtnText, selected.iAmComing && styles.comingBtnTextOn]}>
+                  {selected.iAmComing ? 'جاي · إلغاء' : 'أنا جاي'}
+                </Text>
+              </Pressable>
+            ) : null}
             {selected.authorPhone ? (
               <View style={styles.actions}>
                 <Pressable
@@ -289,14 +373,26 @@ export function FamilyBoardScreen({
             )}
             {sessionPhone &&
             canonicalizePhone(selected.authorPhone) === sessionPhone ? (
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={() => void removeSelected()}
-                style={({ pressed }) => [styles.deleteBtn, (pressed || busy) && styles.pressed]}
-              >
-                <Text style={styles.deleteBtnText}>{busy ? 'جارٍ الحذف…' : 'حذف إعلاني'}</Text>
-              </Pressable>
+              <View style={styles.ownerActions}>
+                {selected.category === 'majlis' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => void extendSelected()}
+                    style={({ pressed }) => [styles.extendBtn, (pressed || busy) && styles.pressed]}
+                  >
+                    <Text style={styles.extendBtnText}>{busy ? '…' : 'مدّ ساعة'}</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => void removeSelected()}
+                  style={({ pressed }) => [styles.deleteBtn, (pressed || busy) && styles.pressed]}
+                >
+                  <Text style={styles.deleteBtnText}>{busy ? 'جارٍ الحذف…' : 'حذف إعلاني'}</Text>
+                </Pressable>
+              </View>
             ) : null}
           </View>
           {status ? <Text style={styles.status}>{status}</Text> : null}
@@ -390,24 +486,52 @@ export function FamilyBoardScreen({
             textAlign="right"
           />
 
-          <Text style={styles.fieldLabel}>يبقى ظاهر</Text>
-          <View style={styles.chipRow}>
-            {[
-              { days: 0, label: 'اليوم' },
-              { days: 3, label: '٣ أيام' },
-              { days: 7, label: 'أسبوع' },
-            ].map((row) => (
-              <Pressable
-                key={row.days}
-                onPress={() => setDaysAlive(row.days)}
-                style={[styles.chip, daysAlive === row.days && styles.chipOn]}
-              >
-                <Text style={[styles.chipText, daysAlive === row.days && styles.chipTextOn]}>
-                  {row.label}
+          {category === 'majlis' ? (
+            <View style={styles.windowBox}>
+              <Text style={styles.fieldLabel}>وقت التقهوي (١٢ ساعة)</Text>
+              <Text style={styles.windowHint}>اختر البداية، والنهاية تتحسب تلقائي</Text>
+              <View style={styles.chipRow}>
+                {MAJLIS_START_HOURS.map((hour) => (
+                  <Pressable
+                    key={hour}
+                    onPress={() => setWindowStartHour(hour)}
+                    style={[styles.chip, windowStartHour === hour && styles.chipOn]}
+                  >
+                    <Text style={[styles.chipText, windowStartHour === hour && styles.chipTextOn]}>
+                      من {formatBoardHour(hour)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {majlisWindow ? (
+                <Text style={styles.windowSummary}>
+                  من {formatBoardHour(majlisWindow.startHour)} إلى{' '}
+                  {formatBoardHour(majlisWindow.endHour)} · بعدين ينحذف
                 </Text>
-              </Pressable>
-            ))}
-          </View>
+              ) : null}
+            </View>
+          ) : (
+            <>
+              <Text style={styles.fieldLabel}>يبقى ظاهر</Text>
+              <View style={styles.chipRow}>
+                {[
+                  { days: 0, label: 'اليوم' },
+                  { days: 3, label: '٣ أيام' },
+                  { days: 7, label: 'أسبوع' },
+                ].map((row) => (
+                  <Pressable
+                    key={row.days}
+                    onPress={() => setDaysAlive(row.days)}
+                    style={[styles.chip, daysAlive === row.days && styles.chipOn]}
+                  >
+                    <Text style={[styles.chipText, daysAlive === row.days && styles.chipTextOn]}>
+                      {row.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
 
           {status ? <Text style={styles.status}>{status}</Text> : null}
 
@@ -532,6 +656,77 @@ function boardStyles(p: ThemePalette) {
     detailTitle: {
       color: p.ink,
       fontSize: 22,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    windowLine: {
+      color: p.gold,
+      fontSize: 15,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    comingLine: {
+      color: p.green,
+      fontSize: 14,
+      fontWeight: '800',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    comingBtn: {
+      alignItems: 'center',
+      backgroundColor: p.gold,
+      borderRadius: 14,
+      paddingVertical: 14,
+    },
+    comingBtnOn: {
+      backgroundColor: p.greenDeep,
+    },
+    comingBtnText: {
+      color: p.greenDeep,
+      fontSize: typography.body,
+      fontWeight: '800',
+      writingDirection: 'rtl',
+    },
+    comingBtnTextOn: {
+      color: p.creamLift,
+    },
+    ownerActions: {
+      gap: 10,
+      marginTop: spacing.sm,
+    },
+    extendBtn: {
+      alignItems: 'center',
+      backgroundColor: p.greenDeep,
+      borderRadius: 14,
+      paddingVertical: 12,
+    },
+    extendBtnText: {
+      color: p.creamLift,
+      fontSize: typography.body,
+      fontWeight: '800',
+      writingDirection: 'rtl',
+    },
+    windowBox: {
+      backgroundColor: 'rgba(23,63,53,0.06)',
+      borderColor: 'rgba(196,163,90,0.4)',
+      borderRadius: 16,
+      borderWidth: 1,
+      gap: spacing.sm,
+      padding: spacing.md,
+    },
+    windowHint: {
+      color: p.textMuted,
+      fontSize: 12,
+      fontWeight: '700',
+      marginTop: -4,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    windowSummary: {
+      color: p.green,
+      fontSize: 14,
       fontWeight: '800',
       textAlign: 'right',
       writingDirection: 'rtl',
