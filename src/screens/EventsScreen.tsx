@@ -41,6 +41,7 @@ import {
   type MobileEventFamily,
 } from '../utils/eventRequestMessage';
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
+import { shareEventToWhatsAppGroup } from '../utils/eventShareCard';
 import { occasionRelationLabel } from '../utils/personEncounter';
 import { OccasionInteractCard } from '../components/OccasionInteractCard';
 import {

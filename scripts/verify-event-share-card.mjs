@@ -50,6 +50,14 @@ const checks = [
   ['death heading', src.includes('إنا لله وإنا إليه راجعون')],
   ['button label', screen.includes('شارك للقروب')],
   ['share wired', screen.includes('shareEventToWhatsAppGroup')],
+  [
+    'share import present',
+    /import\s*\{\s*shareEventToWhatsAppGroup\s*\}\s*from\s*['"]\.\.\/utils\/eventShareCard['"]/.test(
+      screen,
+    ),
+  ],
+  ['share prefers system sheet', src.includes('Share.share({ message: card')],
+  ['whatsapp scheme fallback', src.includes('whatsapp://send?text=')],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);
