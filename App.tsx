@@ -41,7 +41,8 @@ import {
   setupPushRegistration,
 } from './src/services/pushNotifications';
 import { resumeTrustedDevice } from './src/services/deviceAuth';
-import { syncWidgetPrayerLocation } from './src/theme/syncWidgetTheme';
+import { syncWidgetPrayerLocation, syncWidgetOnlineCount } from './src/theme/syncWidgetTheme';
+import { syncPrayerNotifications } from './src/services/prayerNotifications';
 import {
   fetchActiveSpecialCardsForTicker,
   fetchPendingSpecialCards,
@@ -292,10 +293,15 @@ function AppChrome() {
 
     (async () => {
       const sessionId = await getPulseSessionId();
+      let lastOnline: number | null = null;
       const tick = async () => {
         if (AppState.currentState === 'background') return;
         const online = await pulseHeartbeat(sessionId);
         if (!cancelled) setPulseOnline(online);
+        if (online != null && online !== lastOnline) {
+          lastOnline = online;
+          void syncWidgetOnlineCount(online);
+        }
       };
       await tick();
       if (cancelled) return;
@@ -658,11 +664,20 @@ function AppChrome() {
   }, [memberPhoneForRequests, publicData.loading, screen]);
 
   useEffect(() => {
-    void syncWidgetPrayerLocation();
+    const syncPlaceAndPrayerAlerts = async () => {
+      await syncWidgetPrayerLocation();
+      await syncPrayerNotifications();
+    };
+    const timer = setTimeout(() => {
+      void syncPlaceAndPrayerAlerts();
+    }, 1500);
     const sub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') void syncWidgetPrayerLocation();
+      if (nextState === 'active') void syncPlaceAndPrayerAlerts();
     });
-    return () => sub.remove();
+    return () => {
+      clearTimeout(timer);
+      sub.remove();
+    };
   }, []);
 
   useEffect(() => {

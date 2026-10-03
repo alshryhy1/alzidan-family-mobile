@@ -376,6 +376,7 @@ enum AppGroupTheme {
     static let latitudeKey = "alzidan_prayer_lat"
     static let longitudeKey = "alzidan_prayer_lon"
     static let placeKey = "alzidan_prayer_place"
+    static let onlineKey = "alzidan_pulse_online"
 
     static func readId() -> String {
         let raw = UserDefaults(suiteName: suite)?.string(forKey: key) ?? "heritage"
@@ -401,6 +402,18 @@ enum AppGroupTheme {
     static func displayPlace() -> String {
         let saved = readPlace()
         return saved.isEmpty ? "حائل" : saved
+    }
+
+    static func readOnline() -> Int? {
+        guard let defaults = UserDefaults(suiteName: suite),
+              defaults.object(forKey: onlineKey) != nil else {
+            return nil
+        }
+        return max(0, defaults.integer(forKey: onlineKey))
+    }
+
+    static func writeOnline(_ count: Int) {
+        UserDefaults(suiteName: suite)?.set(max(0, count), forKey: onlineKey)
     }
 }
 
@@ -750,7 +763,11 @@ struct Provider: TimelineProvider {
                 completion(nil)
                 return
             }
-            completion(Self.parseOnlineCount(data))
+            let count = Self.parseOnlineCount(data)
+            if let count {
+                AppGroupTheme.writeOnline(count)
+            }
+            completion(count)
         }.resume()
     }
 
@@ -1145,7 +1162,13 @@ struct HailPrayerCalculator {
 
     static func dateFromHour(_ hour: Double, base: Date, calendar: Calendar) -> Date {
         let day = calendar.startOfDay(for: base)
-        return calendar.date(byAdding: .second, value: Int((hour * 3600).rounded()), to: day) ?? base
+        let totalSeconds = hour * 3600
+        let wholeMinutes = Int(floor(totalSeconds / 60))
+        let seconds = totalSeconds - Double(wholeMinutes * 60)
+        // الفجر والشروق يقعان بعد منتصف الدقيقة فيُقرَّبان لأقرب دقيقة حتى يطابقا تقويم أم القرى.
+        // بقية الصلوات تُعرض بالدقيقة الحالية حتى لا يتقدم المغرب والعشاء دقيقة.
+        let minutes = (hour < 11 && seconds >= 30) ? wholeMinutes + 1 : wholeMinutes
+        return calendar.date(byAdding: .minute, value: minutes, to: day) ?? base
     }
 
     static func remaining(from now: Date, to next: Date) -> String {
@@ -1292,7 +1315,9 @@ struct AlzidanFamilyWidgetEntryView: View {
     }
 
     private var presenceLine: String? {
-        guard let n = entry.online, n > 0 else { return nil }
+        let saved = AppGroupTheme.readOnline()
+        let n = entry.online ?? saved
+        guard let n, n > 0 else { return nil }
         let count = EventDateFormatter.westernToArabicDigits(String(n))
         if n == 1 { return "متواجد الآن \(count)" }
         if n == 2 { return "متواجدان الآن \(count)" }
@@ -1469,8 +1494,15 @@ struct AlzidanFamilyWidgetEntryView: View {
             }
             .frame(width: 76)
 
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: 3) {
                 familyBrand(titleSize: .caption.weight(.bold), mark: 20)
+
+                if let presenceLine {
+                    Text(presenceLine)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(chrome.gold)
+                        .lineLimit(1)
+                }
 
                 Text(weekdayName)
                     .font(.system(size: 13, weight: .bold))
@@ -1488,12 +1520,6 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
 
-                if let presenceLine {
-                    Text(presenceLine)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(chrome.gold)
-                        .lineLimit(1)
-                }
                 remembranceCaption(size: .caption2)
 
                 if let event = pulseMoment {

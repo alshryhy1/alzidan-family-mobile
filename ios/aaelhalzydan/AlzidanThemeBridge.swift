@@ -10,20 +10,26 @@ class AlzidanThemeBridge: NSObject, CLLocationManagerDelegate {
   static let latitudeKey = "alzidan_prayer_lat"
   static let longitudeKey = "alzidan_prayer_lon"
   static let placeKey = "alzidan_prayer_place"
+  static let onlineKey = "alzidan_pulse_online"
 
-  private let locationManager = CLLocationManager()
+  private var locationManager: CLLocationManager?
   private let geocoder = CLGeocoder()
   private var pendingResolve: RCTPromiseResolveBlock?
   private var pendingReject: RCTPromiseRejectBlock?
 
-  override init() {
-    super.init()
-    locationManager.delegate = self
-    locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+  @objc static func requiresMainQueueSetup() -> Bool {
+    false
   }
 
-  @objc static func requiresMainQueueSetup() -> Bool {
-    true
+  private func managerOnMain() -> CLLocationManager {
+    if let locationManager {
+      return locationManager
+    }
+    let manager = CLLocationManager()
+    manager.delegate = self
+    manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    locationManager = manager
+    return manager
   }
 
   @objc(setThemeId:resolver:rejecter:)
@@ -39,20 +45,54 @@ class AlzidanThemeBridge: NSObject, CLLocationManagerDelegate {
     resolver(true)
   }
 
+  @objc(setPulseOnline:resolver:rejecter:)
+  func setPulseOnline(
+    _ count: NSNumber,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    let defaults = UserDefaults(suiteName: Self.suiteName)
+    defaults?.set(max(0, count.intValue), forKey: Self.onlineKey)
+    WidgetCenter.shared.reloadAllTimelines()
+    resolver(true)
+  }
+
+  @objc(readPrayerCoordinate:rejecter:)
+  func readPrayerCoordinate(
+    _ resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    let defaults = UserDefaults(suiteName: Self.suiteName)
+    guard let lat = defaults?.object(forKey: Self.latitudeKey) as? Double,
+          let lon = defaults?.object(forKey: Self.longitudeKey) as? Double,
+          lat >= -90, lat <= 90, lon >= -180, lon <= 180 else {
+      resolver(NSNull())
+      return
+    }
+    resolver(["latitude": lat, "longitude": lon])
+  }
+
   @objc(refreshPrayerLocation:rejecter:)
   func refreshPrayerLocation(
     _ resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
-    pendingResolve = resolver
-    pendingReject = rejecter
-    switch locationManager.authorizationStatus {
-    case .authorizedAlways, .authorizedWhenInUse:
-      locationManager.requestLocation()
-    case .notDetermined:
-      locationManager.requestWhenInUseAuthorization()
-    default:
-      finish(false)
+    DispatchQueue.main.async { [weak self] in
+      guard let self else {
+        resolver(false)
+        return
+      }
+      self.pendingResolve = resolver
+      self.pendingReject = rejecter
+      let manager = self.managerOnMain()
+      switch manager.authorizationStatus {
+      case .authorizedAlways, .authorizedWhenInUse:
+        manager.requestLocation()
+      case .notDetermined:
+        manager.requestWhenInUseAuthorization()
+      default:
+        self.finish(false)
+      }
     }
   }
 

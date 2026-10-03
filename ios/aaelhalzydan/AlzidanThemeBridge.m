@@ -6,4 +6,9 @@ RCT_EXTERN_METHOD(setThemeId:(NSString *)themeId
                   rejecter:(RCTPromiseRejectBlock)rejecter)
 RCT_EXTERN_METHOD(refreshPrayerLocation:(RCTPromiseResolveBlock)resolver
                   rejecter:(RCTPromiseRejectBlock)rejecter)
+RCT_EXTERN_METHOD(setPulseOnline:(nonnull NSNumber *)count
+                  resolver:(RCTPromiseResolveBlock)resolver
+                  rejecter:(RCTPromiseRejectBlock)rejecter)
+RCT_EXTERN_METHOD(readPrayerCoordinate:(RCTPromiseResolveBlock)resolver
+                  rejecter:(RCTPromiseRejectBlock)rejecter)
 @end

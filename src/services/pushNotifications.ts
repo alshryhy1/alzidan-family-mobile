@@ -310,12 +310,15 @@ export function formatFormalNotificationFromPayload(payload: {
 }
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const kind = notification.request.content.data?.kind;
+    return {
+      shouldPlaySound: true,
+      shouldSetBadge: kind !== 'prayer',
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 function getProjectId() {
