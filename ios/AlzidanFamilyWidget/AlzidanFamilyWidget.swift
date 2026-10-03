@@ -373,10 +373,34 @@ enum EventArabic {
 enum AppGroupTheme {
     static let suite = "group.com.alzidan.family2"
     static let key = "alzidan_theme_id"
+    static let latitudeKey = "alzidan_prayer_lat"
+    static let longitudeKey = "alzidan_prayer_lon"
+    static let placeKey = "alzidan_prayer_place"
 
     static func readId() -> String {
         let raw = UserDefaults(suiteName: suite)?.string(forKey: key) ?? "heritage"
         return raw == "feminine" ? "feminine" : "heritage"
+    }
+
+    static func readCoordinate() -> (lat: Double, lon: Double)? {
+        guard let defaults = UserDefaults(suiteName: suite),
+              let lat = defaults.object(forKey: latitudeKey) as? Double,
+              let lon = defaults.object(forKey: longitudeKey) as? Double,
+              lat >= -90, lat <= 90, lon >= -180, lon <= 180 else {
+            return nil
+        }
+        return (lat, lon)
+    }
+
+    static func readPlace() -> String {
+        let raw = UserDefaults(suiteName: suite)?.string(forKey: placeKey) ?? ""
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// اسم المدينة المحفوظة. المحاكي بلا موقع يبقى على حائل، وهي نفس إحداثيات الاحتياط.
+    static func displayPlace() -> String {
+        let saved = readPlace()
+        return saved.isEmpty ? "حائل" : saved
     }
 }
 
@@ -624,6 +648,7 @@ struct PrayerEntry: TimelineEntry {
     let events: [FamilyEvent]
     let themeId: String
     let online: Int?
+    let remembranceLine: String?
 }
 
 struct Provider: TimelineProvider {
@@ -633,25 +658,25 @@ struct Provider: TimelineProvider {
     ]
 
     func placeholder(in context: Context) -> PrayerEntry {
-        PrayerEntry(date: Date(), events: Self.sampleEvents, themeId: AppGroupTheme.readId(), online: 3)
+        PrayerEntry(date: Date(), events: Self.sampleEvents, themeId: AppGroupTheme.readId(), online: 3, remembranceLine: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (PrayerEntry) -> Void) {
         if context.isPreview {
-            completion(PrayerEntry(date: Date(), events: Self.sampleEvents, themeId: AppGroupTheme.readId(), online: 3))
+            completion(PrayerEntry(date: Date(), events: Self.sampleEvents, themeId: AppGroupTheme.readId(), online: 3, remembranceLine: nil))
             return
         }
-        fetchSnapshot { events, online in
+        fetchSnapshot { events, online, remembrance in
             DispatchQueue.main.async {
-                completion(PrayerEntry(date: Date(), events: events, themeId: AppGroupTheme.readId(), online: online))
+                completion(PrayerEntry(date: Date(), events: events, themeId: AppGroupTheme.readId(), online: online, remembranceLine: remembrance))
             }
         }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<PrayerEntry>) -> Void) {
         let now = Date()
-        fetchSnapshot { events, online in
-            let entry = PrayerEntry(date: now, events: events, themeId: AppGroupTheme.readId(), online: online)
+        fetchSnapshot { events, online, remembrance in
+            let entry = PrayerEntry(date: now, events: events, themeId: AppGroupTheme.readId(), online: online, remembranceLine: remembrance)
             let refresh = EventVisibility.nextRefreshDate(from: now)
             DispatchQueue.main.async {
                 completion(Timeline(entries: [entry], policy: .after(refresh)))
@@ -659,10 +684,11 @@ struct Provider: TimelineProvider {
         }
     }
 
-    private func fetchSnapshot(completion: @escaping ([FamilyEvent], Int?) -> Void) {
+    private func fetchSnapshot(completion: @escaping ([FamilyEvent], Int?, String?) -> Void) {
         let group = DispatchGroup()
         var events: [FamilyEvent] = []
         var online: Int?
+        var remembrance: String?
 
         group.enter()
         fetchEvents { rows in
@@ -676,8 +702,14 @@ struct Provider: TimelineProvider {
             group.leave()
         }
 
+        group.enter()
+        fetchRemembrance { line in
+            remembrance = line
+            group.leave()
+        }
+
         group.notify(queue: .global()) {
-            completion(events, online)
+            completion(events, online, remembrance)
         }
     }
 
@@ -831,6 +863,94 @@ struct Provider: TimelineProvider {
         }.resume()
     }
 
+    /// Birthdays and death anniversaries whose Hijri month and day are today in Riyadh.
+    private func fetchRemembrance(completion: @escaping (String?) -> Void) {
+        let baseUrl = "https://wbskjfdqpugnwvrykqcn.supabase.co"
+        let query = "/rest/v1/tree_children?select=id,name,child_name,birth_date_h,death_date_h,gender,is_deceased&limit=2000"
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let requestUrl = URL(string: baseUrl + encoded) else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: requestUrl)
+        request.setValue(Self.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(Self.anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard let data,
+                  let raw = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                completion(nil)
+                return
+            }
+            completion(Self.remembranceLine(from: raw))
+        }.resume()
+    }
+
+    private static func remembranceLine(from rows: [[String: Any]]) -> String? {
+        var cal = Calendar(identifier: .islamicUmmAlQura)
+        cal.timeZone = TimeZone(identifier: "Asia/Riyadh") ?? .current
+        let parts = cal.dateComponents([.month, .day], from: Date())
+        guard let month = parts.month, let day = parts.day else { return nil }
+
+        func hiddenGender(_ value: String) -> Bool {
+            let gender = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return ["daughter", "female", "f", "أنثى", "انثى", "ابنة", "بنت"].contains(gender)
+        }
+        func given(_ row: [String: Any]) -> String {
+            let child = (row["child_name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = child.isEmpty ? (row["name"] as? String ?? "") : child
+            return name.split(whereSeparator: { $0 == " " || $0 == "\u{00A0}" }).first.map(String.init) ?? ""
+        }
+        func monthDay(_ value: String?) -> (Int, Int)? {
+            guard let value else { return nil }
+            var digits = ""
+            for scalar in value.unicodeScalars {
+                let v = scalar.value
+                if v >= 48 && v <= 57 { digits.append(Character(scalar)) }
+                else if v >= 1632 && v <= 1641 { digits.append(Character(UnicodeScalar(48 + v - 1632)!)) }
+                else if v >= 1776 && v <= 1785 { digits.append(Character(UnicodeScalar(48 + v - 1776)!)) }
+                else if scalar == "/" || scalar == "-" || scalar == "." { digits.append("/") }
+            }
+            let bits = digits.split(separator: "/").compactMap { Int($0) }
+            guard bits.count >= 3 else { return nil }
+            if bits[0] >= 1300 && bits[0] < 1600 { return (bits[1], bits[2]) }
+            if bits[2] >= 1300 && bits[2] < 1600 { return (bits[1], bits[0]) }
+            return nil
+        }
+        func deceased(_ row: [String: Any]) -> Bool {
+            if let flag = row["is_deceased"] as? Bool { return flag }
+            if let flag = row["is_deceased"] as? Int { return flag == 1 }
+            let death = (row["death_date_h"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return !death.isEmpty
+        }
+
+        var deaths: [String] = []
+        var births: [String] = []
+        for row in rows {
+            if hiddenGender(row["gender"] as? String ?? "") { continue }
+            let name = given(row)
+            if name.isEmpty { continue }
+            if let death = monthDay(row["death_date_h"] as? String), death.0 == month, death.1 == day {
+                deaths.append(name)
+                continue
+            }
+            if deceased(row) { continue }
+            if let birth = monthDay(row["birth_date_h"] as? String), birth.0 == month, birth.1 == day {
+                births.append(name)
+            }
+        }
+        if let first = deaths.sorted().first {
+            let extra = deaths.count - 1 + births.count
+            return extra > 0 ? "ذكرى وفاة \(first) · و\(extra)" : "ذكرى وفاة \(first)"
+        }
+        if let first = births.sorted().first {
+            let extra = births.count - 1
+            return extra > 0 ? "اليوم ميلاد \(first) · و\(extra)" : "اليوم ميلاد \(first)"
+        }
+        return nil
+    }
+
     private static func sortEvents(_ lhs: FamilyEvent, _ rhs: FamilyEvent) -> Bool {
         switch (lhs.sortDate, rhs.sortDate) {
         case let (left?, right?):
@@ -919,11 +1039,13 @@ struct PrayerInfo {
 }
 
 struct HailPrayerCalculator {
-    static let latitude = 27.5114
-    static let longitude = 41.7208
-    static let timezone = 3.0
-    /// أوقات الحساب كانت متأخرة 2–3 دقائق عن الأذان المحلي؛ نقدم الساعة بهذا المقدار.
-    static let clockCorrectionMinutes = -2.5
+    /// حتى يحفظ التطبيق موقع الجهاز. ما يُعرض كاسم مدينة.
+    private static let fallbackLatitude = 27.5114
+    private static let fallbackLongitude = 41.7208
+
+    static func coordinate() -> (lat: Double, lon: Double) {
+        AppGroupTheme.readCoordinate() ?? (fallbackLatitude, fallbackLongitude)
+    }
 
     static func prayerInfo(now: Date = Date()) -> PrayerInfo {
         let today = prayerTimes(for: now)
@@ -939,7 +1061,8 @@ struct HailPrayerCalculator {
     }
 
     static func prayerTimes(for date: Date) -> [PrayerTime] {
-        let cal = Calendar.current
+        let place = coordinate()
+        let cal = prayerCalendar()
         let c = cal.dateComponents([.year, .month, .day], from: date)
         let y = Double(c.year ?? 2026)
         let m = Double(c.month ?? 1)
@@ -948,21 +1071,22 @@ struct HailPrayerCalculator {
         let jd = julianDate(year: y, month: m, day: d)
         let decl = sunDeclination(jd)
         let eqt = equationOfTime(jd)
+        let zone = Double(cal.timeZone.secondsFromGMT(for: date)) / 3600.0
 
-        let dhuhr = 12.0 + timezone - longitude / 15.0 - eqt / 60.0
-        let fajr = dhuhr - hourAngle(angle: 108.5, declination: decl) / 15.0
-        let sunrise = dhuhr - hourAngle(angle: 90.833, declination: decl) / 15.0
-        let asr = dhuhr + asrHourAngle(declination: decl) / 15.0
-        let maghrib = dhuhr + hourAngle(angle: 90.833, declination: decl) / 15.0
+        let dhuhr = 12.0 + zone - place.lon / 15.0 - eqt / 60.0
+        let fajr = dhuhr - hourAngle(angle: 108.5, declination: decl, latitude: place.lat) / 15.0
+        let sunrise = dhuhr - hourAngle(angle: 90.833, declination: decl, latitude: place.lat) / 15.0
+        let asr = dhuhr + asrHourAngle(declination: decl, latitude: place.lat) / 15.0
+        let maghrib = dhuhr + hourAngle(angle: 90.833, declination: decl, latitude: place.lat) / 15.0
         let isha = maghrib + 1.5
 
         return [
-            PrayerTime(name: "الفجر", time: dateFromHour(fajr, base: date)),
-            PrayerTime(name: "الشروق", time: dateFromHour(sunrise, base: date)),
-            PrayerTime(name: "الظهر", time: dateFromHour(dhuhr, base: date)),
-            PrayerTime(name: "العصر", time: dateFromHour(asr, base: date)),
-            PrayerTime(name: "المغرب", time: dateFromHour(maghrib, base: date)),
-            PrayerTime(name: "العشاء", time: dateFromHour(isha, base: date))
+            PrayerTime(name: "الفجر", time: dateFromHour(fajr, base: date, calendar: cal)),
+            PrayerTime(name: "الشروق", time: dateFromHour(sunrise, base: date, calendar: cal)),
+            PrayerTime(name: "الظهر", time: dateFromHour(dhuhr, base: date, calendar: cal)),
+            PrayerTime(name: "العصر", time: dateFromHour(asr, base: date, calendar: cal)),
+            PrayerTime(name: "المغرب", time: dateFromHour(maghrib, base: date, calendar: cal)),
+            PrayerTime(name: "العشاء", time: dateFromHour(isha, base: date, calendar: cal))
         ]
     }
 
@@ -998,14 +1122,14 @@ struct HailPrayerCalculator {
         return eqt * 60
     }
 
-    static func hourAngle(angle: Double, declination: Double) -> Double {
+    static func hourAngle(angle: Double, declination: Double, latitude: Double) -> Double {
         let lat = deg2rad(latitude)
         let zenith = deg2rad(angle)
         let cosH = (cos(zenith) - sin(lat) * sin(declination)) / (cos(lat) * cos(declination))
         return rad2deg(acos(max(-1, min(1, cosH))))
     }
 
-    static func asrHourAngle(declination: Double) -> Double {
+    static func asrHourAngle(declination: Double, latitude: Double) -> Double {
         let lat = deg2rad(latitude)
         let shadowFactor = 1.0
         let angle = atan(1.0 / (shadowFactor + tan(abs(lat - declination))))
@@ -1013,10 +1137,15 @@ struct HailPrayerCalculator {
         return rad2deg(acos(max(-1, min(1, cosH))))
     }
 
-    static func dateFromHour(_ hour: Double, base: Date) -> Date {
-        let day = Calendar.current.startOfDay(for: base)
-        let correctedHour = hour + (clockCorrectionMinutes / 60.0)
-        return Calendar.current.date(byAdding: .second, value: Int((correctedHour * 3600).rounded()), to: day) ?? base
+    static func prayerCalendar() -> Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        return cal
+    }
+
+    static func dateFromHour(_ hour: Double, base: Date, calendar: Calendar) -> Date {
+        let day = calendar.startOfDay(for: base)
+        return calendar.date(byAdding: .second, value: Int((hour * 3600).rounded()), to: day) ?? base
     }
 
     static func remaining(from now: Date, to next: Date) -> String {
@@ -1268,6 +1397,20 @@ struct AlzidanFamilyWidgetEntryView: View {
         }
     }
 
+    @ViewBuilder
+    private func remembranceCaption(size: Font) -> some View {
+        if let line = entry.remembranceLine, !line.isEmpty {
+            Text(line)
+                .font(size)
+                .fontWeight(.bold)
+                .foregroundStyle(chrome.gold)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
     var smallEventView: some View {
         VStack(alignment: .trailing, spacing: 8) {
             familyBrand(titleSize: .caption2.weight(.bold), mark: 22)
@@ -1277,6 +1420,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .foregroundStyle(chrome.gold)
                     .lineLimit(1)
             }
+            remembranceCaption(size: .caption2)
 
             if let event = pulseMoment {
                 Spacer(minLength: 4)
@@ -1332,6 +1476,11 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .font(.system(size: 13, weight: .bold))
                     .lineLimit(1)
 
+                Text(AppGroupTheme.displayPlace())
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(chrome.gold)
+                    .lineLimit(1)
+
                 Text(compactDatePair)
                     .font(.system(size: 9))
                     .foregroundStyle(chrome.goldSoft)
@@ -1345,6 +1494,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                         .foregroundStyle(chrome.gold)
                         .lineLimit(1)
                 }
+                remembranceCaption(size: .caption2)
 
                 if let event = pulseMoment {
                     widgetEventBlock(
@@ -1368,7 +1518,7 @@ struct AlzidanFamilyWidgetEntryView: View {
         return VStack(alignment: .trailing, spacing: 0) {
             HStack(alignment: .top, spacing: 6) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("حائل")
+                    Text(AppGroupTheme.displayPlace())
                         .font(.caption)
                         .fontWeight(.bold)
                     Text(weekdayName)
@@ -1392,6 +1542,7 @@ struct AlzidanFamilyWidgetEntryView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.top, 4)
             }
+            remembranceCaption(size: .caption)
 
             TimelineView(.periodic(from: entry.date, by: 1)) { timeline in
                 let now = timeline.date
@@ -1518,6 +1669,9 @@ struct AlzidanFamilyWidgetEntryView: View {
     }
 
     private var lockInlineText: String {
+        if let line = entry.remembranceLine, !line.isEmpty {
+            return line
+        }
         if let event = pulseMoment {
             let first = event.name.split(separator: " ").first.map(String.init) ?? event.name
             return "\(first) · \(event.typeLabel)"
@@ -1568,7 +1722,7 @@ struct AlzidanFamilyWidget: Widget {
             }
         }
         .configurationDisplayName("عائلة الزيدان")
-        .description("أخبار العائلة ومناسباتها، ومن معنا الآن، وأوقات الصلاة في حائل.")
+        .description("أخبار العائلة ومناسباتها، ومن معنا الآن، وأوقات الصلاة حسب موقعك.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
 
         if #available(iOS 17.0, *) {

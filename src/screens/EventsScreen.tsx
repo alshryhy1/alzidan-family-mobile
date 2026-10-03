@@ -25,7 +25,7 @@ import {
 import { heritagePalette, spacing, typography, type ThemePalette } from '../theme';
 import { useTheme, useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
-import type { Branch, FamilyEvent } from '../types';
+import type { Branch, FamilyEvent, TreeChild } from '../types';
 import {
   MOBILE_EVENT_FAMILIES,
   buildMobileEventRequestMessage,
@@ -41,7 +41,7 @@ import {
   type MobileEventFamily,
 } from '../utils/eventRequestMessage';
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
-import { shareEventToWhatsAppGroup } from '../utils/eventShareCard';
+import { occasionRelationLabel } from '../utils/personEncounter';
 import { OccasionInteractCard } from '../components/OccasionInteractCard';
 import {
   DEFAULT_PHONE_COUNTRY_ID,
@@ -65,6 +65,9 @@ type EventsScreenProps = {
   memberGreeting?: string | null;
   memberBranchKey?: string | null;
   focusEventId?: string | null;
+  treeChildren?: TreeChild[];
+  memberTreeChildId?: number | null;
+  kinshipById?: Record<number, string>;
 };
 
 const filters: Array<{ key: Filter; label: string }> = [
@@ -214,6 +217,9 @@ export function EventsScreen({
   memberGreeting = null,
   memberBranchKey = null,
   focusEventId = null,
+  treeChildren = [],
+  memberTreeChildId = null,
+  kinshipById,
 }: EventsScreenProps) {
   const { occasionSocialEnabled } = useTheme();
   const p = useThemePalette();
@@ -251,6 +257,10 @@ export function EventsScreen({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [phoneRegistered, setPhoneRegistered] = useState(false);
   const sessionPhone = canonicalizePhone(memberPhone || '');
+  const eventViewer =
+    memberTreeChildId == null
+      ? null
+      : treeChildren.find((child) => child.id === memberTreeChildId) || null;
   const focusedId = String(focusEventId || '').trim();
   const visibleEvents = filter === 'all' ? events : events.filter((event) => event.category === filter);
   const orderedEvents = focusedId
@@ -670,6 +680,15 @@ export function EventsScreen({
         featuredEvent ? (
           <View style={styles.featured}>
             <Text style={styles.featuredPerson}>{featuredEvent.person || featuredEvent.title}</Text>
+            {(() => {
+              const relation = occasionRelationLabel(
+                featuredEvent,
+                eventViewer,
+                treeChildren,
+                kinshipById,
+              );
+              return relation ? <Text style={styles.featuredDate}>{relation}</Text> : null;
+            })()}
             <Text style={styles.featuredTitle}>
               {stripMarkdownNoise(featuredEvent.title) || featuredEvent.categoryLabel}
             </Text>
@@ -762,6 +781,10 @@ export function EventsScreen({
                 {event.date ? <Text style={styles.date}>{event.date}</Text> : null}
               </View>
               {event.person ? <Text style={styles.person}>{event.person}</Text> : null}
+              {(() => {
+                const relation = occasionRelationLabel(event, eventViewer, treeChildren, kinshipById);
+                return relation ? <Text style={styles.personMeta}>{relation}</Text> : null;
+              })()}
               {event.imageUrl ? (
                 <View style={styles.eventImageFrame}>
                   <Image
@@ -1487,6 +1510,13 @@ function eventsStyles(p: ThemePalette) {
     color: p.primaryDark,
     fontSize: typography.body,
     fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  personMeta: {
+    color: p.textMuted,
+    fontSize: typography.caption,
+    fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },

@@ -196,7 +196,9 @@ export function familyBoardCategoryMeta(category: FamilyBoardCategory) {
 }
 
 export function familyBoardCategoriesForKind(kind: FamilyBoardKind) {
-  return FAMILY_BOARD_CATEGORIES.filter((row) => row.kindHint === kind || row.kindHint === 'both');
+  return FAMILY_BOARD_CATEGORIES.filter(
+    (row) => row.id !== 'majlis' && (row.kindHint === kind || row.kindHint === 'both'),
+  );
 }
 
 export function familyBoardCategoryLabel(category: FamilyBoardCategory) {
@@ -495,13 +497,9 @@ export async function createFamilyBoardPost(draft: FamilyBoardDraft): Promise<Fa
   if (!title) throw new Error('اكتب عنوانًا واضحًا.');
   const phone = String(draft.authorPhone || '').trim();
   if (!phone) throw new Error('سجّل دخولك من ملفي قبل النشر.');
-
-  const isMajlis = draft.category === 'majlis';
-  const window = isMajlis
-    ? buildTwelveHourWindow(
-        draft.windowStartHour == null ? 16 : draft.windowStartHour,
-      )
-    : null;
+  if (draft.category === 'majlis') {
+    throw new Error('التقهوى تنشر من المناسبات.');
+  }
 
   const post: FamilyBoardPost = {
     id: newId(),
@@ -514,10 +512,8 @@ export async function createFamilyBoardPost(draft: FamilyBoardDraft): Promise<Fa
     authorName: String(draft.authorName || '').trim() || 'فرد من العائلة',
     authorPhone: phone,
     createdAt: new Date().toISOString(),
-    startsAt: window?.startsAt ?? null,
-    expiresAt: window
-      ? window.expiresAt
-      : endOfDayPlus(Math.max(0, Math.min(30, Math.round(draft.daysAlive)))),
+    startsAt: null,
+    expiresAt: endOfDayPlus(Math.max(0, Math.min(30, Math.round(draft.daysAlive)))),
     urgent: draft.urgent === true || draft.category === 'faza',
     comingCount: 0,
   };

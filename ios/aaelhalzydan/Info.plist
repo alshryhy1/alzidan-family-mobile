@@ -50,6 +50,8 @@
     <string>لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.</string>
     <key>NSFaceIDUsageDescription</key>
     <string>يُستخدم قفل الجهاز لفتح حسابك على هذا الآيفون. لا تُرسل صورة الوجه خارج جهازك.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>لتوقيت الصلاة في الودجت حسب موقعك. لا يُرسل الموقع خارج الجهاز.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>لإرفاق فيديو مع مناسبة عائلية أو ذكرى.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>

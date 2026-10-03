@@ -9,9 +9,18 @@ import { loadPulseFamilyBoard } from '../services/pulseBoard';
 import { loadPulseWeather } from '../services/pulseWeather';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
-import type { TreeChild } from '../types';
+import type { FamilyEvent, TreeChild } from '../types';
 import type { PulseBoardNotice } from '../utils/pulseNotices';
 import type { PulseWeatherSnap } from '../utils/pulseFocus';
+import { occasionRelationLabel, rankHomeOccasions } from '../utils/personEncounter';
+import { phonesMatch } from '../utils/phone';
+import { hijriToday, listTodayRemembrances } from '../utils/todayRemembrance';
+import {
+  loadRemembranceGreetings,
+  remembranceGreeterLine,
+  sendRemembranceGreeting,
+  type RemembranceGreeting,
+} from '../services/remembranceGreetings';
 import {
   familyBoardCategoryLabel,
   familyBoardKindLabel,
@@ -36,6 +45,11 @@ type HomeScreenProps = {
   sinceLastVisit?: SinceVisitItem[];
   onOpenSinceVisit?: (item: SinceVisitItem) => void;
   onOpenFamilyBoard?: () => void;
+  events?: FamilyEvent[];
+  kinshipById?: Record<number, string>;
+  onOpenEvent?: (eventId: string) => void;
+  memberPhone?: string | null;
+  onOpenPerson?: (branchKey: string, treeChildId: number) => void;
 };
 
 function firstNameOnly(full?: string | null) {
@@ -58,6 +72,11 @@ export function HomeScreen({
   sinceLastVisit = [],
   onOpenSinceVisit,
   onOpenFamilyBoard,
+  events = [],
+  kinshipById,
+  onOpenEvent,
+  memberPhone,
+  onOpenPerson,
 }: HomeScreenProps) {
   const p = useThemePalette();
   const styles = useMemo(() => homeStyles(p), [p]);
@@ -65,6 +84,9 @@ export function HomeScreen({
   const [notices, setNotices] = useState<PulseBoardNotice[]>([]);
   const [delegates, setDelegates] = useState<PulseBoardNotice[]>([]);
   const [boardPosts, setBoardPosts] = useState<FamilyBoardPost[]>([]);
+  const [greetings, setGreetings] = useState<RemembranceGreeting[]>([]);
+  const [greetNote, setGreetNote] = useState('');
+  const [sendingKey, setSendingKey] = useState<string | null>(null);
   const [clock, setClock] = useState(() => Date.now());
 
   const loggedIn = Boolean(String(memberGreeting || '').trim());
@@ -77,12 +99,73 @@ export function HomeScreen({
     return String(row?.city || '').trim() || null;
   }, [branchChildren, memberTreeChildId]);
 
+  const viewer = useMemo(
+    () =>
+      memberTreeChildId == null
+        ? null
+        : branchChildren.find((child) => child.id === memberTreeChildId) || null,
+    [branchChildren, memberTreeChildId],
+  );
+  const homeOccasions = useMemo(
+    () => rankHomeOccasions(events, memberBranchKey).slice(0, 3),
+    [events, memberBranchKey],
+  );
+  const todayKey = useMemo(() => hijriToday(new Date(clock)).key, [clock]);
+  const remembrances = useMemo(
+    () =>
+      listTodayRemembrances({
+        people: branchChildren,
+        viewer,
+        maternalById: kinshipById,
+        now: new Date(clock),
+      }),
+    [branchChildren, viewer, kinshipById, clock],
+  );
+
   const season = useMemo(() => resolvePulseSeason(new Date(clock)), [clock]);
 
   useEffect(() => {
     const id = setInterval(() => setClock(Date.now()), 60 * 1000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadRemembranceGreetings(todayKey)
+      .then((rows) => {
+        if (!cancelled) setGreetings(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [todayKey]);
+
+  async function sendGreeting(personId: number, kind: 'birth' | 'death', phrase: string) {
+    const key = `${personId}:${kind}`;
+    setSendingKey(key);
+    setGreetNote('');
+    try {
+      const saved = await sendRemembranceGreeting({
+        personId,
+        kind,
+        dayKey: todayKey,
+        phrase,
+        senderPhone: memberPhone || '',
+        senderName: memberGreeting || '',
+      });
+      setGreetings((current) => {
+        const rest = current.filter(
+          (row) => !(row.personId === personId && row.kind === kind && phonesMatch(row.senderPhone, saved.senderPhone)),
+        );
+        return [...rest, saved];
+      });
+    } catch (error) {
+      setGreetNote(error instanceof Error ? error.message : 'تعذر إيصال التهنئة الآن.');
+    } finally {
+      setSendingKey(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +242,81 @@ export function HomeScreen({
       <DataState error={error} loading={loading} onRetry={onRetry} />
 
       <View style={styles.creamStage}>
+        {remembrances.length ? (
+          <View style={styles.sinceBox}>
+            <Text style={styles.sinceTitle}>ذكرى اليوم</Text>
+            {remembrances.map((row) => {
+              const rowKey = `${row.personId}:${row.kind}`;
+              const mine = greetings.some(
+                (item) =>
+                  item.personId === row.personId &&
+                  item.kind === row.kind &&
+                  phonesMatch(item.senderPhone, memberPhone),
+              );
+              const greeters = remembranceGreeterLine(
+                row.kind,
+                greetings.filter((item) => item.personId === row.personId && item.kind === row.kind),
+                row.title === 'اليوم ميلادك',
+              );
+              const self = row.title === 'اليوم ميلادك';
+              return (
+                <View key={rowKey} style={styles.sinceRow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => onOpenPerson?.(row.branchKey, row.personId)}
+                    style={styles.sinceText}
+                  >
+                    <Text style={styles.sinceItemTitle}>{row.title}</Text>
+                    {row.subtitle ? <Text style={styles.sinceItemSub}>{row.subtitle}</Text> : null}
+                    {greeters ? <Text style={styles.sinceItemSub}>{greeters}</Text> : null}
+                  </Pressable>
+                  {self ? null : (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={mine || sendingKey === rowKey}
+                      onPress={() => sendGreeting(row.personId, row.kind, row.phrase)}
+                      style={({ pressed }) => [styles.rememberBtn, mine && styles.rememberBtnOn, pressed && styles.pressed]}
+                    >
+                      <Text style={[styles.rememberBtnText, mine && styles.rememberBtnTextOn]}>
+                        {mine ? 'وصلت' : sendingKey === rowKey ? '...' : row.phrase}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              );
+            })}
+            {greetNote ? <Text style={styles.sinceItemSub}>{greetNote}</Text> : null}
+          </View>
+        ) : null}
+
+        <View style={styles.sinceBox}>
+          <Text style={styles.sinceTitle}>عند أهلك</Text>
+          {homeOccasions.length ? (
+            homeOccasions.map((event) => {
+              const relation = occasionRelationLabel(event, viewer, branchChildren, kinshipById);
+              return (
+                <Pressable
+                  key={event.id}
+                  accessibilityRole="button"
+                  onPress={() => onOpenEvent?.(event.id)}
+                  style={({ pressed }) => [styles.sinceRow, pressed && styles.pressed]}
+                >
+                  <View style={styles.sinceText}>
+                    <Text style={styles.sinceItemTitle}>
+                      {event.categoryLabel}
+                      {event.person ? ` · ${event.person}` : ''}
+                    </Text>
+                    {relation ? <Text style={styles.sinceItemSub}>{relation}</Text> : null}
+                  </View>
+                  <Text style={styles.sinceGo}>عرض</Text>
+                </Pressable>
+              );
+            })
+          ) : (
+            <Text style={styles.sinceEmpty}>المجلس هادئ.</Text>
+          )}
+        </View>
+
         <View style={styles.sinceBox}>
             <Text style={styles.sinceTitle}>منذ آخر زيارة</Text>
             {sinceLastVisit.length ? (
@@ -315,6 +473,23 @@ function homeStyles(p: ThemePalette) {
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
+  },
+  rememberBtn: {
+    backgroundColor: 'rgba(196,163,90,0.18)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  rememberBtnOn: {
+    backgroundColor: 'rgba(23,63,53,0.08)',
+  },
+  rememberBtnText: {
+    color: p.green,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  rememberBtnTextOn: {
+    color: p.textMuted,
   },
   sinceGo: {
     color: p.gold,

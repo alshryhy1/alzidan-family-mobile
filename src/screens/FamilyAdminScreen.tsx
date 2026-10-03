@@ -20,6 +20,7 @@ import {
   setFamilyAdminDelegateEnabled,
   setFamilyAdminDelegateRole,
   setFamilyAdminPhone,
+  canUnbindFamilyAdminDevices,
   unbindFamilyAdminDevice,
   updateFamilyAdminPerson,
   type FamilyAdminDelegate,
@@ -181,6 +182,8 @@ function notifySubmitter(row: FamilyAdminRequest, status: 'approved' | 'rejected
 export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps) {
   const styles = useThemedStyles(familyAdminStyles);
   const phone = String(adminPhone || '').trim();
+  const showDevices = canUnbindFamilyAdminDevices(phone);
+  const tabs = TABS.filter((item) => item.key !== 'devices' || showDevices);
   const [tab, setTab] = useState<TabKey>('people');
   const [sqlMissing, setSqlMissing] = useState(false);
   const [errorText, setErrorText] = useState('');
@@ -201,7 +204,7 @@ export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps
         </Text>
       </SceneSection>
       <View style={styles.tabs}>
-        {TABS.map((item) => {
+        {tabs.map((item) => {
           const active = item.key === tab;
           return (
             <Pressable
@@ -255,7 +258,7 @@ export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps
           onError={setErrorText}
         />
       ) : null}
-      {phone && !sqlMissing && tab === 'devices' ? (
+      {phone && !sqlMissing && showDevices && tab === 'devices' ? (
         <DevicesTab
           phone={phone}
           styles={styles}
@@ -1016,6 +1019,7 @@ function DevicesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<FamilyAdminDevice[]>([]);
   const [busyKey, setBusyKey] = useState('');
+  const canUnbind = canUnbindFamilyAdminDevices(phone);
 
   const load = useCallback(async () => {
     if (!phone) {
@@ -1072,7 +1076,11 @@ function DevicesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
 
   return (
     <SceneSection title="جهاز">
-      <Text style={styles.hint}>عرض الربط وحذفه من جلسة إدارة العائلة، دون رمز الويب.</Text>
+      <Text style={styles.hint}>
+        {canUnbind
+          ? 'حذف الربط من التطبيق لرقم الإدارة فقط.'
+          : 'عرض الأجهزة المربوطة. حذف الربط من التطبيق لرقم الإدارة فقط.'}
+      </Text>
       {loading ? <Text style={styles.meta}>جاري التحميل…</Text> : null}
       {!loading && items.length === 0 ? <Text style={styles.meta}>لا توجد أجهزة مربوطة.</Text> : null}
       {items.map((item) => (
@@ -1080,15 +1088,17 @@ function DevicesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
           <Text style={styles.cardName}>{item.phoneKey}</Text>
           {item.label ? <Text style={styles.cardMeta}>{item.label}</Text> : null}
           <Text style={styles.cardMeta}>{formatWhen(item.lastSeenAt || item.boundAt)}</Text>
-          <Pressable
-            disabled={busyKey === item.phoneKey}
-            onPress={() => confirmUnbind(item)}
-            style={styles.linkBtn}
-          >
-            <Text style={styles.linkText}>
-              {busyKey === item.phoneKey ? 'جاري الحذف…' : 'حذف الربط'}
-            </Text>
-          </Pressable>
+          {canUnbind ? (
+            <Pressable
+              disabled={busyKey === item.phoneKey}
+              onPress={() => confirmUnbind(item)}
+              style={styles.linkBtn}
+            >
+              <Text style={styles.linkText}>
+                {busyKey === item.phoneKey ? 'جاري الحذف…' : 'حذف الربط'}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       ))}
     </SceneSection>

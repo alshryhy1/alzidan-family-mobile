@@ -170,7 +170,7 @@ export function FamilyBoardScreen({
       return;
     }
     setKind('offer');
-    setCategory('majlis');
+    setCategory('car');
     setTitle('');
     setBody('');
     setPlace('');

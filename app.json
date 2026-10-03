@@ -15,6 +15,7 @@
         "NSPhotoLibraryUsageDescription": "لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.",
         "NSPhotoLibraryAddUsageDescription": "لحفظ الصور على جهازك عند الحاجة.",
         "NSCameraUsageDescription": "لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.",
+        "NSLocationWhenInUseUsageDescription": "لتوقيت الصلاة في الودجت حسب موقعك. لا يُرسل الموقع خارج الجهاز.",
         "NSMicrophoneUsageDescription": "لإرفاق فيديو مع مناسبة عائلية أو ذكرى.",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [

@@ -1,3 +1,4 @@
+import { digitsOnly } from '../utils/phone';
 import { callPublicRpc } from './supabase';
 
 export type FamilyAdminSession = {
@@ -451,7 +452,7 @@ export async function bindFamilyAdminRequest(args: {
 
 export async function fetchFamilyAdminDevices(adminPhone: string): Promise<FamilyAdminDevice[]> {
   const cleaned = String(adminPhone || '').trim();
-  if (!cleaned) return [];
+  if (!cleaned || !canUnbindFamilyAdminDevices(cleaned)) return [];
   let row: DevicesRpc | undefined;
   try {
     row = await callPublicRpc<DevicesRpc>('family_admin_devices_list_v1', { p_phone: cleaned });
@@ -471,10 +472,18 @@ export async function fetchFamilyAdminDevices(adminPhone: string): Promise<Famil
     .filter((item) => item.phoneKey);
 }
 
+const FAMILY_ADMIN_UNBIND_NATIONAL = '551840058';
+
+export function canUnbindFamilyAdminDevices(phone: string) {
+  const digits = digitsOnly(phone);
+  return digits.endsWith(FAMILY_ADMIN_UNBIND_NATIONAL);
+}
+
 export async function unbindFamilyAdminDevice(adminPhone: string, targetPhone: string): Promise<void> {
   const cleaned = String(adminPhone || '').trim();
   const target = String(targetPhone || '').trim();
   if (!cleaned || !target) throw new Error('bad_phone');
+  if (!canUnbindFamilyAdminDevices(cleaned)) throw new Error('unbind_admin_only');
   let row: ActionRpc | undefined;
   try {
     row = await callPublicRpc<ActionRpc>('family_admin_device_unbind_v1', {
@@ -523,6 +532,8 @@ export function familyAdminActionMessage(error: unknown): string {
       return 'تعذر فتح إدارة العائلة الآن. راجِع الإدارة إن استمر.';
     case 'not_allowed':
       return 'هذه الجلسة ليست إدارة عائلة مفعّلة.';
+    case 'unbind_admin_only':
+      return 'حذف الربط من التطبيق لرقم الإدارة فقط.';
     case 'device_required':
       return 'الدخول من الجهاز الموثوق لهذا الرقم مطلوب.';
     case 'phone_conflict':

@@ -427,6 +427,57 @@ export function findPersonOccasions(
     .slice(0, 3);
 }
 
+/** Close kinship when the occasion owner is a known person; otherwise the branch. */
+export function occasionRelationLabel(
+  event: FamilyEvent,
+  viewer: TreeChild | null | undefined,
+  people: TreeChild[] = [],
+  maternalById?: Record<number, string>,
+): string | null {
+  const branchLine = String(event.branch || '').trim();
+  if (!viewer) return branchLine || null;
+  const ownerId = resolveEventOwnerTreeChildId(event, people, event.branchKey || viewer.branchKey);
+  const owner = ownerId != null ? people.find((row) => Number(row.id) === Number(ownerId)) : null;
+  if (owner && Number(owner.id) !== Number(viewer.id)) {
+    const maternal = maternalById ? String(maternalById[Number(owner.id)] || '').trim() : '';
+    const kin = resolveProvenKinshipLabel(viewer, owner, maternal || null, people);
+    if (kin) return kin;
+    const shared = resolveSharedAncestorBadge(viewer, owner);
+    if (shared) return shared;
+  }
+  if (
+    event.branchKey &&
+    viewer.branchKey &&
+    String(event.branchKey) === String(viewer.branchKey)
+  ) {
+    return 'من فرعك';
+  }
+  return branchLine || null;
+}
+
+const HOME_OCCASION_RANK: Record<FamilyEvent['category'], number> = {
+  condolence: 0,
+  health: 1,
+  happy: 2,
+};
+
+/** Death, then illness, then joy. The member's branch comes first inside each group. */
+export function rankHomeOccasions(events: FamilyEvent[], memberBranchKey?: string | null) {
+  const branch = String(memberBranchKey || '').trim();
+  return [...events].sort((a, b) => {
+    const rank = HOME_OCCASION_RANK[a.category] - HOME_OCCASION_RANK[b.category];
+    if (rank) return rank;
+    if (branch) {
+      const aHere = String(a.branchKey || '') === branch ? 0 : 1;
+      const bHere = String(b.branchKey || '') === branch ? 0 : 1;
+      if (aHere !== bHere) return aHere - bHere;
+    }
+    const aAt = Date.parse(String(a.createdAt || '')) || 0;
+    const bAt = Date.parse(String(b.createdAt || '')) || 0;
+    return bAt - aAt;
+  });
+}
+
 /** Display name for occasion CTA — always the occasion owner, never the opened page person. */
 export function occasionOwnerDisplayName(event: FamilyEvent): string {
   const raw = String(event.person || '').trim();

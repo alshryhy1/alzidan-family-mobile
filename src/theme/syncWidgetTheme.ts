@@ -4,6 +4,7 @@ import type { ThemeId } from '../theme';
 
 type Bridge = {
   setThemeId: (themeId: string) => Promise<boolean>;
+  refreshPrayerLocation?: () => Promise<boolean>;
 };
 
 export async function syncWidgetTheme(themeId: ThemeId): Promise<void> {
@@ -14,5 +15,17 @@ export async function syncWidgetTheme(themeId: ThemeId): Promise<void> {
     await bridge.setThemeId(themeId);
   } catch {
     /* Native not in this binary yet — widget stays on last written / heritage. */
+  }
+}
+
+/** Saves the phone's place so the widget prayer clock follows it, not a fixed city. */
+export async function syncWidgetPrayerLocation(): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  const bridge = NativeModules.AlzidanThemeBridge as Bridge | undefined;
+  if (!bridge?.refreshPrayerLocation) return;
+  try {
+    await bridge.refreshPrayerLocation();
+  } catch {
+    /* Permission declined or location unavailable. */
   }
 }

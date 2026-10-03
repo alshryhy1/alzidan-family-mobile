@@ -41,6 +41,7 @@ import {
   setupPushRegistration,
 } from './src/services/pushNotifications';
 import { resumeTrustedDevice } from './src/services/deviceAuth';
+import { syncWidgetPrayerLocation } from './src/theme/syncWidgetTheme';
 import {
   fetchActiveSpecialCardsForTicker,
   fetchPendingSpecialCards,
@@ -657,6 +658,14 @@ function AppChrome() {
   }, [memberPhoneForRequests, publicData.loading, screen]);
 
   useEffect(() => {
+    void syncWidgetPrayerLocation();
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') void syncWidgetPrayerLocation();
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') void reloadPublished();
     });
@@ -863,6 +872,9 @@ function AppChrome() {
             memberBranchKey={memberBranchKey}
             memberGreeting={memberGreeting}
             memberPhone={memberPhoneForRequests}
+            memberTreeChildId={memberTreeChildId}
+            kinshipById={maternalKinshipById}
+            treeChildren={treeChildren}
             onRetry={reloadPublished}
           />
         );
@@ -964,6 +976,11 @@ function AppChrome() {
               }
               goToScreen(item.target);
             }}
+            events={activeEvents}
+            kinshipById={maternalKinshipById}
+            memberPhone={memberPhoneForRequests}
+            onOpenPerson={(branchKey, treeChildId) => openPersonEncounter(branchKey, treeChildId, 'home')}
+            onOpenEvent={(eventId) => goToScreen('events', { eventId })}
             onOpenFamilyBoard={() => goToScreen('familyBoard')}
             onOpenMyCard={
               memberTreeChildId != null && (memberBranchKey || encounterViewer?.branchKey)
