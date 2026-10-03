@@ -46,10 +46,20 @@ const checks = [
   ['home url ignored', eventIdFromOpenUrl('com.alzidan.family2://home') === null],
   ['card builder has no contactPhone', !/contactPhone/.test(src)],
   ['card uses wa.me without number', src.includes('https://wa.me/?text=')],
+  ['prefers system share sheet', src.includes('Share.share({ message: card })')],
+  ['whatsapp native scheme fallback', src.includes('whatsapp://send?text=')],
+  ['share cancel is not an error', src.includes('isShareCanceled') && src.includes("'dismissed'")],
   ['brand line', src.includes('عائلة مطلق الزيدان')],
   ['death heading', src.includes('إنا لله وإنا إليه راجعون')],
   ['button label', screen.includes('شارك للقروب')],
   ['share wired', screen.includes('shareEventToWhatsAppGroup')],
+  [
+    'share helper imported',
+    /import\s*\{\s*shareEventToWhatsAppGroup\s*\}\s*from\s*['"]\.\.\/utils\/eventShareCard['"]/.test(
+      screen,
+    ),
+  ],
+  ['dismissed share ignored in UI', screen.includes("result === 'dismissed'")],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

@@ -18,6 +18,10 @@
         "NSLocationWhenInUseUsageDescription": "لتوقيت الصلاة في الودجت حسب موقعك. لا يُرسل الموقع خارج الجهاز.",
         "NSMicrophoneUsageDescription": "لإرفاق فيديو مع مناسبة عائلية أو ذكرى.",
         "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": [
+          "whatsapp",
+          "whatsapp-business"
+        ],
         "UIBackgroundModes": [
           "remote-notification"
         ]

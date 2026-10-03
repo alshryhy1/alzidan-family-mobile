@@ -105,12 +105,51 @@ export function eventShareWhatsAppUrl(event: FamilyEvent) {
   return `https://wa.me/?text=${encodeURIComponent(buildEventShareCard(event))}`;
 }
 
-export async function shareEventToWhatsAppGroup(event: FamilyEvent) {
-  const card = buildEventShareCard(event);
-  const url = `https://wa.me/?text=${encodeURIComponent(card)}`;
-  try {
-    await Linking.openURL(url);
-  } catch {
-    await Share.share({ message: card });
+function isShareCanceled(error: unknown) {
+  const message = String(
+    (error as { message?: string } | null)?.message || error || '',
+  ).toLowerCase();
+  return (
+    message.includes('user did not share') ||
+    message.includes('not share') ||
+    message.includes('cancel') ||
+    message.includes('dismiss')
+  );
+}
+
+async function openWhatsAppWithText(card: string) {
+  const encoded = encodeURIComponent(card);
+  // Prefer the native scheme; fall back to the universal link.
+  const candidates = [`whatsapp://send?text=${encoded}`, `https://wa.me/?text=${encoded}`];
+  let lastError: unknown;
+  for (const url of candidates) {
+    try {
+      await Linking.openURL(url);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
   }
+  throw lastError instanceof Error ? lastError : new Error('whatsapp_open_failed');
+}
+
+/**
+ * Share an event card to a WhatsApp group (or any chat).
+ * Uses the system share sheet first so the user can pick the group,
+ * then falls back to opening WhatsApp with prefilled text.
+ */
+export async function shareEventToWhatsAppGroup(event: FamilyEvent): Promise<'shared' | 'dismissed'> {
+  const card = buildEventShareCard(event);
+
+  try {
+    const result = await Share.share({ message: card });
+    if (result.action === Share.dismissedAction) return 'dismissed';
+    return 'shared';
+  } catch (error) {
+    // iOS rejects when the user dismisses the sheet — not a real failure.
+    if (isShareCanceled(error)) return 'dismissed';
+  }
+
+  await openWhatsAppWithText(card);
+  return 'shared';
 }
