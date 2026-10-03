@@ -43,6 +43,7 @@ import {
 import { formatVisitTimeRangeAr } from '../utils/formatVisitTimeAr';
 import { occasionRelationLabel } from '../utils/personEncounter';
 import { OccasionInteractCard } from '../components/OccasionInteractCard';
+import { shareEventToWhatsAppGroup } from '../utils/eventShareCard';
 import {
   DEFAULT_PHONE_COUNTRY_ID,
   canonicalizePhone,
@@ -386,9 +387,14 @@ export function EventsScreen({
 
   async function shareEventCard(event: FamilyEvent) {
     try {
-      await shareEventToWhatsAppGroup(event);
+      const result = await shareEventToWhatsAppGroup(event);
+      // User closed the share sheet — no error toast.
+      if (result === 'dismissed') return;
     } catch {
-      Alert.alert('تعذر المشاركة', 'ما قدرنا نفتح واتساب. انسخ الخبر يدويًا أو أعد المحاولة.');
+      Alert.alert(
+        'تعذر المشاركة',
+        'ما قدرنا نفتح نافذة المشاركة أو واتساب. تأكد أن واتساب مثبت، أو انسخ الخبر يدويًا وأعد المحاولة.',
+      );
     }
   }
 

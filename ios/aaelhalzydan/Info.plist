@@ -35,6 +35,11 @@
     <string>60</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+      <string>whatsapp</string>
+      <string>whatsapp-business</string>
+    </array>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
