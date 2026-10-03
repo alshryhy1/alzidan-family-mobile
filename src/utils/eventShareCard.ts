@@ -102,29 +102,56 @@ export function buildEventShareCard(event: FamilyEvent) {
 }
 
 export function eventShareWhatsAppUrl(event: FamilyEvent) {
-  return `whatsapp://send?text=${encodeURIComponent(buildEventShareCard(event))}`;
+  return `https://wa.me/?text=${encodeURIComponent(buildEventShareCard(event))}`;
 }
 
-function shareWasDismissed(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || '');
-  return /cancel|dismiss|did not share|user did not/i.test(message);
+function errorMessage(error: unknown) {
+  if (!error) return '';
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object' && 'message' in error) {
+    return String((error as { message?: unknown }).message || '');
+  }
+  return String(error);
 }
 
-export async function shareEventToWhatsAppGroup(event: FamilyEvent) {
-  const card = buildEventShareCard(event);
-  const url = eventShareWhatsAppUrl(event);
-  try {
-    if (await Linking.canOpenURL(url)) {
+/** Android rejects Share.share when the sheet is dismissed; that is not a hard failure. */
+export function isShareUserCancelled(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+  return (
+    message.includes('user did not share') ||
+    message.includes('sharerequestisnotavailable') ||
+    (message.includes('cancel') && message.includes('share'))
+  );
+}
+
+async function openWhatsAppWithText(card: string) {
+  const encoded = encodeURIComponent(card);
+  const candidates = [`whatsapp://send?text=${encoded}`, `https://wa.me/?text=${encoded}`];
+  let lastError: unknown;
+  for (const url of candidates) {
+    try {
       await Linking.openURL(url);
       return;
+    } catch (error) {
+      lastError = error;
     }
-  } catch {
-    // واتساب غير مثبت، أو المحاكي. ورقة المشاركة تحمل النص.
   }
+  throw lastError instanceof Error ? lastError : new Error('whatsapp_share_failed');
+}
+
+/**
+ * Share an occasion to a WhatsApp group (or any chat).
+ * Prefer the system share sheet so the user can pick a group; fall back to WhatsApp URL schemes.
+ */
+export async function shareEventToWhatsAppGroup(event: FamilyEvent) {
+  const card = buildEventShareCard(event);
+
   try {
-    await Share.share({ message: card });
+    await Share.share({ message: card, title: 'مشاركة المناسبة' });
+    return;
   } catch (error) {
-    if (shareWasDismissed(error)) return;
-    throw error;
+    if (isShareUserCancelled(error)) return;
   }
+
+  await openWhatsAppWithText(card);
 }
