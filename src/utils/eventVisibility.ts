@@ -4,8 +4,8 @@
  * - وفاة: 3 أيام تقويمية من يوم الحدث (أو created_at إن لم يوجد event_date)
  * - تهاني/صحة (مولود جديد…): ضمن نافذة showDays من created_at — تاريخ الواقعة لا يُنهي الخبر
  * - فنجال: يظهر من وقت النشر لمدة الساعات المختارة (الافتراضي ٤) ثم يختفي، ولو كان end_at أبعد
- * - مناسبات مؤرخة (حفل/اجتماع): لا تظهر قبل show_at؛ تنتهي بنهاية يوم المناسبة
- *   حتى لو كان end_at أبعد (تاريخ هجري لم يُحفظ كـ event_date فيُمدَّد ٧ أيام)
+ * - مناسبات مؤرخة (حفل/اجتماع): لا تظهر قبل show_at؛ تنتهي عند end_at بالضبط
+ *   إن وُجد، وإلا بنهاية يوم المناسبة. end_at الأبعد من يوم المناسبة لا يمدّها.
  * - event_date = null: يعتمد على created_at / showDays فقط (لا ظهور أبدي)
  */
 import moment from 'moment-hijri';
@@ -291,10 +291,11 @@ export function isFamilyEventPubliclyVisible(
   const win = resolveScheduleWindow(event, now);
   if (win.eventDayMs != null || win.showAtMs != null || win.endAtMs != null) {
     const diff = daysFromEventDay(event, now);
-    // يوم المناسبة في تقويم الرياض يغلب end_at المتأخر.
+    // الوقت المحدد يُغلق المناسبة في لحظته، حتى في يومها.
+    if (win.endAtMs != null && win.nowMs >= win.endAtMs) return false;
+    // يوم المناسبة يغلب end_at المتأخر عن ذلك اليوم، مثل تمديد الأيام السبعة.
     if (diff === 0) return true;
     if (diff != null && diff < 0) return false;
-    if (win.endAtMs != null && win.nowMs > win.endAtMs) return false;
     if (win.showAtMs != null && win.nowMs < win.showAtMs) return false;
     return true;
   }

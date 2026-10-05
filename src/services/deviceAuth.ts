@@ -11,6 +11,7 @@ const DEVICE_ID_KEY = 'alzidan_device_public_id_v1';
 const DEVICE_SECRET_KEY = 'alzidan_device_secret_v1';
 const DEVICE_PHONE_KEY = 'alzidan_device_bound_phone_v1';
 const DEVICE_LOCKED_PHONE_KEY = 'alzidan_device_locked_phone_v1';
+const SIGNED_OUT_KEY = 'alzidan_signed_out_v1';
 
 const secureOpts: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
@@ -45,6 +46,9 @@ type SessionRpc = {
 
 let cachedSession: DeviceSession | null = null;
 const listeners = new Set<(session: DeviceSession | null) => void>();
+/** يعلو مع كل خروج أو دخول حتى لا تعيد استعادة قديمة الجلسة بعد تسجيل الخروج. */
+let authGeneration = 0;
+let signedOut = false;
 
 function randomHex(bytes: number) {
   const buf = new Uint8Array(bytes);
@@ -75,6 +79,21 @@ function notify(session: DeviceSession | null) {
 
 export function getCachedDeviceSession() {
   return cachedSession;
+}
+
+export function deviceAuthStamp() {
+  return authGeneration;
+}
+
+async function readSignedOut(generation: number) {
+  if (signedOut && generation === authGeneration) return true;
+  const flag = String((await AsyncStorage.getItem(SIGNED_OUT_KEY)) || '').trim();
+  if (generation !== authGeneration) return false;
+  if (flag === '1') {
+    signedOut = true;
+    return true;
+  }
+  return signedOut;
 }
 
 export function subscribeDeviceSession(cb: (session: DeviceSession | null) => void) {
@@ -156,11 +175,17 @@ async function rememberLockedPhone(phone: string) {
   }
 }
 
-async function persistSession(session: DeviceSession) {
+async function persistSession(session: DeviceSession, generation: number) {
+  if (signedOut || generation !== authGeneration) return false;
   await SecureStore.setItemAsync(DEVICE_PHONE_KEY, session.phone, secureOpts);
   await SecureStore.setItemAsync(DEVICE_LOCKED_PHONE_KEY, session.phone, secureOpts);
   await AsyncStorage.setItem(MEMBER_PHONE_KEY, session.phone);
+  if (signedOut || generation !== authGeneration) {
+    await endLocalSession();
+    return false;
+  }
   notify(session);
+  return true;
 }
 
 async function endLocalSession() {
@@ -180,17 +205,22 @@ export async function hasBoundSessionPhone() {
 }
 
 export async function resumeTrustedDevice(): Promise<DeviceSession | null> {
+  const generation = authGeneration;
+  if (await readSignedOut(generation)) {
+    if (generation === authGeneration) notify(null);
+    return null;
+  }
   const phone = await readBoundPhone();
   const secret = await readSecret();
   if (phone) await rememberLockedPhone(phone);
-  if (!phone || !secret) {
-    await clearPhoneOnlyLegacySession();
+  if (signedOut || generation !== authGeneration || !phone || !secret) {
+    if (!signedOut && generation === authGeneration) await clearPhoneOnlyLegacySession();
     notify(null);
     return null;
   }
   if (await isDeviceLockEnabled()) {
     const unlocked = await ensureLocalUnlock();
-    if (!unlocked) {
+    if (!unlocked || signedOut || generation !== authGeneration) {
       notify(null);
       return null;
     }
@@ -200,13 +230,17 @@ export async function resumeTrustedDevice(): Promise<DeviceSession | null> {
       p_phone: phone,
       p_device_secret: secret,
     });
+    if (signedOut || generation !== authGeneration) {
+      notify(null);
+      return null;
+    }
     const session = sessionFromRpc(row, phone);
     if (!session) {
       await endLocalSession();
       return null;
     }
-    await persistSession(session);
-    return session;
+    const saved = await persistSession(session, generation);
+    return saved ? session : null;
   } catch {
     notify(null);
     return null;
@@ -230,7 +264,11 @@ export async function loginTrustedDevice(phone: string): Promise<DeviceSession |
     });
     const session = sessionFromRpc(row, cleaned);
     if (!session) return { error: String(row?.error || 'not_found') };
-    await persistSession(session);
+    await AsyncStorage.removeItem(SIGNED_OUT_KEY).catch(() => {});
+    authGeneration += 1;
+    signedOut = false;
+    const saved = await persistSession(session, authGeneration);
+    if (!saved) return { error: 'not_found' };
     return session;
   } catch (err) {
     return { error: classifyPublicRpcError(err) };
@@ -238,6 +276,10 @@ export async function loginTrustedDevice(phone: string): Promise<DeviceSession |
 }
 
 export async function logoutTrustedDevice() {
+  authGeneration += 1;
+  signedOut = true;
+  notify(null);
+  await AsyncStorage.setItem(SIGNED_OUT_KEY, '1');
   const bound = await readBoundPhone();
   if (bound) await rememberLockedPhone(bound);
   await endLocalSession();

@@ -7,6 +7,7 @@ import { PulseLiveBoard } from '../components/PulseLiveBoard';
 import { SceneShell } from '../components/scene';
 import { loadPulseFamilyBoard } from '../services/pulseBoard';
 import { loadPulseWeather } from '../services/pulseWeather';
+import { speakArabic } from '../services/familySpeech';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import type { FamilyEvent, TreeChild } from '../types';
@@ -29,7 +30,7 @@ import {
   type FamilyBoardPost,
 } from '../services/familyBoard';
 import { resolvePulseSeason } from '../utils/pulseSeason';
-import type { SinceVisitItem } from '../utils/sinceLastVisit';
+import { sinceVisitSummary, type SinceVisitItem } from '../utils/sinceLastVisit';
 
 type HomeScreenProps = {
   memberGreeting?: string | null;
@@ -319,6 +320,13 @@ export function HomeScreen({
 
         <View style={styles.sinceBox}>
             <Text style={styles.sinceTitle}>منذ آخر زيارة</Text>
+            <Pressable
+              accessibilityLabel="اسمع ما فاتك"
+              onPress={() => speakArabic(sinceVisitSummary(sinceLastVisit))}
+              style={({ pressed }) => [pressed && styles.pressed]}
+            >
+              <Text style={styles.sinceSummary}>{sinceVisitSummary(sinceLastVisit)}</Text>
+            </Pressable>
             {sinceLastVisit.length ? (
               sinceLastVisit.map((item) => (
                 <Pressable
@@ -334,9 +342,7 @@ export function HomeScreen({
                   <Text style={styles.sinceGo}>عرض</Text>
                 </Pressable>
               ))
-            ) : (
-              <Text style={styles.sinceEmpty}>المجلس هادئ. ما فاتك شيء.</Text>
-            )}
+            ) : null}
           </View>
 
         <View style={styles.boardBox}>
@@ -443,6 +449,14 @@ function homeStyles(p: ThemePalette) {
     color: p.green,
     fontSize: 13,
     fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  sinceSummary: {
+    color: p.text,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 24,
     textAlign: 'right',
     writingDirection: 'rtl',
   },

@@ -1,0 +1,4 @@
+project_id = "alzidan-family"
+
+[functions.alzidan-haili-speak]
+verify_jwt = true

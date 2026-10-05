@@ -7,6 +7,7 @@ import { PersonPhoto } from '../components/PersonPhoto';
 import { PhoneField } from '../components/PhoneField';
 import { DateStamp, SceneSection, SceneShell } from '../components/scene';
 import {
+  deviceAuthStamp,
   loginTrustedDevice,
   logoutTrustedDevice,
   resumeTrustedDevice,
@@ -223,12 +224,19 @@ export function ProfileScreen({
   }, [isDelegateSession, member?.display_name, memberTreeRow?.name]);
 
   const activateSession = async (session: DeviceSession, successText: string) => {
+    const stamp = deviceAuthStamp();
     const found = sessionToMemberRow(session);
     setMember(found);
     setSavedPhone(session.phone);
     setUnregisteredPhone('');
     setRegisterSent(false);
     await rememberPushPhone(session.phone);
+    if (stamp !== deviceAuthStamp()) {
+      setMember(null);
+      setSavedPhone('');
+      onMemberSessionChange?.(null);
+      return;
+    }
     registerPushToken('profile_login').catch(() => {});
     onMemberSessionChange?.(session.phone);
     setStatus({ kind: 'success', text: successText });
@@ -318,13 +326,12 @@ export function ProfileScreen({
   };
 
   useEffect(() => {
+    const stamp = deviceAuthStamp();
     resumeTrustedDevice()
       .then((session) => {
-        if (session) {
-          void isDeviceLockEnabled().then(setFaceLockOn);
-          return activateSession(session, 'تم استعادة الدخول من الجهاز الموثوق.');
-        }
-        return undefined;
+        if (!session || stamp !== deviceAuthStamp()) return undefined;
+        void isDeviceLockEnabled().then(setFaceLockOn);
+        return activateSession(session, 'تم استعادة الدخول من الجهاز الموثوق.');
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps

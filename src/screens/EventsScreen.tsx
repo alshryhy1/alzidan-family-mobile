@@ -23,6 +23,8 @@ import {
   updateMemberOccasion,
 } from '../services/memberOccasions';
 import { heritagePalette, spacing, typography, type ThemePalette } from '../theme';
+import { shareEventToWhatsAppGroup } from '../utils/eventShareCard';
+import { parseOccasionDraft } from '../utils/occasionDraft';
 import { useTheme, useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import type { Branch, FamilyEvent, TreeChild } from '../types';
@@ -242,6 +244,8 @@ export function EventsScreen({
   const [addBranch, setAddBranch] = useState(branches[0]?.id ?? 'زيدان');
   const [addFamily, setAddFamily] = useState<MobileEventFamily>('news');
   const [addType, setAddType] = useState(() => listMobileEventTypesByFamily('news')[0]?.key || 'birth');
+  const [draftLine, setDraftLine] = useState('');
+  const [draftNote, setDraftNote] = useState('');
   const [addPerson, setAddPerson] = useState('');
   const [addDate, setAddDate] = useState('');
   const [addPlace, setAddPlace] = useState('');
@@ -402,8 +406,22 @@ export function EventsScreen({
     try {
       await shareEventToWhatsAppGroup(event);
     } catch {
-      Alert.alert('تعذر المشاركة', 'ما قدرنا نفتح واتساب. انسخ الخبر يدويًا أو أعد المحاولة.');
+      Alert.alert('تعذر المشاركة', 'ما انفتحت ورقة المشاركة. أعد المحاولة.');
     }
+  }
+
+  function applyOccasionDraft() {
+    const draft = parseOccasionDraft(draftLine);
+    if (!draft) {
+      setDraftNote('ما اتضح النوع. اكتب مثل: فنجال بعد العشاء عند أبو هيثم، ثلاث ساعات.');
+      return;
+    }
+    setAddFamily(draft.family);
+    setAddType(draft.typeKey);
+    if (draft.person) setAddPerson(draft.person);
+    if (draft.hours) setAddFinjalHours(draft.hours);
+    setAddOpen(true);
+    setDraftNote('تمت التعبئة. راجع الحقول ثم أرسل. ما اننشر شيء.');
   }
 
   function resetAddForm() {
@@ -914,6 +932,23 @@ export function EventsScreen({
 
         {addOpen ? (
           <>
+            <Text style={styles.fieldLabel}>جملة واحدة</Text>
+            <Text style={styles.addHint}>اكتب المناسبة بجملة، ثم عبّ النموذج وراجعه قبل الإرسال.</Text>
+            <TextInput
+              onChangeText={setDraftLine}
+              placeholder="فنجال بعد العشاء عند أبو هيثم، ثلاث ساعات"
+              placeholderTextColor={p.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={draftLine}
+            />
+            <Pressable
+              onPress={applyOccasionDraft}
+              style={({ pressed }) => [styles.addToggle, pressed && styles.pressed]}
+            >
+              <Text style={styles.addToggleText}>عبّ الحقول من الجملة</Text>
+            </Pressable>
+            {draftNote ? <Text style={styles.addHint}>{draftNote}</Text> : null}
             <Text style={styles.fieldLabel}>الفرع</Text>
             <Text style={styles.addHint}>اختر فرع صاحب المناسبة.</Text>
             <View style={styles.branchPicker}>

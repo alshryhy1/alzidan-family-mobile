@@ -131,7 +131,7 @@ function CountdownCard({ model }: { model: PulseLiveModel }) {
         imageStyle={styles.cover}
         resizeMode="cover"
         source={photo}
-        style={[styles.tile, styles.tileTop, { backgroundColor: theme.from }]}
+        style={[styles.tile, styles.tileCenter, { backgroundColor: theme.from }]}
       >
         <View style={[styles.scrim, styles.scrimDark]}>{copy}</View>
       </ImageBackground>
@@ -262,11 +262,8 @@ function pulseStyles(p: ThemePalette) {
       borderWidth: 1,
       flex: 1,
       height: TILE_HEIGHT,
-      justifyContent: 'flex-end',
+      justifyContent: 'center',
       overflow: 'hidden',
-    },
-    tileTop: {
-      justifyContent: 'flex-start',
     },
     tileCenter: {
       justifyContent: 'center',
@@ -278,10 +275,11 @@ function pulseStyles(p: ThemePalette) {
     },
     scrim: {
       alignItems: 'center',
-      gap: 2,
-      paddingBottom: 12,
+      flex: 1,
+      gap: 4,
+      justifyContent: 'center',
       paddingHorizontal: 10,
-      paddingTop: 12,
+      paddingVertical: 12,
     },
     scrimDark: {
       backgroundColor: 'rgba(8,16,14,0.38)',

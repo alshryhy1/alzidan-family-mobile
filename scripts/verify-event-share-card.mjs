@@ -46,6 +46,7 @@ const checks = [
   ['home url ignored', eventIdFromOpenUrl('com.alzidan.family2://home') === null],
   ['card builder has no contactPhone', !/contactPhone/.test(src)],
   ['card opens whatsapp chat picker', src.includes('whatsapp://send?text=')],
+  ['card falls back to share sheet', src.includes('Share.share')],
   ['card does not use wa.me without number', !src.includes('https://wa.me/?text=')],
   ['brand line', src.includes('عائلة مطلق الزيدان')],
   ['death heading', src.includes('إنا لله وإنا إليه راجعون')],

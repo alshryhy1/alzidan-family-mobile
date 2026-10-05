@@ -40,7 +40,7 @@ import {
   registerPushToken,
   setupPushRegistration,
 } from './src/services/pushNotifications';
-import { resumeTrustedDevice } from './src/services/deviceAuth';
+import { deviceAuthStamp, resumeTrustedDevice } from './src/services/deviceAuth';
 import { syncWidgetPrayerLocation, syncWidgetOnlineCount } from './src/theme/syncWidgetTheme';
 import { syncPrayerNotifications } from './src/services/prayerNotifications';
 import {
@@ -90,6 +90,9 @@ function screenFromPushData(data: Record<string, unknown> | null): PublicScreen 
   if (screen === 'womenadmin' || mode === 'women_manager_new_request') return 'womenAdmin';
   if (screen === 'delegate' || mode === 'branch_delegate_new_request') return 'delegateInbox';
   if (screen === 'familyadmin' || screen === 'admin' || mode === 'admin_new_request') return 'familyAdmin';
+  if (screen === 'familyboard' || mode === 'faza' || mode === 'board_offer' || mode === 'board_request') {
+    return 'familyBoard';
+  }
   if (mode === 'status_changed' || mode === 'inbox_share') return 'profile';
   return 'events';
 }
@@ -385,44 +388,43 @@ function AppChrome() {
 
   useEffect(() => {
     let alive = true;
+    const stamp = deviceAuthStamp();
 
     resumeTrustedDevice()
       .then(async (session) => {
+        if (!alive || stamp !== deviceAuthStamp()) return;
         const phone = session?.phone || '';
         if (!phone) {
-          if (alive) {
-            setMemberGreeting(null);
-            setMemberBranchKey(null);
-            setMemberTreeChildId(null);
-            setMemberViewerPerson(null);
-            setMemberPhoneForRequests('');
-          }
+          setMemberGreeting(null);
+          setMemberBranchKey(null);
+          setMemberTreeChildId(null);
+          setMemberViewerPerson(null);
+          setMemberPhoneForRequests('');
           return;
         }
 
         const hiddenViewer = await loadMemberViewerPerson(phone);
+        if (!alive || stamp !== deviceAuthStamp()) return;
         const child =
           publicData.children.find((row) => row.id === Number(session?.treeChildId || 0)) || hiddenViewer;
         const name = child?.name
           ? tripleNameFromPath(child.name)
           : session?.displayName || null;
-        if (alive) {
-          setMemberGreeting(name);
-          setMemberBranchKey(session?.branchKey || hiddenViewer?.branchKey || null);
-          setMemberTreeChildId(
-            Number.isFinite(Number(session?.treeChildId))
-              ? Number(session?.treeChildId)
-              : hiddenViewer?.id || null,
-          );
-          setMemberViewerPerson(hiddenViewer || child || null);
-          setMemberPhoneForRequests(phone);
-        }
+        setMemberGreeting(name);
+        setMemberBranchKey(session?.branchKey || hiddenViewer?.branchKey || null);
+        setMemberTreeChildId(
+          Number.isFinite(Number(session?.treeChildId))
+            ? Number(session?.treeChildId)
+            : hiddenViewer?.id || null,
+        );
+        setMemberViewerPerson(hiddenViewer || child || null);
+        setMemberPhoneForRequests(phone);
         rememberPushPhone(phone)
           .then(() => registerPushToken('member_phone'))
           .catch(() => {});
       })
       .catch(() => {
-        if (alive) {
+        if (alive && stamp === deviceAuthStamp()) {
           setMemberGreeting(null);
           setMemberBranchKey(null);
           setMemberTreeChildId(null);
@@ -434,7 +436,7 @@ function AppChrome() {
     return () => {
       alive = false;
     };
-  }, [publicData.children, screen, memberPhoneForRequests]);
+  }, [publicData.children, memberPhoneForRequests]);
 
   useEffect(() => {
     let alive = true;

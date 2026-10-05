@@ -5,6 +5,7 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~56.0.15",
+    "expo-audio": "~56.0.13",
     "expo-constants": "~56.0.20",
     "expo-device": "~56.0.4",
     "expo-document-picker": "~56.0.4",
@@ -17,6 +18,7 @@
     "expo-notifications": "~56.0.20",
     "expo-secure-store": "~56.0.4",
     "expo-sharing": "~56.0.21",
+    "expo-speech": "~56.0.3",
     "expo-status-bar": "~56.0.4",
     "expo-video": "~56.1.4",
     "moment-hijri": "^3.0.0",
@@ -49,6 +51,7 @@
     "verify:person-encounter": "node scripts/verify-person-encounter-identity.mjs",
     "verify:maternal-kinship": "node scripts/verify-maternal-kinship.mjs",
     "verify:pulse-season": "node scripts/verify-pulse-season.mjs",
+    "verify:family-voice": "node scripts/verify-family-voice.mjs",
     "verify:handover": "npm run verify:bug36 && npm run verify:news-expiry && npm run verify:home-ticker && npm run verify:tree-card && npm run verify:event-card && npm run verify:event-share && npm run verify:occasion-replies && npm run verify:notifications && npm run verify:push && npm run verify:tree-stats && npm run verify:person-encounter && npm run verify:maternal-kinship && npm run verify:pulse-season && npx tsc --noEmit"
   },
   "private": true

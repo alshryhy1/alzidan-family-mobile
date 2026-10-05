@@ -18,6 +18,9 @@
         "NSLocationWhenInUseUsageDescription": "لتوقيت الصلاة في الودجت حسب موقعك. لا يُرسل الموقع خارج الجهاز.",
         "NSMicrophoneUsageDescription": "لإرفاق فيديو مع مناسبة عائلية أو ذكرى.",
         "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": [
+          "whatsapp"
+        ],
         "UIBackgroundModes": [
           "remote-notification"
         ]
@@ -54,7 +57,8 @@
         {
           "faceIDPermission": "يُستخدم قفل الجهاز لفتح حسابك على هذا الآيفون. لا تُرسل صورة الوجه خارج جهازك."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "extra": {
       "eas": {

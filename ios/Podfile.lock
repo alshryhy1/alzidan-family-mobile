@@ -29,7 +29,9 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoAsset (56.0.19):
+  - ExpoAsset (57.0.18):
+    - ExpoModulesCore
+  - ExpoAudio (56.0.13):
     - ExpoModulesCore
   - ExpoDevice (56.0.4):
     - ExpoModulesCore
@@ -49,7 +51,7 @@ PODS:
     - ExpoModulesCore
   - ExpoLinearGradient (56.0.4):
     - ExpoModulesCore
-  - ExpoLocalAuthentication (56.0.4):
+  - ExpoLocalAuthentication (56.0.5):
     - ExpoModulesCore
   - ExpoLogBox (56.0.14):
     - React-Core
@@ -91,6 +93,8 @@ PODS:
   - ExpoSecureStore (56.0.4):
     - ExpoModulesCore
   - ExpoSharing (56.0.21):
+    - ExpoModulesCore
+  - ExpoSpeech (56.0.3):
     - ExpoModulesCore
   - ExpoVideo (56.1.4):
     - ExpoModulesCore
@@ -2001,7 +2005,8 @@ DEPENDENCIES:
   - EXApplication (from `../node_modules/expo-application/ios`)
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - Expo (from `../node_modules/expo`)
-  - ExpoAsset (from `../node_modules/expo/node_modules/expo-asset/ios`)
+  - ExpoAsset (from `../node_modules/expo-asset/ios`)
+  - ExpoAudio (from `../node_modules/expo-audio/ios`)
   - ExpoDevice (from `../node_modules/expo-device/ios`)
   - ExpoDocumentPicker (from `../node_modules/expo-document-picker/ios`)
   - "ExpoDomWebView (from `../node_modules/expo/node_modules/@expo/dom-webview/ios`)"
@@ -2020,6 +2025,7 @@ DEPENDENCIES:
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
   - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
   - ExpoSharing (from `../node_modules/expo-sharing/ios`)
+  - ExpoSpeech (from `../node_modules/expo-speech/ios`)
   - ExpoVideo (from `../node_modules/expo-video/ios/ExpoVideo.podspec`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
@@ -2108,7 +2114,9 @@ EXTERNAL SOURCES:
   Expo:
     :path: "../node_modules/expo"
   ExpoAsset:
-    :path: "../node_modules/expo/node_modules/expo-asset/ios"
+    :path: "../node_modules/expo-asset/ios"
+  ExpoAudio:
+    :path: "../node_modules/expo-audio/ios"
   ExpoDevice:
     :path: "../node_modules/expo-device/ios"
   ExpoDocumentPicker:
@@ -2145,6 +2153,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-secure-store/ios"
   ExpoSharing:
     :path: "../node_modules/expo-sharing/ios"
+  ExpoSpeech:
+    :path: "../node_modules/expo-speech/ios"
   ExpoVideo:
     :podspec: "../node_modules/expo-video/ios/ExpoVideo.podspec"
   FBLazyVector:
@@ -2307,7 +2317,8 @@ SPEC CHECKSUMS:
   EXApplication: e6040c92edc5522accd62852342e6b14742d42c0
   EXConstants: 5120c651b684c629efa1bafcf0d0ddb96b0de62f
   Expo: cd8054bc11d25aa148c04d939ca40ecae8834174
-  ExpoAsset: df5110ae7e42e935bad07138133aa74f025ef79e
+  ExpoAsset: a917b756b2e4fe12cef1ac3bca5fd849ddb2b919
+  ExpoAudio: 2970e2d332b52bfbb64d88564105df4b422c78a4
   ExpoDevice: f527f8bbefa6efa12f8ef63e9038dd1d5d903697
   ExpoDocumentPicker: caa9c7c1071dc31262d86a8fe48f51929d291a43
   ExpoDomWebView: 4e53b05879dc73ba374f76bff93dd64c8a0d91b3
@@ -2317,15 +2328,16 @@ SPEC CHECKSUMS:
   ExpoImagePicker: 7d604d51b6cf07f3d6cbaada9a19c50e64c8c67a
   ExpoKeepAwake: 359c47a1d9ccc3a3c519bca6e39562cce230c5bb
   ExpoLinearGradient: 16c2b9c6105444883d34958d573725de1293b8d0
-  ExpoLocalAuthentication: 93f29833d2a8b957f996eddc05a632eb2bdeaa7d
+  ExpoLocalAuthentication: d8dc72d217facafed303ef3417c3f448edf74819
   ExpoLogBox: cdad5c9402a186574fb5924ea91df1f08ba9a98a
   ExpoMediaLibrary: f8911433a87a315632d28908359460e7790084a9
-  ExpoModulesCore: 101470b65f0100121e876f157dc952b1a73e5619
+  ExpoModulesCore: fdd407be56c52689337592746434d2023efd24fb
   ExpoModulesJSI: e62656cfaffb5aeb3fdc1dd2bc49f77e87ed2261
   ExpoModulesWorklets: bf01b3310464f105c5f6dbd887db81a51c765d05
   ExpoNotifications: 13dd7a12760ecae8ac3aad6bf7c79cf123ea56d0
   ExpoSecureStore: f1bd083c1b7b8d4142013ffcc0082d377d9f49f4
   ExpoSharing: 405cd864050b2202541098ba02d7e5a357cbc696
+  ExpoSpeech: fe3706df8653ab8c16ff88251e33fab79b07a420
   ExpoVideo: 292b8c6be12bacf0b2e5a697276788280cdccdfb
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: 997ae2dacf21cdcada30e773c684b63d3f610436

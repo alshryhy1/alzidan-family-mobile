@@ -3,6 +3,7 @@ import { AppState, Image, Linking, Pressable, Text, TextInput, View } from 'reac
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { DataState } from '../components/DataState';
+import { speakArabic } from '../services/familySpeech';
 import { ImageViewerModal } from '../components/ImageViewerModal';
 import { MemorySubmitPanel } from '../components/MemorySubmitPanel';
 import { SceneSection, SceneShell } from '../components/scene';
@@ -133,7 +134,18 @@ function StoryMedia({ item }: { item: MemoryItem }) {
   const body = cleanText(item.storyText || item.description);
   if (!body) return null;
 
-  return <Text style={styles.memoryBody}>{body}</Text>;
+  return (
+    <View style={styles.storyBlock}>
+      <Text style={styles.memoryBody}>{body}</Text>
+      <Pressable
+        accessibilityLabel="اسمع النص"
+        onPress={() => speakArabic(body)}
+        style={({ pressed }) => [styles.listenBtn, pressed && styles.pressed]}
+      >
+        <Text style={styles.listenText}>اسمع</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 function MemoryVideo({ uri }: { uri: string }) {
@@ -817,6 +829,19 @@ function memoryStyles(p: ThemePalette) {
     color: p.text,
     fontSize: typography.body,
     lineHeight: 24,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  storyBlock: {
+    gap: 8,
+  },
+  listenBtn: {
+    alignSelf: 'flex-start',
+  },
+  listenText: {
+    color: p.primaryDark,
+    fontSize: 14,
+    fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },

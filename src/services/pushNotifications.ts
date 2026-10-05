@@ -245,6 +245,33 @@ export function formatFormalNotificationText(input: {
     };
   }
 
+  if (type === 'faza') {
+    return {
+      typeLabel: 'فزعة',
+      subject: person || 'فزعة',
+      body: person || fallbackBody || 'فزعة في العائلة.',
+      title: 'فزعة',
+    };
+  }
+
+  if (type === 'board_request') {
+    return {
+      typeLabel: 'طلب',
+      subject: person || 'طلب',
+      body: person || fallbackBody || 'طلب جديد عند الزيدان.',
+      title: 'طلب',
+    };
+  }
+
+  if (type === 'board_offer') {
+    return {
+      typeLabel: 'عرض',
+      subject: person || 'عرض',
+      body: person || fallbackBody || 'عرض جديد عند الزيدان.',
+      title: 'عرض',
+    };
+  }
+
   if (type === 'marriage' || type === 'wedding' || type === 'contract') {
     return {
       typeLabel: 'زواج',

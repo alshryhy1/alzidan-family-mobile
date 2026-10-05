@@ -136,6 +136,32 @@ type FamilyEventPushRow = {
   text?: string;
 };
 
+/** Family-wide push when a board post (فزعة / عرض / طلب) is saved on the server. */
+export async function notifyFamilyBoardPublished(row: {
+  category: string;
+  kind: string;
+  title: string;
+  body?: string;
+  branchKey?: string;
+}) {
+  const title = String(row.title || '').trim();
+  if (!title) return { ok: false as const, skipped: 'missing' };
+  const category = String(row.category || '').trim();
+  const type =
+    category === 'faza' ? 'faza' : String(row.kind || '').trim() === 'request' ? 'board_request' : 'board_offer';
+  try {
+    await invokePublicEdgeFunction('alzidan-push-notify', {
+      type,
+      person: title,
+      branch_key: String(row.branchKey || '').trim(),
+      details: String(row.body || '').trim().slice(0, 180),
+    });
+  } catch {
+    // Post already saved; push is best-effort.
+  }
+  return { ok: true as const };
+}
+
 /** Family-wide Expo push after a published occasion. Same body as web publish. */
 export async function notifyFamilyEventPublished(row: FamilyEventPushRow) {
   const type = String(row.type || '').trim();

@@ -7,7 +7,9 @@ import { SceneShell } from '../components/scene';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
+import { speakArabic } from '../services/familySpeech';
 import type { Branch, TreeChild, TreeParent, TreePerson } from '../types';
+import { nasabQuery, spokenNasab } from '../utils/familyVoiceCopy';
 import {
   getBranchRootName,
   groupChildrenRows,
@@ -352,7 +354,7 @@ export function TreeScreen({
   const peopleInBranch = tree ? descendantCount(tree) : 0;
 
   const searchResults = useMemo(() => {
-    const query = searchQuery.trim();
+    const query = nasabQuery(searchQuery);
     if (!query || query.length < 2) return [];
 
     return allBranchTrees
@@ -442,31 +444,48 @@ export function TreeScreen({
           <TextInput
             autoCorrect={false}
             onChangeText={setSearchQuery}
-            placeholder="ابحث في جميع الفروع"
+            placeholder="اكتب الاسم أو: نسب فلان"
             placeholderTextColor={p.textMuted}
             returnKeyType="search"
             style={styles.searchInput}
             textAlign="right"
             value={searchQuery}
           />
-          {searchQuery.trim().length >= 2 ? (
+          {nasabQuery(searchQuery).length >= 2 ? (
             <View style={styles.searchResults}>
               {searchResults.length ? (
-                searchResults.map((result) => (
-                  <Pressable
-                    key={`${result.person.id}-${result.path.map((item) => item.id).join('-')}`}
-                    onPress={() => openSearchResult(result)}
-                    style={({ pressed }) => [styles.searchResult, pressed && styles.pressed]}
-                  >
-                    <View style={styles.searchResultRow}>
-                      <PersonPhoto name={result.person.name} size="sm" uri={result.person.photoUrl} />
-                      <Text style={styles.searchResultName}>{personDisplayName(result.person)}</Text>
+                searchResults.map((result) => {
+                  const names = result.path.map((item) => leafName(item));
+                  const spoken = spokenNasab(names);
+                  return (
+                    <View
+                      key={`${result.person.id}-${result.path.map((item) => item.id).join('-')}`}
+                      style={styles.searchResult}
+                    >
+                      <Pressable
+                        onPress={() => openSearchResult(result)}
+                        style={({ pressed }) => [pressed && styles.pressed]}
+                      >
+                        <View style={styles.searchResultRow}>
+                          <PersonPhoto name={result.person.name} size="sm" uri={result.person.photoUrl} />
+                          <Text style={styles.searchResultName}>{personDisplayName(result.person)}</Text>
+                        </View>
+                        <Text numberOfLines={2} style={styles.searchResultPath}>
+                          {`${result.branchName} · ${result.path.map((item) => outlineName(item)).join(' ‹ ')}`}
+                        </Text>
+                      </Pressable>
+                      {spoken ? (
+                        <Pressable
+                          accessibilityLabel="اقرأ النسب"
+                          onPress={() => speakArabic(spoken)}
+                          style={({ pressed }) => [styles.nasabListen, pressed && styles.pressed]}
+                        >
+                          <Text style={styles.nasabListenText}>اسمع النسب</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
-                    <Text numberOfLines={2} style={styles.searchResultPath}>
-                      {`${result.branchName} · ${result.path.map(outlineName).join(' ‹ ')}`}
-                    </Text>
-                  </Pressable>
-                ))
+                  );
+                })
               ) : (
                 <Text style={styles.searchEmpty}>لا يوجد اسم مطابق.</Text>
               )}
@@ -582,6 +601,18 @@ function treeStyles(p: ThemePalette) {
     searchResultPath: {
       color: p.textMuted,
       fontSize: 11,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    nasabListen: {
+      alignSelf: 'flex-start',
+      marginTop: 6,
+      paddingVertical: 4,
+    },
+    nasabListenText: {
+      color: p.greenDeep,
+      fontSize: 13,
+      fontWeight: '800',
       textAlign: 'right',
       writingDirection: 'rtl',
     },

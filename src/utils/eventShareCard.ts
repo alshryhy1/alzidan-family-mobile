@@ -105,11 +105,26 @@ export function eventShareWhatsAppUrl(event: FamilyEvent) {
   return `whatsapp://send?text=${encodeURIComponent(buildEventShareCard(event))}`;
 }
 
+function shareWasDismissed(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /cancel|dismiss|did not share|user did not/i.test(message);
+}
+
 export async function shareEventToWhatsAppGroup(event: FamilyEvent) {
   const card = buildEventShareCard(event);
+  const url = eventShareWhatsAppUrl(event);
   try {
-    await Linking.openURL(eventShareWhatsAppUrl(event));
+    if (await Linking.canOpenURL(url)) {
+      await Linking.openURL(url);
+      return;
+    }
   } catch {
+    // واتساب غير مثبت، أو المحاكي. ورقة المشاركة تحمل النص.
+  }
+  try {
     await Share.share({ message: card });
+  } catch (error) {
+    if (shareWasDismissed(error)) return;
+    throw error;
   }
 }

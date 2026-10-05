@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { insertPublicRowReturning, isSupabaseConfigured, selectPublicRows } from './supabase';
+import { notifyFamilyBoardPublished } from './eventOutboundNotify';
 import { canonicalizePhone } from '../utils/phone';
 
 const LOCAL_KEY = 'alzidan_family_board_v1';
@@ -541,7 +542,9 @@ export async function createFamilyBoardPost(draft: FamilyBoardDraft): Promise<Fa
       if (mapped) {
         const local = await readLocal();
         await writeLocal([mapped, ...local.filter((row) => row.id !== mapped.id)]);
-        return { ...mapped, comingCount: mapped.comingCount || 0, iAmComing: false };
+        const saved = { ...mapped, comingCount: mapped.comingCount || 0, iAmComing: false };
+        void notifyFamilyBoardPublished(saved);
+        return saved;
       }
     } catch {
       // Fall through to local persistence when table/RPC is not ready.
