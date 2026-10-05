@@ -1,3 +1,5 @@
+import moment from 'moment-hijri';
+
 export type EventFamily = 'news' | 'health' | 'death' | 'occasion';
 export type MobileEventFamily = EventFamily;
 
@@ -171,6 +173,44 @@ export function eventRequiresTime(type: string) {
   return !!findMobileEventType(type).requiresTime;
 }
 
+/** فنجال يبقى ساعات من لحظة النشر ثم يختفي، مو أيام. */
+export const FINJAL_DURATION_CHOICES = [2, 3, 4, 6, 8, 12] as const;
+export const DEFAULT_FINJAL_HOURS = 4;
+
+export function isFinjalEventType(type?: string | null) {
+  return normalizeMobileEventType(type).startsWith('finjal_');
+}
+
+export function clampFinjalHours(value: unknown, fallback = DEFAULT_FINJAL_HOURS) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  if (n > 12) return 12;
+  return n;
+}
+
+export function finjalHoursFromDetails(details: unknown, fallback = DEFAULT_FINJAL_HOURS) {
+  let row: Record<string, unknown> | null = null;
+  if (details && typeof details === 'object') row = details as Record<string, unknown>;
+  else if (typeof details === 'string' && details.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(details) as unknown;
+      if (parsed && typeof parsed === 'object') row = parsed as Record<string, unknown>;
+    } catch {
+      row = null;
+    }
+  }
+  if (!row) return fallback;
+  return clampFinjalHours(row.duration_hours ?? row.durationHours, fallback);
+}
+
+export function finjalHoursLabel(hours: number) {
+  const n = clampFinjalHours(hours);
+  const digits = String(n).replace(/\d/g, (digit) => '٠١٢٣٤٥٦٧٨٩'[Number(digit)] || digit);
+  if (n === 2) return 'ساعتان';
+  if (n >= 3 && n <= 10) return `${digits} ساعات`;
+  return `${digits} ساعة`;
+}
+
 export const EVENT_PLACE_KINDS: Array<{ key: string; label: string }> = [
   { key: 'home', label: 'بالمنزل' },
   { key: 'farm', label: 'بالمزرعة' },
@@ -301,7 +341,22 @@ type EventRequestFacts = {
   submitterPhone: string;
   requestId: string;
   createdAt: string;
+  durationHours?: number;
 };
+
+function gregorianIsoFromHijri(year: number, month: number, day: number) {
+  try {
+    const converted = moment(`${year}/${month}/${day}`, 'iYYYY/iM/iD');
+    if (!converted.isValid()) return '';
+    const gYear = converted.year();
+    const gMonth = converted.month() + 1;
+    const gDay = converted.date();
+    if (gYear < 1900 || gYear > 2100 || gMonth < 1 || gMonth > 12 || gDay < 1 || gDay > 31) return '';
+    return `${String(gYear).padStart(4, '0')}-${String(gMonth).padStart(2, '0')}-${String(gDay).padStart(2, '0')}`;
+  } catch {
+    return '';
+  }
+}
 
 export function toIsoDateOrEmpty(value: string) {
   const raw = String(value || '')
@@ -327,6 +382,7 @@ export function toIsoDateOrEmpty(value: string) {
     }
   }
   if (!y || !m || !d) return '';
+  if (y >= 1300 && y < 1800) return gregorianIsoFromHijri(y, m, d);
   if (y < 1800 || y > 2100) return '';
   if (m < 1 || m > 12 || d < 1 || d > 31) return '';
   const dt = new Date(Date.UTC(y, m - 1, d));
@@ -418,6 +474,9 @@ export function buildMobileEventRequestMessage(input: EventRequestFacts) {
     else if (family === 'death') lines.push(`تاريخ الوفاة: ${dateLabel}`);
     else if (notice) lines.push(`تاريخ الخبر: ${dateLabel}`);
     else lines.push(`التاريخ: ${dateLabel}`);
+  }
+  if (isFinjalEventType(typeMeta.key)) {
+    lines.push(`المدة: ${finjalHoursLabel(clampFinjalHours(input.durationHours))} من وقت النشر، ثم تختفي`);
   }
   if (family === 'health') {
     if (hospitalName) lines.push(`المستشفى / المكان: ${hospitalName}`);

@@ -216,7 +216,9 @@ function AppChrome() {
   const [screen, setScreen] = useState<PublicScreen>(FAMILY_SPACE_DEFAULT ? 'familyLab' : 'home');
   const [legacyChrome, setLegacyChrome] = useState(!FAMILY_SPACE_DEFAULT);
   const publicData = usePublicData();
+  const [droppedEventIds, setDroppedEventIds] = useState<string[]>([]);
   const activeEvents = publicData.events.filter((event) =>
+    !droppedEventIds.includes(String(event.id)) &&
     isFamilyEventPubliclyVisible({
       type: event.type,
       category: event.category,
@@ -890,6 +892,9 @@ function AppChrome() {
             memberTreeChildId={memberTreeChildId}
             kinshipById={maternalKinshipById}
             treeChildren={treeChildren}
+            onEventDeleted={(id) =>
+              setDroppedEventIds((current) => (current.includes(id) ? current : [...current, id]))
+            }
             onRetry={reloadPublished}
           />
         );

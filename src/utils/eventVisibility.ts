@@ -3,11 +3,18 @@
  * القواعد مطابقة لـ web `isFamilyEventPubliclyVisible`:
  * - وفاة: 3 أيام تقويمية من يوم الحدث (أو created_at إن لم يوجد event_date)
  * - تهاني/صحة (مولود جديد…): ضمن نافذة showDays من created_at — تاريخ الواقعة لا يُنهي الخبر
+ * - فنجال: يظهر من وقت النشر لمدة الساعات المختارة (الافتراضي ٤) ثم يختفي، ولو كان end_at أبعد
  * - مناسبات مؤرخة (حفل/اجتماع): لا تظهر قبل show_at؛ تنتهي بنهاية يوم المناسبة
+ *   حتى لو كان end_at أبعد (تاريخ هجري لم يُحفظ كـ event_date فيُمدَّد ٧ أيام)
  * - event_date = null: يعتمد على created_at / showDays فقط (لا ظهور أبدي)
  */
 import moment from 'moment-hijri';
-import { eventFamilyOf } from './eventRequestMessage';
+import {
+  clampFinjalHours,
+  eventFamilyOf,
+  finjalHoursFromDetails,
+  isFinjalEventType,
+} from './eventRequestMessage';
 
 export type EventVisibilityInput = {
   type?: string | null;
@@ -238,6 +245,21 @@ export function isWithinDaysFromEventDay(
   return ageDays >= 0 && ageDays <= days - 1;
 }
 
+function finjalWindowEndMs(event: EventVisibilityInput) {
+  const start = parseTimestampMs(event.createdAt || event.created_at || event.showAt || event.show_at);
+  if (start == null) return null;
+  const hours = clampFinjalHours(finjalHoursFromDetails(parseEventEnvelope(event.details)));
+  return start + hours * 60 * 60 * 1000;
+}
+
+function isFinjalStillOpen(event: EventVisibilityInput, now: Date) {
+  const start = parseTimestampMs(event.createdAt || event.created_at || event.showAt || event.show_at);
+  const end = finjalWindowEndMs(event);
+  if (start == null || end == null) return false;
+  const nowMs = now.getTime();
+  return nowMs >= start && nowMs < end;
+}
+
 export function isCreatedWithinShowWindow(event: EventVisibilityInput, now: Date = new Date()) {
   const createdRaw = event.createdAt || event.created_at;
   if (!createdRaw) return true;
@@ -254,6 +276,10 @@ export function isFamilyEventPubliclyVisible(
 ) {
   if (isManualHidden(event)) return false;
 
+  if (isFinjalEventType(event.type)) {
+    return isFinjalStillOpen(event, now);
+  }
+
   if (isDeathEventType(event)) {
     return isWithinDaysFromEventDay(event, DEATH_KEEP_DAYS, now);
   }
@@ -264,12 +290,12 @@ export function isFamilyEventPubliclyVisible(
 
   const win = resolveScheduleWindow(event, now);
   if (win.eventDayMs != null || win.showAtMs != null || win.endAtMs != null) {
+    const diff = daysFromEventDay(event, now);
+    // يوم المناسبة في تقويم الرياض يغلب end_at المتأخر.
+    if (diff === 0) return true;
+    if (diff != null && diff < 0) return false;
     if (win.endAtMs != null && win.nowMs > win.endAtMs) return false;
     if (win.showAtMs != null && win.nowMs < win.showAtMs) return false;
-    if (win.endAtMs == null) {
-      const diff = daysFromEventDay(event, now);
-      if (diff !== null && diff < 0) return false;
-    }
     return true;
   }
 

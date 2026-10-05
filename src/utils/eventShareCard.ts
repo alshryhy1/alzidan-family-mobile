@@ -102,14 +102,13 @@ export function buildEventShareCard(event: FamilyEvent) {
 }
 
 export function eventShareWhatsAppUrl(event: FamilyEvent) {
-  return `https://wa.me/?text=${encodeURIComponent(buildEventShareCard(event))}`;
+  return `whatsapp://send?text=${encodeURIComponent(buildEventShareCard(event))}`;
 }
 
 export async function shareEventToWhatsAppGroup(event: FamilyEvent) {
   const card = buildEventShareCard(event);
-  const url = `https://wa.me/?text=${encodeURIComponent(card)}`;
   try {
-    await Linking.openURL(url);
+    await Linking.openURL(eventShareWhatsAppUrl(event));
   } catch {
     await Share.share({ message: card });
   }

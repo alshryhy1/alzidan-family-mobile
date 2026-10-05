@@ -35,8 +35,13 @@ import {
   listMobileEventTypesByFamily,
   normalizeMobileEventType,
   validateEventFacts,
+  DEFAULT_FINJAL_HOURS,
   EVENT_PLACE_KINDS,
+  FINJAL_DURATION_CHOICES,
+  finjalHoursFromDetails,
+  finjalHoursLabel,
   formatVenueLine,
+  isFinjalEventType,
   mapsUrlFromCoords,
   type MobileEventFamily,
 } from '../utils/eventRequestMessage';
@@ -61,6 +66,7 @@ type EventsScreenProps = {
   events: FamilyEvent[];
   loading: boolean;
   onRetry: () => void;
+  onEventDeleted?: (id: string) => void;
   memberPhone?: string | null;
   memberGreeting?: string | null;
   memberBranchKey?: string | null;
@@ -167,6 +173,12 @@ function eventDetailRows(event: FamilyEvent) {
     event.hospitalDepartment ? { label: 'القسم', value: event.hospitalDepartment } : null,
     isVisit && visitDateRange(event) ? { label: 'تاريخ الزيارة', value: visitDateRange(event) } : null,
     isVisit && visitTimeRange(event) ? { label: 'وقت الزيارة', value: visitTimeRange(event) } : null,
+    isFinjalEventType(event.type)
+      ? {
+          label: 'المدة',
+          value: `${finjalHoursLabel(finjalHoursFromDetails(event.rawDetails))} من النشر ثم تختفي`,
+        }
+      : null,
     event.contactMethod
       ? {
           label: 'طريقة التواصل',
@@ -213,6 +225,7 @@ export function EventsScreen({
   events,
   loading,
   onRetry,
+  onEventDeleted,
   memberPhone = null,
   memberGreeting = null,
   memberBranchKey = null,
@@ -245,6 +258,7 @@ export function EventsScreen({
   const [pickedImage, setPickedImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [pickedVideo, setPickedVideo] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [addText, setAddText] = useState('');
+  const [addFinjalHours, setAddFinjalHours] = useState(DEFAULT_FINJAL_HOURS);
   const [submitterName, setSubmitterName] = useState('');
   const [phoneCountryId, setPhoneCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
   const [phoneNational, setPhoneNational] = useState('');
@@ -409,6 +423,7 @@ export function EventsScreen({
     setPickedImage(null);
     setPickedVideo(null);
     setAddText('');
+    setAddFinjalHours(DEFAULT_FINJAL_HOURS);
   }
 
   function startEditEvent(event: FamilyEvent) {
@@ -430,6 +445,7 @@ export function EventsScreen({
     setAddPrayerTime(String(raw.prayer_time || ''));
     setAddBurialPlace(String(raw.burial_place || ''));
     setAddText(event.details || String(raw.text || ''));
+    setAddFinjalHours(finjalHoursFromDetails(raw));
     setAddImageUrl(event.imageUrl || '');
     setAddVideoUrl(event.videoUrl || '');
     setPickedImage(null);
@@ -454,16 +470,17 @@ export function EventsScreen({
           void (async () => {
             try {
               const result = await deleteMemberOccasion(phone, Number(event.id));
-              if (!result?.ok) {
-                setSubmitStatus({
-                  kind: 'error',
-                  text:
-                    result?.error === 'not_owner'
-                      ? 'لا يمكنك حذف مناسبة ليست من مصدرك.'
-                      : 'تعذر الحذف الآن. راجِع الإدارة إن استمر.',
-                });
+              const deleted = result === true || result?.ok === true;
+              if (!deleted) {
+                const text =
+                  result?.error === 'not_owner'
+                    ? 'لا يمكنك حذف مناسبة ليست من مصدرك.'
+                    : 'تعذر الحذف الآن. راجِع الإدارة إن استمر.';
+                setSubmitStatus({ kind: 'error', text });
+                Alert.alert('ما انحذفت', text);
                 return;
               }
+              onEventDeleted?.(String(event.id));
               if (editingId === event.id) resetAddForm();
               setSubmitStatus({ kind: 'success', text: 'حُذفت المناسبة من المصدر.' });
               onRetry();
@@ -561,6 +578,7 @@ export function EventsScreen({
           submitterPhone: phone,
           requestId: requestIdValue,
           createdAt,
+          durationHours: addFinjalHours,
         });
         const result = editingId
           ? await updateMemberOccasion(phone, Number(editingId), row)
@@ -621,6 +639,7 @@ export function EventsScreen({
         submitterPhone: phone,
         requestId: requestIdValue,
         createdAt,
+        durationHours: addFinjalHours,
       });
 
       await submitFamilyRequest({
@@ -979,6 +998,28 @@ export function EventsScreen({
               textAlign="right"
               value={addDate}
             />
+            {isFinjalEventType(selectedType.key) ? (
+              <>
+                <Text style={styles.fieldLabel}>كم ساعة يبقى الفنجال</Text>
+                <Text style={styles.addHint}>يختفي من المناسبات بعد هذه الساعات من وقت الإرسال.</Text>
+                <View style={styles.branchPicker}>
+                  {FINJAL_DURATION_CHOICES.map((hours) => {
+                    const active = hours === addFinjalHours;
+                    return (
+                      <Pressable
+                        key={hours}
+                        onPress={() => setAddFinjalHours(hours)}
+                        style={[styles.formChip, active && styles.activeFormChip]}
+                      >
+                        <Text style={[styles.formChipText, active && styles.activeFormChipText]}>
+                          {finjalHoursLabel(hours)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
             {selectedType.family === 'health' ? (
               <>
                 <TextInput

@@ -1,8 +1,10 @@
 import { canonicalizePhone, memberProfilePhoneQuery, phonesMatch } from '../utils/phone';
 import { callPublicRpc, classifyPublicRpcError, selectPublicRows } from './supabase';
 import {
+  clampFinjalHours,
   eventFamilyOf,
   findMobileEventType,
+  isFinjalEventType,
   isNoticeEventType,
   normalizePlaceKind,
   parseCoordinates,
@@ -42,6 +44,7 @@ export function buildMemberOccasionRow(input: {
   submitterPhone: string;
   requestId: string;
   createdAt: string;
+  durationHours?: number;
 }): MemberOccasionRow {
   const typeMeta = findMobileEventType(input.type);
   const family = eventFamilyOf(input.type);
@@ -100,6 +103,7 @@ export function buildMemberOccasionRow(input: {
       created_at: input.createdAt,
       source: 'member',
       showDays: 7,
+      duration_hours: isFinjalEventType(typeMeta.key) ? clampFinjalHours(input.durationHours) : null,
     },
   };
 }
