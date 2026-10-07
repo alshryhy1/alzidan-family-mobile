@@ -1,13 +1,10 @@
 import Constants from 'expo-constants';
-import { useState } from 'react';
 import { Linking, Pressable, Text, View } from 'react-native';
 
-import { ActionButton } from '../components/ActionButton';
 import { Screen } from '../components/Screen';
 import { SectionCard } from '../components/SectionCard';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemedStyles } from '../theme/useThemedStyles';
-import { shareWidgetBrochure } from '../utils/widgetBrochure';
 
 const LEGAL_BASE = 'https://alzidan.org/pages';
 
@@ -35,17 +32,6 @@ function openUrl(url: string) {
 export function AboutScreen() {
   const styles = useThemedStyles(aboutStyles);
   const appVersion = Constants.expoConfig?.version ?? '1.0.0';
-  const [sharingWidget, setSharingWidget] = useState(false);
-
-  async function onShareWidgetGuide() {
-    if (sharingWidget) return;
-    setSharingWidget(true);
-    try {
-      await shareWidgetBrochure();
-    } finally {
-      setSharingWidget(false);
-    }
-  }
 
   return (
     <Screen title="عن المشروع" description="تطبيق جوال مستقل لمشروع عائلة الزيدان.">
@@ -54,33 +40,6 @@ export function AboutScreen() {
           يهدف التطبيق إلى تقديم شجرة العائلة ومناسباتها في تجربة عربية واضحة ومريحة على
           الجوال، مع فصل المحتوى العام عن أدوات الإدارة المستقبلية.
         </Text>
-      </SectionCard>
-
-      <SectionCard eyebrow="الودجت" title="ودجت أهلنا على شاشتك">
-        <Text style={styles.paragraph}>
-          أخبار العائلة ومن معنا الآن وأوقات الصلاة حسب موقعك — على الشاشة الرئيسية أو شاشة القفل.
-        </Text>
-        <View style={styles.list}>
-          {[
-            'ثبّت التطبيق من App Store وافتحه مرة من «ملفي».',
-            'اضغط مطولاً على الشاشة الرئيسية حتى تهتز الأيقونات.',
-            'اضغط + ثم ابحث: عائلة الزيدان.',
-            'اختر صغير أو متوسط أو كبير، ثم أضف الودجت.',
-          ].map((step) => (
-            <View key={step} style={styles.listItem}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.listText}>{step}</Text>
-            </View>
-          ))}
-        </View>
-        <View style={styles.shareWrap}>
-          <ActionButton
-            label={sharingWidget ? 'جاري التحضير…' : 'شارك الدليل في واتساب'}
-            onPress={() => {
-              void onShareWidgetGuide();
-            }}
-          />
-        </View>
       </SectionCard>
 
       <SectionCard eyebrow="المبادئ" title="ما الذي نهتم به؟">
@@ -202,9 +161,6 @@ function aboutStyles(p: ThemePalette) {
     fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
-  },
-  shareWrap: {
-    marginTop: spacing.md,
   },
   version: {
     backgroundColor: p.primarySoft,

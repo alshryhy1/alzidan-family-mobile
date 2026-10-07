@@ -41,7 +41,6 @@ import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '
 import { fetchWomenManagerSession } from '../services/womenManager';
 import { fetchFamilyAdminSession } from '../services/familyAdmin';
 import { fetchDelegateInboxSession } from '../services/delegateInbox';
-import { shareWidgetBrochure } from '../utils/widgetBrochure';
 
 type ProfileScreenProps = {
   branches: Branch[];
@@ -820,19 +819,6 @@ export function ProfileScreen({
           />
         </SceneSection>
       ) : null}
-
-      <SceneSection title="ودجت الشاشة">
-        <Text style={styles.note}>
-          أضف ودجت «عائلة الزيدان» للشاشة الرئيسية أو شاشة القفل: مناسبات العائلة، من معنا الآن، والصلاة حسب موقعك. شارك الدليل مع الأهل في القروب.
-        </Text>
-        <ActionButton
-          label="شارك دليل الودجت في واتساب"
-          onPress={() => {
-            void shareWidgetBrochure();
-          }}
-          variant="secondary"
-        />
-      </SceneSection>
 
       {member && !womenManagerEnabled ? (
         <SceneSection title="وصلك من العائلة">
