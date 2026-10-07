@@ -1,0 +1,305 @@
+From 61f902704aef605075cdee7c7a2cc205c30ebccb Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 7 Oct 2026 06:58:10 +0000
+Subject: [PATCH] =?UTF-8?q?fix(web):=20=D8=B1=D8=AC=D9=88=D8=B9=20=D8=A7?=
+ =?UTF-8?q?=D9=84=D8=A3=D9=82=D8=B3=D8=A7=D9=85=20=D9=81=D9=8A=20=D9=84?=
+ =?UTF-8?q?=D9=88=D8=AD=D8=A9=20=D8=A7=D9=84=D8=A5=D8=AF=D8=A7=D8=B1=D8=A9?=
+ =?UTF-8?q?=20=D8=B9=D9=84=D9=89=20=D9=85=D8=AA=D8=B5=D9=81=D8=AD=20=D8=A7?=
+ =?UTF-8?q?=D9=84=D8=AC=D9=88=D8=A7=D9=84?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+زر الأقسام كان يفتح درجاً مقصوصاً بـ overflow على .page، وreplaceState يمنع زر الرجوع — الآن يرجع للوحة التحكم، والدرج يُستضاف على body، والتنقل يضيف تاريخاً للمتصفح.
+---
+ assets/css/admin-mobile.css                 | 11 +++-
+ assets/css/admin-shell.css                  | 17 +++++-
+ assets/js/admin-shell.js                    | 60 +++++++++++++++++++-
+ pages/admin.html                            |  6 +-
+ scripts/test-admin-shell-mobile-sections.js | 62 +++++++++++++++++++++
+ 5 files changed, 147 insertions(+), 9 deletions(-)
+ create mode 100644 scripts/test-admin-shell-mobile-sections.js
+
+diff --git a/assets/css/admin-mobile.css b/assets/css/admin-mobile.css
+index 54e3f69..2d3c9dc 100644
+--- a/assets/css/admin-mobile.css
++++ b/assets/css/admin-mobile.css
+@@ -9,12 +9,19 @@
+     overflow-x: hidden !important;
+   }
+ 
+-  body.admin-shell-ready.admin-authenticated,
+-  body.admin-shell-ready.admin-authenticated .page {
++  body.admin-shell-ready.admin-authenticated {
+     max-width: 100vw !important;
+     overflow-x: hidden !important;
+   }
+ 
++  /* Do NOT overflow-x:hidden on .page — it clipped the fixed «الأقسام» drawer
++     (sidebar was a .page descendant). Drawer is hosted on body when narrow; keep
++     page from creating a second clipping box. */
++  body.admin-shell-ready.admin-authenticated .page {
++    max-width: 100vw !important;
++    overflow-x: visible !important;
++  }
++
+   .page {
+     padding: 10px 10px 28px !important;
+     max-width: 100% !important;
+diff --git a/assets/css/admin-shell.css b/assets/css/admin-shell.css
+index c34a53d..4619f29 100644
+--- a/assets/css/admin-shell.css
++++ b/assets/css/admin-shell.css
+@@ -272,11 +272,22 @@ body.admin-shell-ready.admin-authenticated #admin-module-delegates:not(.admin-mo
+   }
+   body.admin-shell-ready.admin-authenticated #admin-shell-sidebar {
+     position: fixed;
+-    z-index: 40;
++    z-index: 120;
+     inset: 0 auto 0 0;
+     width: min(86vw, 280px);
+     transform: translateX(-105%);
+     transition: transform 0.2s ease;
++    /* Survives when hosted on body (mobile) or inside .page */
++    display: flex;
++    flex-direction: column;
++    gap: 8px;
++    padding: 18px 14px 24px;
++    height: 100vh;
++    height: 100dvh;
++    overflow: auto;
++    background: linear-gradient(165deg, var(--admin-shell-bg), var(--admin-shell-bg-2));
++    color: #f5faf7;
++    -webkit-overflow-scrolling: touch;
+   }
+   html[dir="rtl"] body.admin-shell-ready.admin-authenticated #admin-shell-sidebar {
+     inset: 0 0 0 auto;
+@@ -295,7 +306,7 @@ body.admin-shell-ready.admin-authenticated #admin-module-delegates:not(.admin-mo
+     display: block;
+     position: fixed;
+     inset: 0;
+-    z-index: 35;
++    z-index: 110;
+     border: 0;
+     margin: 0;
+     padding: 0;
+@@ -391,7 +402,7 @@ body.admin-shell-ready.admin-authenticated .page > footer {
+     padding: 0;
+     width: 100%;
+     max-width: 100vw;
+-    overflow-x: hidden;
++    overflow-x: visible;
+   }
+ 
+   body.admin-shell-ready.admin-authenticated .page > header {
+diff --git a/assets/js/admin-shell.js b/assets/js/admin-shell.js
+index bca187e..71bf2f0 100644
+--- a/assets/js/admin-shell.js
++++ b/assets/js/admin-shell.js
+@@ -237,8 +237,17 @@
+         toggle.className = "btn btn-outline btn-sm admin-shell-mobile-toggle";
+         toggle.setAttribute("aria-expanded", "false");
+         toggle.setAttribute("aria-controls", "admin-shell-sidebar");
++        toggle.setAttribute("aria-label", "الأقسام — العودة للوحة التحكم أو فتح القائمة");
+         toggle.textContent = "الأقسام";
+         toggle.addEventListener("click", () => {
++          const narrow = window.matchMedia("(max-width: 900px)").matches;
++          const drawerOpen = document.body.classList.contains("admin-shell-nav-open");
++          // On phones: first tap from a module returns to hub (sections).
++          // Drawer alone was clipped by overflow:hidden on .page — users got stuck.
++          if (narrow && currentModule !== "hub" && !drawerOpen) {
++            navigate("hub");
++            return;
++          }
+           const open = document.body.classList.toggle("admin-shell-nav-open");
+           toggle.setAttribute("aria-expanded", open ? "true" : "false");
+         });
+@@ -281,9 +290,39 @@
+ 
+     ensureHubPanel();
+     ensureDelegatesHost();
++    placeShellChrome();
+     shellBuilt = true;
+   }
+ 
++  /**
++   * On ≤900px the sections drawer is position:fixed inside .page, but admin-mobile
++   * sets overflow-x:hidden on .page — WebKit clips the drawer so «الأقسام» appears dead.
++   * Host the drawer on document.body while narrow; restore into the page grid on desktop.
++   */
++  function placeShellChrome() {
++    const aside = document.getElementById("admin-shell-sidebar");
++    const page = document.querySelector(".page");
++    if (!aside || !page) return;
++    const narrow = window.matchMedia("(max-width: 900px)").matches;
++    if (narrow) {
++      if (aside.parentElement !== document.body) {
++        document.body.appendChild(aside);
++      }
++      return;
++    }
++    if (aside.parentElement === page) return;
++    const login = document.getElementById("admin-login-section");
++    const header = page.querySelector("header");
++    const anchor = login || header;
++    if (anchor && anchor.nextSibling) {
++      page.insertBefore(aside, anchor.nextSibling);
++    } else if (anchor) {
++      anchor.insertAdjacentElement("afterend", aside);
++    } else {
++      page.insertBefore(aside, page.firstChild);
++    }
++  }
++
+   function ensureHubPanel() {
+     if (document.getElementById("admin-module-hub")) return;
+     const host =
+@@ -460,17 +499,27 @@
+   function navigate(moduleId, opts) {
+     const id = String(moduleId || "hub").trim();
+     if (!MODULES.some((m) => m.id === id)) return;
++    const prevModule = currentModule;
+     currentModule = id;
+     storeModule(id);
+     if (!(opts && opts.skipHash)) {
+       try {
+         const url = new URL(window.location.href);
+         const params = new URLSearchParams(String(url.hash || "").replace(/^#/, ""));
++        const prevHashModule = String(params.get("module") || "").trim();
+         params.set("module", id);
+         if (opts && opts.request) params.set("request", String(opts.request));
+         else if (id !== "requests") params.delete("request");
+         url.hash = params.toString();
+-        history.replaceState(null, "", url.pathname + url.search + url.hash);
++        const next = url.pathname + url.search + url.hash;
++        // pushState so mobile browser «رجوع» can leave a module back to الأقسام/hub
++        if (opts && opts.replace) {
++          history.replaceState(null, "", next);
++        } else if (prevHashModule !== id || prevModule !== id) {
++          history.pushState(null, "", next);
++        } else {
++          history.replaceState(null, "", next);
++        }
+       } catch (_) {}
+     }
+     applyVisibility();
+@@ -529,6 +578,7 @@
+     buildSidebar();
+     currentModule = moduleFromHash() || readStoredModule() || "hub";
+     syncFromAuth();
++    placeShellChrome();
+ 
+     lastSeenBodyClass = String(document.body.className || "");
+     bodyClassObserver = new MutationObserver(() => {
+@@ -550,6 +600,13 @@
+       const id = moduleFromHash();
+       if (id) navigate(id, { skipHash: true });
+     });
++    window.addEventListener("popstate", () => {
++      const id = moduleFromHash() || "hub";
++      navigate(id, { skipHash: true });
++    });
++    window.addEventListener("resize", () => {
++      placeShellChrome();
++    });
+ 
+     // Quality center is injected late — retag when it appears
+     const protectedHost = document.getElementById("admin-protected-sections");
+@@ -567,6 +624,7 @@
+       navigate,
+       getCurrent: () => currentModule,
+       refresh: applyVisibility,
++      placeShellChrome,
+     };
+   }
+ 
+diff --git a/pages/admin.html b/pages/admin.html
+index 4b8f6f0..00f0ea7 100644
+--- a/pages/admin.html
++++ b/pages/admin.html
+@@ -1,5 +1,5 @@
+-<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8" /><title>لوحة إدارة عائلة الزيدان</title><meta name="viewport" content="width=device-width, initial-scale=1" /><link rel="stylesheet" href="../assets/css/admin.css?v=20261002mob1" /><link rel="stylesheet" href="../assets/css/family-management.css?v=20260820ident1" /><link rel="stylesheet" href="../assets/css/phone-intl.css?v=20260814phone4" /><link rel="stylesheet" href="../assets/css/admin-shell.css?v=20261002mob1" /><link rel="stylesheet" href="../assets/css/admin-workflow-panel.css?v=20260808wf1" /><link rel="stylesheet" href="../assets/css/admin-sql-workspace.css?v=20260829wm5" />
+-<link rel="stylesheet" href="../assets/css/admin-mobile.css?v=20261002mob1" /></head><body><div class="page"><header><div class="brand"><div class="logo"></div><div><div class="brand-text-main">لوحة الإدارة</div><div class="brand-text-sub">مراكز مستقلة · طلبات · شجرة · صحة البيانات</div></div></div><nav><a href="index.html">الصفحة الرئيسية</a> <a class="admin-inpage-nav" href="#admin-memory-section">من الذاكرة</a> <a class="admin-inpage-nav" href="#health-center-section">صحة البيانات</a> <a class="admin-inpage-nav" href="#admin-name-errors-section">أخطاء الأسماء <span id="admin-name-errors-badge" class="admin-nav-badge" hidden></span></a> <a class="admin-inpage-nav" href="#polls-manager">التصويت</a></nav></header><section id="admin-login-section" class="section"><div class="section-header"><div id="admin-login-title" class="section-title">تسجيل دخول الإدارة</div></div><div class="card"><div id="alert" class="alert"></div><div id="admin-login-controls" class="grid" style="margin-bottom: 12px;"><div id="admin-login-fields" style="display: contents;"><div class="field"><label for="admin-username">اسم المستخدم</label><input id="admin-username" type="text" placeholder="مثال: alshryhy" autocomplete="username" /></div><div class="field"><label for="admin-password">كلمة المرور</label><input id="admin-password" type="password" placeholder="••••••••" autocomplete="current-password" /></div></div><div class="field"><label>&nbsp;</label><div id="admin-action-buttons" style="display: flex; gap: 10px; flex-wrap: wrap;"><button id="admin-login" class="btn btn-primary" type="button">دخول</button><button id="admin-logout" class="btn btn-outline" type="button">تسجيل خروج</button><button id="admin-refresh" class="btn btn-outline" type="button">تحديث</button><button id="admin-enable-notifs" class="btn btn-outline" type="button">تفعيل إشعارات الطلبات</button><button id="admin-forgot" class="btn btn-outline" type="button">نسيت كلمة المرور</button></div><div id="admin-current-user" class="hint" style="margin-top:10px;"></div></div></div><div class="hint" style="margin: 0 0 12px;">الدخول يتم حسب جدول الإدارة في القاعدة. لا يوجد إنشاء حساب من هذه الصفحة.</div><div id="admin-locked-hint" class="hint" style="margin: 0 0 10px;">الأقسام الإدارية مخفية حتى يتم تسجيل الدخول.</div></div></section><div id="admin-protected-sections" style="display:none;"><section id="admin-requests-section" class="section" data-admin-module="requests"><div class="section-header"><div id="admin-requests-title" class="section-title">طلبات الإدارة</div></div><div class="card"><div id="requests-inline-summary" class="hint" style="margin: 0 0 12px; line-height: 1.8;"></div><div class="grid" style="margin-bottom: 10px;"><div class="field"><label for="filter-kind">نوع الطلب</label><select id="filter-kind"><option value="all">الكل</option><option value="org_role">صندوق/جمعية</option><option value="tree_delegate">مندوب الشجرة</option><option value="events_delegate">مندوب المناسبات</option><option value="delegate_secret_reset">إعادة تعيين الرقم السري</option><option value="member_registration">تسجيل عضو</option><option value="member_phone_register">تسجيل جوال عضو</option><option value="event_card">بطاقة مناسبة</option><option value="family_event">مناسبة عائلية</option><option value="event_request">طلب مناسبة</option><option value="tree_card">بطاقة الشجرة</option><option value="tree_edit">تصحيح بيانات</option></select></div><div class="field"><label for="filter-status">الحالة</label><select id="filter-status"><option value="pending">بانتظار الإجراء</option><option value="approved">تم القبول</option><option value="rejected">تم الرفض</option><option value="all">كل الطلبات</option></select></div></div><div id="requests-toolbar" class="requests-toolbar"><div class="field requests-search-field"><label for="request-search">بحث سريع</label><input id="request-search" type="search" placeholder="رقم الطلب / الاسم / الجوال / البريد / الفرع" /></div><div class="field requests-page-size-field"><label for="requests-page-size">لكل صفحة</label><select id="requests-page-size"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></div><div class="requests-pager" aria-label="ترقيم صفحات الطلبات"><button id="requests-prev-page" class="btn btn-outline btn-sm" type="button">‹</button><span id="requests-page-info" class="hint"></span><button id="requests-next-page" class="btn btn-outline btn-sm" type="button">›</button></div></div><div class="table-wrap" aria-label="جدول الطلبات"><table><thead><tr><th>رقم الطلب</th><th>النوع</th><th>الفرع</th><th>الاسم</th><th>الجوال</th><th>البريد</th><th>الحالة</th><th>التاريخ</th><th>البيانات</th><th>إجراء</th></tr></thead><tbody id="requests-body"></tbody></table></div><div id="sb-status" class="hint" style="margin-top: 10px;"></div></div></section><section id="admin-memory-section" class="section" data-admin-module="memories"><div class="section-header"><div><div class="section-title">من الذاكرة — طلبات الذكريات</div><div class="hint">مراجعة الذكريات المرسلة من الموقع العام، المناديب، أو التطبيق.</div></div></div><div class="card"><div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; align-items:end;"><button id="admin-memory-refresh" class="btn btn-outline btn-sm" type="button">تحديث الذكريات</button><button id="admin-memory-bridge-delegates" class="btn btn-primary btn-sm" type="button">إرسال المعلّقة للمناديب</button><a class="btn btn-outline btn-sm" href="memory/admin.html">إدارة الذكريات الكاملة</a><div class="field" style="min-width:140px; margin:0;"><label for="admin-memory-filter-status">الحالة</label><select id="admin-memory-filter-status"><option value="pending" selected>انتظار</option><option value="approved">معتمد</option><option value="rejected">مرفوض</option><option value="all">الكل</option></select></div></div><div id="admin-memory-summary" class="hint" style="margin-bottom:10px;"></div><div class="table-wrap" aria-label="جدول طلبات الذكريات"><table><thead><tr><th>#</th><th>الفرع</th><th>الشخص</th><th>العنوان</th><th>النوع</th><th>المصدر</th><th style="display:none"></th><th>التاريخ</th><th>الوسائط</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="admin-memory-body"><tr><td colspan="11" class="hint">سجّل الدخول ثم اضغط تحديث الذكريات.</td></tr></tbody></table></div><div id="admin-memory-status" class="hint" style="margin-top:10px;"></div></div></section><section id="views-stats-section" class="section protected-section admin-only-section" data-admin-module="stats"><div class="section-header"><div><div class="section-title">إحصاءات الزيارات</div><div class="hint">إجمالي الزيارات مع تفصيل: الموقع، الذاكرة (ويب)، والتطبيق.</div></div></div><div class="card"><div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;"><button id="refresh-views-stats" class="btn btn-outline btn-sm" type="button">تحديث الإحصاءات</button></div><div id="views-stats" class="hint views-stats-block" style="white-space: pre-line; line-height: 1.65;"></div></div></section><section  id="requests-stats-section" class="section protected-section admin-only-section" data-admin-module="requests"><div class="section-header"><div class="section-title">إحصاء الطلبات</div></div><div class="card"><div class="hint" style="margin: 0 0 10px;">يعرض هذا القسم ملخصاً سريعاً لأعداد الطلبات حسب النوع والحالة.</div><div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;"><button id="refresh-requests-stats" class="btn btn-outline btn-sm" type="button">تحديث الإحصاء</button></div><div id="requests-stats" class="requests-stats-box"></div></div></section><section id="marriage-stats-section" class="section protected-section admin-only-section" data-admin-module="stats"><div class="section-header"><div class="section-title">إحصائيات المصاهرة</div></div><div class="card"><div class="hint" style="margin:0 0 10px;">ملخص المصاهرة اعتماداً على الزوجات المسجلة وروابط الأبناء بالأمهات.</div><div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;"><button id="refresh-marriage-stats" class="btn btn-outline btn-sm" type="button">تحديث إحصائيات المصاهرة</button></div><div id="marriage-stats" class="requests-stats-box"></div></div></section>
++<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8" /><title>لوحة إدارة عائلة الزيدان</title><meta name="viewport" content="width=device-width, initial-scale=1" /><link rel="stylesheet" href="../assets/css/admin.css?v=20261002mob1" /><link rel="stylesheet" href="../assets/css/family-management.css?v=20260820ident1" /><link rel="stylesheet" href="../assets/css/phone-intl.css?v=20260814phone4" /><link rel="stylesheet" href="../assets/css/admin-shell.css?v=20261007sec1" /><link rel="stylesheet" href="../assets/css/admin-workflow-panel.css?v=20260808wf1" /><link rel="stylesheet" href="../assets/css/admin-sql-workspace.css?v=20260829wm5" />
++<link rel="stylesheet" href="../assets/css/admin-mobile.css?v=20261007sec1" /></head><body><div class="page"><header><div class="brand"><div class="logo"></div><div><div class="brand-text-main">لوحة الإدارة</div><div class="brand-text-sub">مراكز مستقلة · طلبات · شجرة · صحة البيانات</div></div></div><nav><a href="index.html">الصفحة الرئيسية</a> <a class="admin-inpage-nav" href="#admin-memory-section">من الذاكرة</a> <a class="admin-inpage-nav" href="#health-center-section">صحة البيانات</a> <a class="admin-inpage-nav" href="#admin-name-errors-section">أخطاء الأسماء <span id="admin-name-errors-badge" class="admin-nav-badge" hidden></span></a> <a class="admin-inpage-nav" href="#polls-manager">التصويت</a></nav></header><section id="admin-login-section" class="section"><div class="section-header"><div id="admin-login-title" class="section-title">تسجيل دخول الإدارة</div></div><div class="card"><div id="alert" class="alert"></div><div id="admin-login-controls" class="grid" style="margin-bottom: 12px;"><div id="admin-login-fields" style="display: contents;"><div class="field"><label for="admin-username">اسم المستخدم</label><input id="admin-username" type="text" placeholder="مثال: alshryhy" autocomplete="username" /></div><div class="field"><label for="admin-password">كلمة المرور</label><input id="admin-password" type="password" placeholder="••••••••" autocomplete="current-password" /></div></div><div class="field"><label>&nbsp;</label><div id="admin-action-buttons" style="display: flex; gap: 10px; flex-wrap: wrap;"><button id="admin-login" class="btn btn-primary" type="button">دخول</button><button id="admin-logout" class="btn btn-outline" type="button">تسجيل خروج</button><button id="admin-refresh" class="btn btn-outline" type="button">تحديث</button><button id="admin-enable-notifs" class="btn btn-outline" type="button">تفعيل إشعارات الطلبات</button><button id="admin-forgot" class="btn btn-outline" type="button">نسيت كلمة المرور</button></div><div id="admin-current-user" class="hint" style="margin-top:10px;"></div></div></div><div class="hint" style="margin: 0 0 12px;">الدخول يتم حسب جدول الإدارة في القاعدة. لا يوجد إنشاء حساب من هذه الصفحة.</div><div id="admin-locked-hint" class="hint" style="margin: 0 0 10px;">الأقسام الإدارية مخفية حتى يتم تسجيل الدخول.</div></div></section><div id="admin-protected-sections" style="display:none;"><section id="admin-requests-section" class="section" data-admin-module="requests"><div class="section-header"><div id="admin-requests-title" class="section-title">طلبات الإدارة</div></div><div class="card"><div id="requests-inline-summary" class="hint" style="margin: 0 0 12px; line-height: 1.8;"></div><div class="grid" style="margin-bottom: 10px;"><div class="field"><label for="filter-kind">نوع الطلب</label><select id="filter-kind"><option value="all">الكل</option><option value="org_role">صندوق/جمعية</option><option value="tree_delegate">مندوب الشجرة</option><option value="events_delegate">مندوب المناسبات</option><option value="delegate_secret_reset">إعادة تعيين الرقم السري</option><option value="member_registration">تسجيل عضو</option><option value="member_phone_register">تسجيل جوال عضو</option><option value="event_card">بطاقة مناسبة</option><option value="family_event">مناسبة عائلية</option><option value="event_request">طلب مناسبة</option><option value="tree_card">بطاقة الشجرة</option><option value="tree_edit">تصحيح بيانات</option></select></div><div class="field"><label for="filter-status">الحالة</label><select id="filter-status"><option value="pending">بانتظار الإجراء</option><option value="approved">تم القبول</option><option value="rejected">تم الرفض</option><option value="all">كل الطلبات</option></select></div></div><div id="requests-toolbar" class="requests-toolbar"><div class="field requests-search-field"><label for="request-search">بحث سريع</label><input id="request-search" type="search" placeholder="رقم الطلب / الاسم / الجوال / البريد / الفرع" /></div><div class="field requests-page-size-field"><label for="requests-page-size">لكل صفحة</label><select id="requests-page-size"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></div><div class="requests-pager" aria-label="ترقيم صفحات الطلبات"><button id="requests-prev-page" class="btn btn-outline btn-sm" type="button">‹</button><span id="requests-page-info" class="hint"></span><button id="requests-next-page" class="btn btn-outline btn-sm" type="button">›</button></div></div><div class="table-wrap" aria-label="جدول الطلبات"><table><thead><tr><th>رقم الطلب</th><th>النوع</th><th>الفرع</th><th>الاسم</th><th>الجوال</th><th>البريد</th><th>الحالة</th><th>التاريخ</th><th>البيانات</th><th>إجراء</th></tr></thead><tbody id="requests-body"></tbody></table></div><div id="sb-status" class="hint" style="margin-top: 10px;"></div></div></section><section id="admin-memory-section" class="section" data-admin-module="memories"><div class="section-header"><div><div class="section-title">من الذاكرة — طلبات الذكريات</div><div class="hint">مراجعة الذكريات المرسلة من الموقع العام، المناديب، أو التطبيق.</div></div></div><div class="card"><div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; align-items:end;"><button id="admin-memory-refresh" class="btn btn-outline btn-sm" type="button">تحديث الذكريات</button><button id="admin-memory-bridge-delegates" class="btn btn-primary btn-sm" type="button">إرسال المعلّقة للمناديب</button><a class="btn btn-outline btn-sm" href="memory/admin.html">إدارة الذكريات الكاملة</a><div class="field" style="min-width:140px; margin:0;"><label for="admin-memory-filter-status">الحالة</label><select id="admin-memory-filter-status"><option value="pending" selected>انتظار</option><option value="approved">معتمد</option><option value="rejected">مرفوض</option><option value="all">الكل</option></select></div></div><div id="admin-memory-summary" class="hint" style="margin-bottom:10px;"></div><div class="table-wrap" aria-label="جدول طلبات الذكريات"><table><thead><tr><th>#</th><th>الفرع</th><th>الشخص</th><th>العنوان</th><th>النوع</th><th>المصدر</th><th style="display:none"></th><th>التاريخ</th><th>الوسائط</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="admin-memory-body"><tr><td colspan="11" class="hint">سجّل الدخول ثم اضغط تحديث الذكريات.</td></tr></tbody></table></div><div id="admin-memory-status" class="hint" style="margin-top:10px;"></div></div></section><section id="views-stats-section" class="section protected-section admin-only-section" data-admin-module="stats"><div class="section-header"><div><div class="section-title">إحصاءات الزيارات</div><div class="hint">إجمالي الزيارات مع تفصيل: الموقع، الذاكرة (ويب)، والتطبيق.</div></div></div><div class="card"><div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;"><button id="refresh-views-stats" class="btn btn-outline btn-sm" type="button">تحديث الإحصاءات</button></div><div id="views-stats" class="hint views-stats-block" style="white-space: pre-line; line-height: 1.65;"></div></div></section><section  id="requests-stats-section" class="section protected-section admin-only-section" data-admin-module="requests"><div class="section-header"><div class="section-title">إحصاء الطلبات</div></div><div class="card"><div class="hint" style="margin: 0 0 10px;">يعرض هذا القسم ملخصاً سريعاً لأعداد الطلبات حسب النوع والحالة.</div><div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;"><button id="refresh-requests-stats" class="btn btn-outline btn-sm" type="button">تحديث الإحصاء</button></div><div id="requests-stats" class="requests-stats-box"></div></div></section><section id="marriage-stats-section" class="section protected-section admin-only-section" data-admin-module="stats"><div class="section-header"><div class="section-title">إحصائيات المصاهرة</div></div><div class="card"><div class="hint" style="margin:0 0 10px;">ملخص المصاهرة اعتماداً على الزوجات المسجلة وروابط الأبناء بالأمهات.</div><div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;"><button id="refresh-marriage-stats" class="btn btn-outline btn-sm" type="button">تحديث إحصائيات المصاهرة</button></div><div id="marriage-stats" class="requests-stats-box"></div></div></section>
+ <section id="health-center-section" class="section admin-only-section" data-admin-module="health">
+   <div class="section-header">
+     <div>
+@@ -655,5 +655,5 @@
+   </div>
+ </section>
+ <footer>شجرة عائلة الزيدان — صفحة إدارة</footer></div><dialog id="tree-card-edit-dialog"><form id="tree-card-edit-form" class="edit-dialog-body" method="post" action="#"><div class="section-title" style="font-size: 19px; margin-bottom: 6px;">تصحيح بطاقة الشجرة</div><div class="hint" style="margin-bottom: 14px;">القسم الأول للمراجعة فقط. القسم الثاني لتصحيح الإدارة — الأب المختار من الشجرة هو المرجع عند الحفظ.</div><section class="tce-section tce-original-section"><div class="tce-section-title">1) الطلب الأصلي (للمراجعة فقط)</div><div id="edit-card-original-review" class="tce-original-review"></div></section><section class="tce-section tce-correction-section"><div class="tce-section-title">2) تصحيح الإدارة</div><div class="grid"><div class="field"><label for="edit-card-branch">الفرع</label><select id="edit-card-branch" name="branch" required><option value="زيدان">زيدان</option><option value="مزيد">مزيد</option><option value="زايد">زايد</option><option value="لاحم">لاحم</option><option value="ملحم">ملحم</option></select></div><div class="field"><label for="edit-card-person-name">اسم الشخص المضاف</label><input id="edit-card-person-name" name="personName" type="text" required autocomplete="off" /></div><div class="field" style="grid-column: 1 / -1;"><label>الأب</label><div id="edit-card-father-current" class="tce-father-current hint">الأب الحالي: —</div><div class="tce-father-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;"><button type="button" class="btn btn-outline btn-sm" id="edit-card-father-change">تغيير الأب</button><button type="button" class="btn btn-outline btn-sm" id="edit-card-father-clear" style="display:none;">مسح الاختيار</button></div><div class="fm-search-wrap" id="edit-card-father-search-wrap" style="display:none;"><input id="edit-card-father-search" name="fatherSearch" type="search" placeholder="ابحث عن الأب بالاسم…" autocomplete="off" /><div id="edit-card-father-results" class="fm-search-results" role="listbox"></div></div><input type="hidden" id="edit-card-father-path" name="fatherPath" value="" /><input type="hidden" id="edit-card-father-person-id" name="fatherPersonId" value="" /><input type="hidden" id="edit-card-father-label" name="fatherLabel" value="" /></div><div class="field"><label for="edit-card-gf1">الجد 1</label><input id="edit-card-gf1" name="grandfather1" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf2">الجد 2</label><input id="edit-card-gf2" name="grandfather2" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf3">الجد 3</label><input id="edit-card-gf3" name="grandfather3" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf4">الجد 4</label><input id="edit-card-gf4" name="grandfather4" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-dob">تاريخ الميلاد</label><input id="edit-card-dob" name="birthDate" type="date" /></div><div class="field"><label for="edit-card-city">المدينة</label><input id="edit-card-city" name="city" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-area">الحي/القرية</label><input id="edit-card-area" name="area" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-submitter-name">اسم المرسل</label><input id="edit-card-submitter-name" name="submitterName" required /></div><div class="field"><label for="edit-card-submitter-phone">رقم الجوال</label><input id="edit-card-submitter-phone" name="submitterPhone" type="tel" required /></div><div class="field"><label for="edit-card-submitter-email">البريد الإلكتروني</label><input id="edit-card-submitter-email" name="submitterEmail" type="email" /></div></div></section><div id="tree-card-edit-error" class="alert alert-error" style="margin-top: 14px;"></div><div class="edit-dialog-actions"><button class="btn btn-primary" type="submit">حفظ التصحيح</button><button id="tree-card-edit-cancel" class="btn btn-outline" type="button">إلغاء</button></div></form></dialog><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4"></script><script src="../assets/js/config.js?v=20260829td1"></script><script src="../assets/js/modules/core.js?v=20260827mpr3"></script><script src="../assets/js/admin-auth.js?v=20260810p3"></script><script src="../assets/js/modules/canonical-person.js?v=20260807p3"></script><script src="../assets/js/modules/family-management/family-person-core.js?v=20261003srch1"></script><script src="../assets/js/modules/family-management/family-spouses-section.js?v=20260827rashid1"></script><script src="../assets/js/modules/phone-intl.js?v=20260814phone3"></script><script src="../assets/js/modules/family-management/family-children-section.js?v=20260829fa1"></script><script src="../assets/js/modules/family-management/family-add-sheet.js?v=20260820warn1"></script><script src="../assets/js/modules/family-management/family-management-panel.js?v=20261003srch1"></script><script src="../assets/js/modules/family-management/index.js?v=202608100033"></script><script src="../assets/js/admin-family-mgmt.js?v=20261003srch1"></script><script src="../assets/js/modules/events/event-types.js?v=20260828news1"></script><script src="../assets/js/modules/events/event-media.js?v=20260810novid2"></script><script src="../assets/js/modules/events/event-parser.js?v=20260828news1"></script><script src="../assets/js/modules/events/event-visibility.js?v=20260828birth1"></script><script src="../assets/js/modules/events/event-builder.js?v=20260828phone1"></script><script src="../assets/js/modules/events/index.js?v=2026071117"></script><script src="../assets/js/modules/date-engine.js?v=20260808de"></script>
+-<script src="../assets/js/modules/admin-polls.js?v=20260808de"></script><script src="../assets/js/admin-polls.js?v=20260808de"></script><script src="../assets/js/modules/integrity-tree003-v2.js?v=20261003batch3"></script><script src="../assets/js/modules/tree-engine.js?v=20260809uuid1"></script><script src="../assets/js/modules/integrity-request-journey.js?v=20260809hc9"></script><script src="../assets/js/modules/integrity-tree-structure-audit.js?v=20261003batch5"></script><script src="../assets/js/modules/integrity-repair-pipeline.js?v=20261003batch2"></script><script src="../assets/js/admin.js?v=20261003batch3"></script><script src="../assets/js/tree-lineage.js?v=2026071319"></script><script src="../assets/js/admin-batch-tree.js?v=20261003batch1"></script><script src="../assets/js/modules/import-export.js"></script><script src="../assets/js/admin-import.js"></script><script src="../assets/js/delegate-audit.js"></script><script src="../assets/js/admin-requests-stats.js?v=20260810p3"></script><script src="../assets/js/modules/tree-card-contract.js?v=20260815tc1"></script><script src="../assets/js/modules/tree-correction-legacy-recovery.js?v=20260815rc4"></script><script src="../assets/js/modules/tree-correction-contract.js?v=20260827mpr3"></script><script src="../assets/js/modules/tree-correction-reorder.js?v=20260819ord4"></script><script src="../assets/js/modules/tree-correction-person.js?v=20260820ident1"></script><script src="../assets/js/modules/member-phone-register.js?v=20260827mpr3"></script><script src="../assets/js/modules/request-actions.js?v=20260828phone1"></script><script src="../assets/js/admin-request-actions.js?v=20260810novid2"></script><script src="../assets/js/modules/safe-request-notify.js?v=20260829wm1"></script><script src="../assets/js/modules/user-facing-request-messages.js?v=20260827mpr3"></script><script src="../assets/js/modules/requests.js?v=20260828news1"></script><script src="../assets/js/admin-requests.js?v=20260816bp1"></script><script src="../assets/js/admin-bulk-name-audit.js?v=20260809hc5"></script><script src="../assets/js/modules/views.js?v=20260826pulse1"></script><script src="../assets/js/admin-views.js"></script><script src="../assets/js/modules/marriage-stats.js?v=20260810p3"></script><script src="../assets/js/admin-marriage-stats.js"></script><script src="../assets/js/memory/source-label.js?v=2026071216"></script><script src="../assets/js/modules/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/modules/spouses-core.js?v=20260818kin9"></script><script src="../assets/js/admin-ui.js?v=1782729862"></script><script src="../assets/js/modules/admin-delegates-v2.js?v=20260820audit1"></script><script src="../assets/js/modules/admin-sql-presets.js?v=20261003edit1"></script><script src="../assets/js/admin-device-trust.js?v=20260829td4"></script><script src="../assets/js/admin-family-admin-grant.js?v=20260830del1"></script><script src="../assets/js/modules/admin-sql-workspace.js?v=20260829wm5"></script><script src="../assets/js/modules/admin-workflow-panel.js?v=20260814notify1"></script><script src="../assets/js/admin-shell.js?v=20261002mob1"></script><script src="../assets/js/admin-quality.js"></script>
++<script src="../assets/js/modules/admin-polls.js?v=20260808de"></script><script src="../assets/js/admin-polls.js?v=20260808de"></script><script src="../assets/js/modules/integrity-tree003-v2.js?v=20261003batch3"></script><script src="../assets/js/modules/tree-engine.js?v=20260809uuid1"></script><script src="../assets/js/modules/integrity-request-journey.js?v=20260809hc9"></script><script src="../assets/js/modules/integrity-tree-structure-audit.js?v=20261003batch5"></script><script src="../assets/js/modules/integrity-repair-pipeline.js?v=20261003batch2"></script><script src="../assets/js/admin.js?v=20261003batch3"></script><script src="../assets/js/tree-lineage.js?v=2026071319"></script><script src="../assets/js/admin-batch-tree.js?v=20261003batch1"></script><script src="../assets/js/modules/import-export.js"></script><script src="../assets/js/admin-import.js"></script><script src="../assets/js/delegate-audit.js"></script><script src="../assets/js/admin-requests-stats.js?v=20260810p3"></script><script src="../assets/js/modules/tree-card-contract.js?v=20260815tc1"></script><script src="../assets/js/modules/tree-correction-legacy-recovery.js?v=20260815rc4"></script><script src="../assets/js/modules/tree-correction-contract.js?v=20260827mpr3"></script><script src="../assets/js/modules/tree-correction-reorder.js?v=20260819ord4"></script><script src="../assets/js/modules/tree-correction-person.js?v=20260820ident1"></script><script src="../assets/js/modules/member-phone-register.js?v=20260827mpr3"></script><script src="../assets/js/modules/request-actions.js?v=20260828phone1"></script><script src="../assets/js/admin-request-actions.js?v=20260810novid2"></script><script src="../assets/js/modules/safe-request-notify.js?v=20260829wm1"></script><script src="../assets/js/modules/user-facing-request-messages.js?v=20260827mpr3"></script><script src="../assets/js/modules/requests.js?v=20260828news1"></script><script src="../assets/js/admin-requests.js?v=20260816bp1"></script><script src="../assets/js/admin-bulk-name-audit.js?v=20260809hc5"></script><script src="../assets/js/modules/views.js?v=20260826pulse1"></script><script src="../assets/js/admin-views.js"></script><script src="../assets/js/modules/marriage-stats.js?v=20260810p3"></script><script src="../assets/js/admin-marriage-stats.js"></script><script src="../assets/js/memory/source-label.js?v=2026071216"></script><script src="../assets/js/modules/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/modules/spouses-core.js?v=20260818kin9"></script><script src="../assets/js/admin-ui.js?v=1782729862"></script><script src="../assets/js/modules/admin-delegates-v2.js?v=20260820audit1"></script><script src="../assets/js/modules/admin-sql-presets.js?v=20261003edit1"></script><script src="../assets/js/admin-device-trust.js?v=20260829td4"></script><script src="../assets/js/admin-family-admin-grant.js?v=20260830del1"></script><script src="../assets/js/modules/admin-sql-workspace.js?v=20260829wm5"></script><script src="../assets/js/modules/admin-workflow-panel.js?v=20260814notify1"></script><script src="../assets/js/admin-shell.js?v=20261007sec1"></script><script src="../assets/js/admin-quality.js"></script>
+ </body></html>
+diff --git a/scripts/test-admin-shell-mobile-sections.js b/scripts/test-admin-shell-mobile-sections.js
+new file mode 100644
+index 0000000..a5834eb
+--- /dev/null
++++ b/scripts/test-admin-shell-mobile-sections.js
+@@ -0,0 +1,62 @@
++/**
++ * Smoke: mobile «الأقسام» returns to hub; drawer host escapes .page clipping.
++ * Run: node scripts/test-admin-shell-mobile-sections.js
++ */
++const fs = require("fs");
++const path = require("path");
++
++const root = path.join(__dirname, "..");
++const shellJs = fs.readFileSync(path.join(root, "assets/js/admin-shell.js"), "utf8");
++const mobileCss = fs.readFileSync(path.join(root, "assets/css/admin-mobile.css"), "utf8");
++const shellCss = fs.readFileSync(path.join(root, "assets/css/admin-shell.css"), "utf8");
++const adminHtml = fs.readFileSync(path.join(root, "pages/admin.html"), "utf8");
++
++const checks = [
++  {
++    name: "mobile أقسام tap navigates to hub when not on hub",
++    ok: /currentModule !== "hub"/.test(shellJs) && /navigate\("hub"\)/.test(shellJs),
++  },
++  {
++    name: "placeShellChrome moves drawer to document.body on narrow",
++    ok: /function placeShellChrome/.test(shellJs) && /document\.body\.appendChild\(aside\)/.test(shellJs),
++  },
++  {
++    name: "module navigation uses pushState for browser back",
++    ok: /history\.pushState/.test(shellJs) && /popstate/.test(shellJs),
++  },
++  {
++    name: "admin-mobile does not clip .page overflow-x when shell ready",
++    ok:
++      /admin-authenticated \.page \{[\s\S]*?overflow-x:\s*visible\s*!important/.test(mobileCss) &&
++      !/admin-authenticated,\s*\n\s*body\.admin-shell-ready\.admin-authenticated \.page \{[\s\S]*?overflow-x:\s*hidden\s*!important/.test(
++        mobileCss,
++      ),
++  },
++  {
++    name: "mobile drawer z-index above sticky header",
++    ok: /z-index:\s*120/.test(shellCss) && /z-index:\s*110/.test(shellCss),
++  },
++  {
++    name: "cache-bust bumped for shell assets",
++    ok:
++      /admin-shell\.css\?v=20261007sec1/.test(adminHtml) &&
++      /admin-mobile\.css\?v=20261007sec1/.test(adminHtml) &&
++      /admin-shell\.js\?v=20261007sec1/.test(adminHtml),
++  },
++];
++
++let failed = 0;
++for (const c of checks) {
++  if (c.ok) {
++    console.log("ok  ", c.name);
++  } else {
++    failed += 1;
++    console.error("FAIL", c.name);
++  }
++}
++
++if (failed) {
++  console.error(`\n${failed} check(s) failed`);
++  process.exit(1);
++}
++console.log("\nall admin-shell mobile sections checks passed");
+-- 
+2.43.0
+
