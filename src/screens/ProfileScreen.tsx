@@ -37,7 +37,12 @@ import {
   canonicalizePhone,
   isValidStoredPhone,
 } from '../utils/phone';
-import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '../services/occasionInteractions';
+import {
+  fetchOccasionInbox,
+  filterCurrentOccasionInbox,
+  occasionInboxHeadline,
+  type OccasionInboxItem,
+} from '../services/occasionInteractions';
 import { fetchWomenManagerSession } from '../services/womenManager';
 import { fetchFamilyAdminSession } from '../services/familyAdmin';
 import { fetchDelegateInboxSession } from '../services/delegateInbox';
@@ -46,6 +51,8 @@ type ProfileScreenProps = {
   branches: Branch[];
   childrenRows: TreeChild[];
   viewerPerson?: TreeChild | null;
+  /** مناسبات المجلس الظاهرة الآن — لإخفاء ردود فنجال جلسة منتهية. */
+  activeOccasionIds?: Array<string | number>;
   onOpenMemberCard: (branchKey: string, treeChildId: number) => void;
   onMemberSessionChange?: (phone: string | null) => void;
   onPhotoSaved?: () => void;
@@ -153,6 +160,7 @@ export function ProfileScreen({
   branches,
   childrenRows,
   viewerPerson,
+  activeOccasionIds,
   onOpenMemberCard,
   onMemberSessionChange,
   onPhotoSaved,
@@ -187,6 +195,11 @@ export function ProfileScreen({
   const [registerSending, setRegisterSending] = useState(false);
   const [registerSent, setRegisterSent] = useState(false);
   const [faceLockOn, setFaceLockOn] = useState(false);
+
+  const visibleInbox = useMemo(
+    () => filterCurrentOccasionInbox(inbox, { activeOccasionIds }),
+    [inbox, activeOccasionIds],
+  );
 
   const memberTreeRow = useMemo(() => {
     const id = Number(member?.tree_child_id || 0);
@@ -822,14 +835,14 @@ export function ProfileScreen({
 
       {member && !womenManagerEnabled ? (
         <SceneSection title="وصلك من العائلة">
-          {inbox.length === 0 ? (
+          {visibleInbox.length === 0 ? (
             <Text style={styles.note}>
               لا تفاعلات خاصة بعد. عندما يشاركك أحد مناسبة تخصك تظهر هنا فقط لك.
             </Text>
           ) : (
-            inbox.map((item) => {
+            visibleInbox.map((item) => {
               const total = Number(item.total || 0);
-              const yours = yourOccasionPhrase(item.occasion_type);
+              const yours = occasionInboxHeadline(item);
               const senderLabel = (raw: string) => {
                 const tokens = String(raw || '')
                   .trim()

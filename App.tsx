@@ -31,7 +31,11 @@ import { DelegateInboxScreen } from './src/screens/DelegateInboxScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
 import { isPublicLineageHiddenPerson } from './src/utils/personVisibility';
-import { fetchOccasionInbox, type OccasionInboxItem } from './src/services/occasionInteractions';
+import {
+  fetchOccasionInbox,
+  filterCurrentOccasionInbox,
+  type OccasionInboxItem,
+} from './src/services/occasionInteractions';
 import { loadLastSeen, markSurfaceSeen, type LastSeenMap } from './src/services/lastSeen';
 import { buildSinceLastVisit, countNewEvents, countNewInbox } from './src/utils/sinceLastVisit';
 import {
@@ -791,18 +795,26 @@ function AppChrome() {
     });
   }, [encounterPerson, memberPhoneForRequests, memberTreeChildId]);
 
+  const activeOccasionIds = useMemo(
+    () => activeEvents.map((event) => event.id).filter((id) => id != null && String(id).trim()),
+    [activeEvents],
+  );
+  const currentOccasionInbox = useMemo(
+    () => filterCurrentOccasionInbox(occasionInbox, { activeOccasionIds }),
+    [occasionInbox, activeOccasionIds],
+  );
   const sinceLastVisit = useMemo(
     () =>
       buildSinceLastVisit({
         events: activeEvents,
-        inbox: occasionInbox,
+        inbox: currentOccasionInbox,
         homeSeenAt: lastSeen.home,
         profileSeenAt: lastSeen.profile,
       }),
-    [activeEvents, occasionInbox, lastSeen.home, lastSeen.profile],
+    [activeEvents, currentOccasionInbox, lastSeen.home, lastSeen.profile],
   );
   const eventsBadge = countNewEvents(activeEvents, lastSeen.events);
-  const profileBadge = countNewInbox(occasionInbox, lastSeen.profile);
+  const profileBadge = countNewInbox(currentOccasionInbox, lastSeen.profile);
 
   const goToScreen = useCallback((next: PublicScreen, opts?: { eventId?: string | null }) => {
     if (next === 'events') {
@@ -906,6 +918,7 @@ function AppChrome() {
             branches={branches}
             childrenRows={treeChildren}
             viewerPerson={memberViewerPerson}
+            activeOccasionIds={activeOccasionIds}
             onOpenMemberCard={(branchKey, treeChildId) =>
               openPersonEncounter(branchKey, treeChildId, 'profile')
             }
