@@ -44,6 +44,7 @@
     "verify:event-share": "node scripts/verify-event-share-card.mjs",
     "verify:occasion-direct": "node scripts/verify-member-occasion-direct.mjs",
     "verify:occasion-replies": "node scripts/verify-occasion-replies.mjs",
+    "verify:occasion-inbox": "node scripts/verify-occasion-inbox-session.mjs",
     "verify:notifications": "node scripts/verify-notification-format.mjs",
     "verify:news-expiry": "node scripts/verify-news-expiry.mjs",
     "verify:home-ticker": "node scripts/verify-home-ticker.mjs",
@@ -54,7 +55,7 @@
     "verify:pulse-affinity": "node scripts/verify-pulse-affinity.mjs",
     "verify:today-remembrance": "node scripts/verify-today-remembrance.mjs",
     "verify:family-voice": "node scripts/verify-family-voice.mjs",
-    "verify:handover": "npm run verify:bug36 && npm run verify:news-expiry && npm run verify:home-ticker && npm run verify:tree-card && npm run verify:event-card && npm run verify:event-share && npm run verify:occasion-replies && npm run verify:notifications && npm run verify:push && npm run verify:tree-stats && npm run verify:person-encounter && npm run verify:maternal-kinship && npm run verify:pulse-season && npm run verify:pulse-affinity && npm run verify:today-remembrance && npx tsc --noEmit"
+    "verify:handover": "npm run verify:bug36 && npm run verify:news-expiry && npm run verify:home-ticker && npm run verify:tree-card && npm run verify:event-card && npm run verify:event-share && npm run verify:occasion-replies && npm run verify:occasion-inbox && npm run verify:notifications && npm run verify:push && npm run verify:tree-stats && npm run verify:person-encounter && npm run verify:maternal-kinship && npm run verify:pulse-season && npm run verify:pulse-affinity && npm run verify:today-remembrance && npx tsc --noEmit"
   },
   "private": true
 }
