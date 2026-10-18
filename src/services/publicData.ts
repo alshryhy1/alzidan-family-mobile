@@ -12,7 +12,11 @@ import {
 } from '../utils/maternalKinship';
 import { leafPersonName, nodePathId, normalizePathKey } from '../utils/personEncounter';
 import { childrenOfPersonInGraph, partnerNameForMarriage, siblingsInGraph } from '../utils/selfPath';
-import { collectBranchTreeStats, isTreePersonDeceased } from '../utils/treeStats';
+import {
+  collectBranchTreeStats,
+  isTreePersonDeceased,
+  normalizeWorkStatus,
+} from '../utils/treeStats';
 import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 import { callPublicRpc, selectPublicRows } from './supabase';
 
@@ -45,6 +49,7 @@ type ChildRow = {
   deceased: boolean | null;
   gender?: string | null;
   photo_url?: string | null;
+  work_status?: string | null;
 };
 
 type EventRow = {
@@ -281,6 +286,7 @@ function mapEvent(row: EventRow): FamilyEvent {
 }
 
 function mapChildRow(row: ChildRow): TreeChild {
+  const status = normalizeWorkStatus(row.work_status);
   return {
     id: row.id,
     branchKey: row.branch_key,
@@ -297,30 +303,54 @@ function mapChildRow(row: ChildRow): TreeChild {
     isDeceased: isTreePersonDeceased(row.is_deceased, row.deceased) ? true : row.is_deceased ?? row.deceased ?? null,
     gender: row.gender ?? null,
     photoUrl: String(row.photo_url || '').trim() || null,
+    workStatus: status || null,
   };
 }
 
 async function loadTreeChildren() {
+  const core =
+    'id,branch_key,parent_name,name,child_name,birth_order,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased';
+  const withGender = `${core},gender`;
+  const withPhoto = `${withGender},photo_url`;
+  const withWork = `${withPhoto},work_status`;
+
   try {
-    return await selectPublicRows<ChildRow>(
-      'tree_children?select=id,branch_key,parent_name,name,child_name,birth_order,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased,gender,photo_url&order=id.asc',
-    );
+    return await selectPublicRows<ChildRow>(`tree_children?select=${withWork}&order=id.asc`);
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     const missingColumn =
       message.includes('does not exist') || message.includes('schema cache');
+    const workMissing = message.includes('work_status') && missingColumn;
     const photoMissing = message.includes('photo_url') && missingColumn;
     const birthOrderMissing = message.includes('birth_order') && missingColumn;
     const genderMissing = message.includes('gender') && missingColumn;
+
+    if (workMissing) {
+      try {
+        return await selectPublicRows<ChildRow>(`tree_children?select=${withPhoto}&order=id.asc`);
+      } catch (inner) {
+        const innerMessage = inner instanceof Error ? inner.message : '';
+        const innerMissing =
+          innerMessage.includes('does not exist') || innerMessage.includes('schema cache');
+        if (innerMessage.includes('photo_url') && innerMissing) {
+          return selectPublicRows<ChildRow>(`tree_children?select=${withGender}&order=id.asc`);
+        }
+        if (innerMessage.includes('gender') && innerMissing) {
+          return selectPublicRows<ChildRow>(`tree_children?select=${core}&order=id.asc`);
+        }
+        if (innerMessage.includes('birth_order') && innerMissing) {
+          return selectPublicRows<ChildRow>(
+            'tree_children?select=id,branch_key,parent_name,name,child_name,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased&order=id.asc',
+          );
+        }
+        throw inner;
+      }
+    }
     if (photoMissing) {
-      return selectPublicRows<ChildRow>(
-        'tree_children?select=id,branch_key,parent_name,name,child_name,birth_order,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased,gender&order=id.asc',
-      );
+      return selectPublicRows<ChildRow>(`tree_children?select=${withGender}&order=id.asc`);
     }
     if (genderMissing) {
-      return selectPublicRows<ChildRow>(
-        'tree_children?select=id,branch_key,parent_name,name,child_name,birth_order,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased&order=id.asc',
-      );
+      return selectPublicRows<ChildRow>(`tree_children?select=${core}&order=id.asc`);
     }
     if (!birthOrderMissing) throw error;
 
@@ -356,13 +386,15 @@ export async function loadPublicData() {
     const branchChildren = children.filter((child) => child.branchKey === row.key);
     const publicBranchChildren = branchChildren.filter((child) => !isPublicLineageHiddenPerson(child));
     const rawBranchChildren = childRows.filter((child) => child.branch_key === row.key);
+    const stats = collectBranchTreeStats(publicBranchChildren, row.key);
     return {
       id: row.key,
       name: row.key,
       fullName: row.title,
       summary: 'فرع عائلي موثق ضمن ذرية مطلق بن زيدان.',
       familiesCount: branchParents.length || rootParentCount(rawBranchChildren),
-      membersCount: collectBranchTreeStats(publicBranchChildren, row.key).living,
+      membersCount: stats.living,
+      workStatus: stats.workStatus,
     };
   });
 
@@ -426,6 +458,7 @@ export async function loadMemberLineageChildren(phone: string): Promise<TreeChil
           deceased: row.deceased ?? null,
           gender: row.gender ?? null,
           photo_url: row.photo_url ?? null,
+          work_status: row.work_status ?? null,
         });
       });
   } catch {

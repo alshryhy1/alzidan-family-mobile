@@ -5,7 +5,8 @@ import { DataState } from '../components/DataState';
 import { SceneShell } from '../components/scene';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
-import type { Branch } from '../types';
+import type { Branch, BranchWorkStatusCounts } from '../types';
+import { emptyWorkStatusCounts, workStatusPercent } from '../utils/treeStats';
 
 type BranchesScreenProps = {
   branches: Branch[];
@@ -15,12 +16,36 @@ type BranchesScreenProps = {
   onRetry: () => void;
 };
 
+type WorkTile = {
+  key: keyof Pick<BranchWorkStatusCounts, 'employed' | 'retired' | 'unemployed'>;
+  label: string;
+};
+
+const WORK_TILES: WorkTile[] = [
+  { key: 'employed', label: 'موظفون' },
+  { key: 'retired', label: 'متقاعدون' },
+  { key: 'unemployed', label: 'عاطلون' },
+];
+
 function branchStyles(p: ThemePalette) {
   return StyleSheet.create({
-    heroCount: {
+    heroBlock: {
+      alignItems: 'flex-end',
+      gap: 4,
+    },
+    heroTotal: {
       color: p.goldSoft,
-      fontSize: 14,
+      fontSize: 28,
+      fontWeight: '800',
+      lineHeight: 36,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    heroMeta: {
+      color: p.goldSoft,
+      fontSize: 13,
       fontWeight: '700',
+      opacity: 0.9,
       textAlign: 'right',
       writingDirection: 'rtl',
     },
@@ -78,6 +103,44 @@ function branchStyles(p: ThemePalette) {
     dot: {
       color: p.gold,
     },
+    workRow: {
+      flexDirection: 'row-reverse',
+      gap: 8,
+      marginTop: 4,
+    },
+    workTile: {
+      alignItems: 'center',
+      backgroundColor: 'rgba(196,163,90,0.1)',
+      borderColor: 'rgba(196,163,90,0.35)',
+      borderRadius: 14,
+      borderWidth: 1,
+      flex: 1,
+      gap: 2,
+      paddingHorizontal: 6,
+      paddingVertical: 10,
+    },
+    workLabel: {
+      color: p.greenMid,
+      fontSize: 11,
+      fontWeight: '700',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    workValue: {
+      color: p.green,
+      fontSize: 20,
+      fontWeight: '800',
+      lineHeight: 26,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    workPct: {
+      color: p.gold,
+      fontSize: 11,
+      fontWeight: '700',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
     enter: {
       color: p.gold,
       fontSize: 13,
@@ -92,6 +155,35 @@ function branchStyles(p: ThemePalette) {
   });
 }
 
+function WorkStatusTiles({
+  living,
+  workStatus,
+  styles,
+}: {
+  living: number;
+  workStatus?: BranchWorkStatusCounts;
+  styles: ReturnType<typeof branchStyles>;
+}) {
+  const counts = workStatus || emptyWorkStatusCounts();
+  const known = counts.employed + counts.retired + counts.unemployed;
+  if (!living || known <= 0) return null;
+
+  return (
+    <View style={styles.workRow}>
+      {WORK_TILES.map((tile) => {
+        const count = counts[tile.key];
+        return (
+          <View key={tile.key} style={styles.workTile}>
+            <Text style={styles.workLabel}>{tile.label}</Text>
+            <Text style={styles.workValue}>{count}</Text>
+            <Text style={styles.workPct}>{workStatusPercent(count, living)}٪</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 export function BranchesScreen({
   branches,
   error,
@@ -101,13 +193,23 @@ export function BranchesScreen({
 }: BranchesScreenProps) {
   const p = useThemePalette();
   const styles = useMemo(() => branchStyles(p), [p]);
+  const totalLiving = useMemo(
+    () => branches.reduce((sum, branch) => sum + (branch.membersCount || 0), 0),
+    [branches],
+  );
+
   return (
     <SceneShell
       english="FAMILY HOUSES"
       eyebrow="بيوت العائلة"
       heroExtra={
         !loading && branches.length ? (
-          <Text style={styles.heroCount}>{branches.length} فروع مسجّلة في الشجرة</Text>
+          <View style={styles.heroBlock}>
+            <Text style={styles.heroTotal}>{totalLiving} في الشجرة</Text>
+            <Text style={styles.heroMeta}>
+              عائلة مطلق الزيدان · {branches.length} فروع
+            </Text>
+          </View>
         ) : null
       }
       onRefresh={onRetry}
@@ -142,6 +244,11 @@ export function BranchesScreen({
                 <Text style={styles.dot}>✦</Text>
                 <Text style={styles.metric}>{branch.membersCount} في الشجرة</Text>
               </View>
+              <WorkStatusTiles
+                living={branch.membersCount}
+                styles={styles}
+                workStatus={branch.workStatus}
+              />
               <Text style={styles.enter}>عرض شجرة فرع {branch.name}</Text>
             </Pressable>
           ))

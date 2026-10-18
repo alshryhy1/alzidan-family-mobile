@@ -15,6 +15,13 @@ export type PublicScreen =
   | 'familyAdmin'
   | 'delegateInbox';
 
+export type BranchWorkStatusCounts = {
+  employed: number;
+  retired: number;
+  unemployed: number;
+  unset: number;
+};
+
 export type Branch = {
   id: string;
   name: string;
@@ -22,6 +29,8 @@ export type Branch = {
   summary: string;
   familiesCount: number;
   membersCount: number;
+  /** أحياء حسب الحالة الوظيفية — إن وُجد العمود في المصدر. */
+  workStatus?: BranchWorkStatusCounts;
 };
 
 export type TreeParent = {
@@ -46,6 +55,8 @@ export type TreeChild = {
   isDeceased: boolean | null;
   gender?: string | null;
   photoUrl?: string | null;
+  /** employed | retired | unemployed */
+  workStatus?: string | null;
 };
 
 export type TreePerson = {
