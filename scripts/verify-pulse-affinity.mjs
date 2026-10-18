@@ -37,7 +37,13 @@ const app = readFileSync(join(root, 'App.tsx'), 'utf8');
 
 assert(board.includes('pulseAffinityLine'), 'PulseLiveBoard يستورد السطر');
 assert(board.includes('affinityOutsideCount'), 'PulseLiveBoard يقبل العدد');
-assert(board.includes('styles.affinityLine'), 'السطر داخل شريط الحضور');
+assert(board.includes('styles.affinityLine'), 'سطر المصاهرة موجود');
+const presenceClose = board.indexOf('</LinearGradient>');
+const affinityRender = board.indexOf('{affinityLine ?');
+assert(
+  presenceClose >= 0 && affinityRender > presenceClose,
+  'السطر تحت شريط الحضور لا داخله',
+);
 assert(home.includes('affinityOutsideCount'), 'HomeScreen يمرّر العدد');
 assert(app.includes('affinityStats?.outsideCount'), 'App يمرّر outsideCount من البيانات العامة');
 const pulseIdx = home.indexOf('<PulseLiveBoard');
