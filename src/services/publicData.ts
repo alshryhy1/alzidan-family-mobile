@@ -330,6 +330,16 @@ async function loadTreeChildren() {
   }
 }
 
+async function loadSpouseSummaryRows() {
+  try {
+    return await selectPublicRows<SpouseSummaryRow>(
+      'tree_spouse_summary?select=wife_is_family_member,wife_branch_key,status&limit=5000',
+    );
+  } catch {
+    return [] as SpouseSummaryRow[];
+  }
+}
+
 export async function loadPublicData() {
   const [branchRows, parentRows, childRows, eventRows, spouseSummaryRows] = await Promise.all([
     selectPublicRows<BranchRow>('tree_branches?select=key,title&order=key.asc'),
@@ -338,9 +348,7 @@ export async function loadPublicData() {
     selectPublicRows<EventRow>(
       'family_events?select=id,branch_key,type,person,date_label,event_date,details,hospital_name,hospital_dept,contact_method,contact_phone,visit_date_from,visit_date_to,visit_time_from,visit_time_to,created_at,show_at,show_before_days,end_at,manual_hidden&order=created_at.desc&limit=100',
     ),
-    selectPublicRows<SpouseSummaryRow>(
-      'tree_spouse_summary?select=wife_is_family_member,wife_branch_key,status&limit=5000',
-    ),
+    loadSpouseSummaryRows(),
   ]);
 
   const parents: TreeParent[] = parentRows.map((row) => ({

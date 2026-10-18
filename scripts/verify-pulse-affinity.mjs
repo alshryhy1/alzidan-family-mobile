@@ -37,8 +37,12 @@ const app = readFileSync(join(root, 'App.tsx'), 'utf8');
 
 assert(board.includes('pulseAffinityLine'), 'PulseLiveBoard يستورد السطر');
 assert(board.includes('affinityOutsideCount'), 'PulseLiveBoard يقبل العدد');
+assert(board.includes('styles.affinityLine'), 'السطر داخل شريط الحضور');
 assert(home.includes('affinityOutsideCount'), 'HomeScreen يمرّر العدد');
 assert(app.includes('affinityStats?.outsideCount'), 'App يمرّر outsideCount من البيانات العامة');
+const pulseIdx = home.indexOf('<PulseLiveBoard');
+const boardIdx = home.indexOf('وش عند الزيدان؟');
+assert(pulseIdx >= 0 && boardIdx >= 0 && pulseIdx < boardIdx, 'نبض فوق قسم اللوحة لا تحتها');
 
 if (process.exitCode) {
   console.error('\npulse affinity smoke failed');

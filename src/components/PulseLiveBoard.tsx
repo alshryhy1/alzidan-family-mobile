@@ -183,7 +183,7 @@ export function PulseLiveBoard({
   const body = (
     <>
       <LinearGradient
-        accessibilityLabel={`${presenceLabel(online)} ${presenceValue(online)}`}
+        accessibilityLabel={`${presenceLabel(online)} ${presenceValue(online)}${affinityLine ? ` · ${affinityLine}` : ''}`}
         colors={[p.greenMid, p.greenDeep]}
         end={{ x: 0.2, y: 1 }}
         start={{ x: 0.8, y: 0 }}
@@ -191,12 +191,12 @@ export function PulseLiveBoard({
       >
         <Text style={styles.presenceCaption}>{presenceLabel(online)}</Text>
         <Text style={styles.presenceValue}>{presenceValue(online)}</Text>
+        {affinityLine ? (
+          <Text accessibilityLabel={affinityLine} style={styles.affinityLine}>
+            {affinityLine}
+          </Text>
+        ) : null}
       </LinearGradient>
-      {affinityLine ? (
-        <Text accessibilityLabel={affinityLine} style={styles.affinityLine}>
-          {affinityLine}
-        </Text>
-      ) : null}
       <View style={styles.tiles}>
         <WeatherCard model={model} />
         <CountdownCard model={model} />
@@ -357,11 +357,10 @@ function pulseStyles(p: ThemePalette) {
       writingDirection: 'rtl',
     },
     affinityLine: {
-      alignSelf: 'stretch',
       color: p.goldSoft,
       fontSize: 13,
       fontWeight: '700',
-      opacity: 0.92,
+      marginTop: 6,
       textAlign: 'center',
       writingDirection: 'rtl',
     },

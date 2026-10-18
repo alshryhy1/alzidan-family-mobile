@@ -246,6 +246,20 @@ export function HomeScreen({
       <DataState error={error} loading={loading} onRetry={onRetry} />
 
       <View style={styles.creamStage}>
+        {!loading && !error ? (
+          <PulseLiveBoard
+            affinityOutsideCount={affinityOutsideCount}
+            delegates={delegates}
+            model={{
+              online: pulseOnline,
+              weather,
+              season,
+            }}
+            notices={notices}
+            tone="stage"
+          />
+        ) : null}
+
         {remembrances.length ? (
           <View style={styles.sinceBox}>
             <Text style={styles.sinceTitle}>ذكرى اليوم</Text>
@@ -390,20 +404,6 @@ export function HomeScreen({
             <Text style={styles.boardAddText}>أضف عرض أو طلب</Text>
           </Pressable>
         </View>
-
-        {!loading && !error ? (
-          <PulseLiveBoard
-            affinityOutsideCount={affinityOutsideCount}
-            delegates={delegates}
-            model={{
-              online: pulseOnline,
-              weather,
-              season,
-            }}
-            notices={notices}
-            tone="stage"
-          />
-        ) : null}
 
         <View style={styles.creamFoot}>
           {loggedIn && (memberBranchKey || canOpenCard) ? (
