@@ -121,7 +121,7 @@ export function OwnTreeEditPanel({
           kind: 'error',
           text:
             code === 'rpc_missing' || code === 'sql_missing'
-              ? 'نفّذ أمر «تعديل الاسم أو تاريخ الميلاد» في الإدارة مرة واحدة ثم أعد المحاولة.'
+              ? 'أمر تعديل الاسم ناقص في قاعدة البيانات (member_update_person_v1).'
               : memberAddPersonMessage(code),
         });
         return;
@@ -138,12 +138,15 @@ export function OwnTreeEditPanel({
       });
       if (!profile?.ok) {
         const code = String(profile?.error || '');
+        const detail = String((profile as { detail?: string })?.detail || '').trim();
         setStatus({
           kind: 'error',
           text:
             code === 'rpc_missing' || code === 'sql_missing'
-              ? 'نفّذ أمر «ملف الشخص: موقع وحالة وشهادة» في مساحة SQL ثم أعد المحاولة.'
-              : memberAddPersonMessage(code),
+              ? 'الصق من جديد docs/COPY-ME-member-set-person-profile-v1.sql كاملًا في SQL ثم انتظر ثوانٍ.'
+              : detail
+                ? `${memberAddPersonMessage(code)} (${detail})`
+                : memberAddPersonMessage(code),
         });
         return;
       }

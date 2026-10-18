@@ -43,9 +43,11 @@ export function memberAddPersonMessage(error: string) {
   }
   if (error === 'bad_input') return 'اكتب الاسم بكلمة واحدة.';
   if (error === 'rpc_missing' || error === 'sql_missing') {
-    return 'نفّذ أمر الصيانة في الإدارة ثم أعد المحاولة.';
+    return 'أعد لصق أمر ملف الشخص كاملًا في مساحة SQL (COPY-ME-member-set-person-profile-v1) ثم Hard Refresh.';
   }
   if (error === 'device_required') return 'اربط الجهاز من ملفي ثم أضف من شجرتك.';
+  if (error === 'not_own_child') return 'التعديل لك ولأبنائك فقط.';
+  if (error === 'not_placed') return 'رقمك موثّق وما انربط بشخصك في الشجرة بعد.';
   return 'تعذر إتمام الإضافة الآن.';
 }
 

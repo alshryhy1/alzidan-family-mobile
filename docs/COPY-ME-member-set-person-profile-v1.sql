@@ -1,10 +1,93 @@
 -- COPY-ME: Preset id: maint.member_set_person_profile_v1
 -- Open this file, Select All, paste in Supabase SQL Editor / SQL Workspace. Safe to re-run.
 --
--- العضو المسجّل يعدّل على نفسه أو ابنه المباشر في الشجرة:
--- المدينة · الحي · الحالة الوظيفية · وين موظف · الدرجة العلمية
--- نفس أعمدة tree_children التي تستخدمها الإدارة والجداول.
--- يعتمد: شغّل أوامر work_status و workplace_education أولًا إن لم تُنفَّذ.
+-- يضمن أعمدة الحالة/الشهادة ثم دالة حفظ الملف من الجوال.
+-- العضو يعدّل على نفسه أو ابنه: مدينة · حي · موظف/متقاعد/عاطل · وين موظف · الدرجة العلمية.
+
+alter table public.tree_children
+  add column if not exists work_status text;
+
+alter table public.tree_children
+  add column if not exists workplace text;
+
+alter table public.tree_children
+  add column if not exists education_degree text;
+
+create or replace function public.tree_child_normalize_work_status(p_status text)
+returns text
+language sql
+immutable
+as $ws$
+  select case
+    when g in (
+      'employed', 'employee', 'working', 'job',
+      'موظف', 'موظفين', 'يعمل', 'على رأس العمل'
+    ) then 'employed'
+    when g in (
+      'retired', 'retiree', 'pension',
+      'متقاعد', 'متقاعدين', 'تقاعد'
+    ) then 'retired'
+    when g in (
+      'unemployed', 'jobless', 'without_work',
+      'عاطل', 'عاطلين', 'بدون عمل', 'بدون_عمل'
+    ) then 'unemployed'
+    else null
+  end
+  from (
+    select lower(btrim(coalesce(p_status, ''))) as g
+  ) s
+$ws$;
+
+grant execute on function public.tree_child_normalize_work_status(text) to anon, authenticated;
+
+create or replace function public.tree_child_normalize_education_degree(p_degree text)
+returns text
+language sql
+immutable
+as $ed$
+  select case
+    when g in (
+      'intermediate', 'middle', 'middle_school',
+      'متوسط', 'متوسطة', 'المتوسط', 'المتوسطة'
+    ) then 'intermediate'
+    when g in (
+      'secondary', 'high_school', 'highschool', 'hs',
+      'ثانوي', 'ثانوية', 'الثانوية', 'الثانوي'
+    ) then 'secondary'
+    when g in (
+      'diploma', 'dip',
+      'دبلوم', 'الدبلوم'
+    ) then 'diploma'
+    when g in (
+      'bachelor', 'bachelors', 'ba', 'bsc', 'bs',
+      'بكالوريوس', 'بكالوريس', 'بكالوريوس.', 'جامعي', 'جامعة'
+    ) then 'bachelor'
+    when g in (
+      'master', 'masters', 'msc', 'ma', 'ms',
+      'ماجستير', 'الماجستير'
+    ) then 'master'
+    when g in (
+      'doctorate', 'doctoral', 'phd', 'ph.d', 'ph.d.', 'dr',
+      'دكتوراه', 'الدكتوراه'
+    ) then 'doctorate'
+    else null
+  end
+  from (
+    select lower(btrim(coalesce(p_degree, ''))) as g
+  ) s
+$ed$;
+
+grant execute on function public.tree_child_normalize_education_degree(text) to anon, authenticated;
+
+create or replace function public.tree_child_normalize_workplace(p_workplace text)
+returns text
+language sql
+immutable
+as $ed$
+  select nullif(btrim(coalesce(p_workplace, '')), '')
+$ed$;
+
+grant execute on function public.tree_child_normalize_workplace(text) to anon, authenticated;
 
 create or replace function public.member_set_person_profile_v1(
   p_phone text,
@@ -65,12 +148,9 @@ begin
 
   v_city := nullif(btrim(coalesce(p_city, '')), '');
   v_area := nullif(btrim(coalesce(p_area, '')), '');
-  v_workplace := nullif(btrim(coalesce(p_workplace, '')), '');
+  v_workplace := public.tree_child_normalize_workplace(p_workplace);
 
   if v_touch_work then
-    if to_regprocedure('public.tree_child_normalize_work_status(text)') is null then
-      return jsonb_build_object('ok', false, 'error', 'sql_missing');
-    end if;
     if nullif(btrim(coalesce(p_work_status, '')), '') is null then
       v_work := null;
     else
@@ -82,9 +162,6 @@ begin
   end if;
 
   if v_touch_degree then
-    if to_regprocedure('public.tree_child_normalize_education_degree(text)') is null then
-      return jsonb_build_object('ok', false, 'error', 'sql_missing');
-    end if;
     if nullif(btrim(coalesce(p_education_degree, '')), '') is null then
       v_degree := null;
     else
@@ -134,38 +211,22 @@ begin
     return jsonb_build_object('ok', false, 'error', 'not_own_child');
   end if;
 
-  begin
-    update public.tree_children c
-    set
-      city = case when v_touch_city then v_city else c.city end,
-      area = case when v_touch_area then v_area else c.area end,
-      work_status = case when v_touch_work then v_work else c.work_status end,
-      workplace = case when v_touch_workplace then v_workplace else c.workplace end,
-      education_degree = case when v_touch_degree then v_degree else c.education_degree end
-    where c.id = v_target.id;
-  exception when undefined_column then
-    begin
-      update public.tree_children c
-      set
-        city = case when v_touch_city then v_city else c.city end,
-        area = case when v_touch_area then v_area else c.area end,
-        work_status = case when v_touch_work then v_work else c.work_status end
-      where c.id = v_target.id;
-    exception when undefined_column then
-      update public.tree_children c
-      set
-        city = case when v_touch_city then v_city else c.city end,
-        area = case when v_touch_area then v_area else c.area end
-      where c.id = v_target.id;
-      if v_touch_work or v_touch_workplace or v_touch_degree then
-        return jsonb_build_object('ok', false, 'error', 'sql_missing');
-      end if;
-    end;
-  end;
+  update public.tree_children c
+  set
+    city = case when v_touch_city then v_city else c.city end,
+    area = case when v_touch_area then v_area else c.area end,
+    work_status = case when v_touch_work then v_work else c.work_status end,
+    workplace = case when v_touch_workplace then v_workplace else c.workplace end,
+    education_degree = case when v_touch_degree then v_degree else c.education_degree end
+  where c.id = v_target.id;
 
   return jsonb_build_object('ok', true, 'tree_child_id', v_target.id);
 exception when others then
-  return jsonb_build_object('ok', false, 'error', 'update_failed');
+  return jsonb_build_object(
+    'ok', false,
+    'error', 'update_failed',
+    'detail', left(sqlerrm, 180)
+  );
 end;
 $fn$;
 
@@ -174,5 +235,19 @@ grant execute on function public.member_set_person_profile_v1(text, bigint, text
 
 notify pgrst, 'reload schema';
 
-select to_regprocedure('public.member_set_person_profile_v1(text, bigint, text, text, text, text, text)') is not null
-  as has_member_set_person_profile_v1;
+select
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tree_children' and column_name = 'work_status'
+  ) as has_work_status,
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tree_children' and column_name = 'workplace'
+  ) as has_workplace,
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tree_children' and column_name = 'education_degree'
+  ) as has_education_degree,
+  (to_regprocedure('public.tree_child_normalize_work_status(text)') is not null) as has_norm_work,
+  (to_regprocedure('public.tree_child_normalize_education_degree(text)') is not null) as has_norm_edu,
+  (to_regprocedure('public.member_set_person_profile_v1(text, bigint, text, text, text, text, text)') is not null) as has_member_set_person_profile_v1;
