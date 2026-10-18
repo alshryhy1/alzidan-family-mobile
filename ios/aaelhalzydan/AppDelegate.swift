@@ -61,7 +61,21 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 
   override func bundleURL() -> URL? {
 #if DEBUG
-    return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
+    // SDK 56 / RN 0.85 prebuilt React.xcframework ships with RCT_DEV=0, so
+    // packager auto-discovery is compiled out and jsBundleURL becomes nil
+    // («No script URL provided»). Pin localhost so Debug still loads Metro.
+    // See: https://github.com/expo/expo/issues/41751
+    let settings = RCTBundleURLProvider.sharedSettings()
+    let location = (settings.jsLocation ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if location.isEmpty {
+      settings.jsLocation = "localhost"
+    }
+    if let url = settings.jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry") {
+      return url
+    }
+    return URL(
+      string: "http://localhost:8081/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true&minify=false"
+    )
 #else
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
