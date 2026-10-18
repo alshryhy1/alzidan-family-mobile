@@ -70,6 +70,41 @@ function branchStyles(p: ThemePalette) {
       textAlign: 'right',
       writingDirection: 'rtl',
     },
+    heroStatsBlock: {
+      alignItems: 'flex-end',
+      gap: 8,
+      marginTop: 8,
+      width: '100%',
+    },
+    heroStatTitle: {
+      color: p.goldSoft,
+      fontSize: 12,
+      fontWeight: '800',
+      opacity: 0.85,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    heroPctRow: {
+      flexDirection: 'row-reverse',
+      flexWrap: 'wrap',
+      gap: 6,
+      justifyContent: 'flex-end',
+    },
+    heroPctChip: {
+      backgroundColor: 'rgba(196,163,90,0.14)',
+      borderColor: 'rgba(196,163,90,0.4)',
+      borderRadius: 12,
+      borderWidth: 1,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    heroPctText: {
+      color: p.goldSoft,
+      fontSize: 12,
+      fontWeight: '800',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
     house: {
       backgroundColor: p.creamLift,
       borderColor: 'rgba(196,163,90,0.45)',
@@ -233,6 +268,33 @@ function WorkStatusTiles({
   );
 }
 
+function sumEducation(branches: Branch[]): BranchEducationDegreeCounts {
+  return branches.reduce((acc, branch) => {
+    const c = branch.educationDegree || emptyEducationDegreeCounts();
+    return {
+      intermediate: acc.intermediate + c.intermediate,
+      secondary: acc.secondary + c.secondary,
+      diploma: acc.diploma + c.diploma,
+      bachelor: acc.bachelor + c.bachelor,
+      master: acc.master + c.master,
+      doctorate: acc.doctorate + c.doctorate,
+      unset: acc.unset + c.unset,
+    };
+  }, emptyEducationDegreeCounts());
+}
+
+function sumWorkStatus(branches: Branch[]): BranchWorkStatusCounts {
+  return branches.reduce((acc, branch) => {
+    const c = branch.workStatus || emptyWorkStatusCounts();
+    return {
+      employed: acc.employed + c.employed,
+      retired: acc.retired + c.retired,
+      unemployed: acc.unemployed + c.unemployed,
+      unset: acc.unset + c.unset,
+    };
+  }, emptyWorkStatusCounts());
+}
+
 function EducationDegreeTiles({
   living,
   educationDegree,
@@ -271,6 +333,61 @@ function EducationDegreeTiles({
   );
 }
 
+function FamilyHeroPercents({
+  living,
+  workStatus,
+  educationDegree,
+  styles,
+}: {
+  living: number;
+  workStatus: BranchWorkStatusCounts;
+  educationDegree: BranchEducationDegreeCounts;
+  styles: ReturnType<typeof branchStyles>;
+}) {
+  const workKnown = workStatus.employed + workStatus.retired + workStatus.unemployed;
+  const eduKnown =
+    educationDegree.intermediate +
+    educationDegree.secondary +
+    educationDegree.diploma +
+    educationDegree.bachelor +
+    educationDegree.master +
+    educationDegree.doctorate;
+  if (!living || (workKnown <= 0 && eduKnown <= 0)) return null;
+
+  return (
+    <View style={styles.heroStatsBlock}>
+      {workKnown > 0 ? (
+        <View style={{ alignItems: 'flex-end', gap: 6, width: '100%' }}>
+          <Text style={styles.heroStatTitle}>الحالة الوظيفية · نسب من الأحياء</Text>
+          <View style={styles.heroPctRow}>
+            {WORK_TILES.map((tile) => (
+              <View key={tile.key} style={styles.heroPctChip}>
+                <Text style={styles.heroPctText}>
+                  {tile.label} {workStatusPercent(workStatus[tile.key], living)}٪
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+      {eduKnown > 0 ? (
+        <View style={{ alignItems: 'flex-end', gap: 6, width: '100%' }}>
+          <Text style={styles.heroStatTitle}>الشهادات · نسب من الأحياء</Text>
+          <View style={styles.heroPctRow}>
+            {EDUCATION_TILES.map((tile) => (
+              <View key={tile.key} style={styles.heroPctChip}>
+                <Text style={styles.heroPctText}>
+                  {tile.label} {workStatusPercent(educationDegree[tile.key], living)}٪
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function BranchesScreen({
   branches,
   error,
@@ -284,6 +401,8 @@ export function BranchesScreen({
     () => branches.reduce((sum, branch) => sum + (branch.membersCount || 0), 0),
     [branches],
   );
+  const familyWork = useMemo(() => sumWorkStatus(branches), [branches]);
+  const familyEducation = useMemo(() => sumEducation(branches), [branches]);
 
   return (
     <SceneShell
@@ -296,6 +415,12 @@ export function BranchesScreen({
             <Text style={styles.heroMeta}>
               عائلة مطلق الزيدان · {branches.length} فروع
             </Text>
+            <FamilyHeroPercents
+              educationDegree={familyEducation}
+              living={totalLiving}
+              styles={styles}
+              workStatus={familyWork}
+            />
           </View>
         ) : null
       }
