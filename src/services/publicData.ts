@@ -15,7 +15,9 @@ import { childrenOfPersonInGraph, partnerNameForMarriage, siblingsInGraph } from
 import {
   collectBranchTreeStats,
   isTreePersonDeceased,
+  normalizeEducationDegree,
   normalizeWorkStatus,
+  normalizeWorkplace,
 } from '../utils/treeStats';
 import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 import { callPublicRpc, selectPublicRows } from './supabase';
@@ -50,6 +52,8 @@ type ChildRow = {
   gender?: string | null;
   photo_url?: string | null;
   work_status?: string | null;
+  workplace?: string | null;
+  education_degree?: string | null;
 };
 
 type EventRow = {
@@ -287,6 +291,8 @@ function mapEvent(row: EventRow): FamilyEvent {
 
 function mapChildRow(row: ChildRow): TreeChild {
   const status = normalizeWorkStatus(row.work_status);
+  const workplace = normalizeWorkplace(row.workplace);
+  const educationDegree = normalizeEducationDegree(row.education_degree);
   return {
     id: row.id,
     branchKey: row.branch_key,
@@ -304,6 +310,8 @@ function mapChildRow(row: ChildRow): TreeChild {
     gender: row.gender ?? null,
     photoUrl: String(row.photo_url || '').trim() || null,
     workStatus: status || null,
+    workplace: workplace || null,
+    educationDegree: educationDegree || null,
   };
 }
 
@@ -313,37 +321,43 @@ async function loadTreeChildren() {
   const withGender = `${core},gender`;
   const withPhoto = `${withGender},photo_url`;
   const withWork = `${withPhoto},work_status`;
+  const withEducation = `${withWork},workplace,education_degree`;
 
   try {
-    return await selectPublicRows<ChildRow>(`tree_children?select=${withWork}&order=id.asc`);
+    return await selectPublicRows<ChildRow>(`tree_children?select=${withEducation}&order=id.asc`);
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     const missingColumn =
       message.includes('does not exist') || message.includes('schema cache');
+    const educationMissing =
+      (message.includes('education_degree') || message.includes('workplace')) && missingColumn;
     const workMissing = message.includes('work_status') && missingColumn;
     const photoMissing = message.includes('photo_url') && missingColumn;
     const birthOrderMissing = message.includes('birth_order') && missingColumn;
     const genderMissing = message.includes('gender') && missingColumn;
 
+    if (educationMissing) {
+      try {
+        return await selectPublicRows<ChildRow>(`tree_children?select=${withWork}&order=id.asc`);
+      } catch (inner) {
+        return loadTreeChildrenFallback(inner, {
+          core,
+          withGender,
+          withPhoto,
+          withWork,
+        });
+      }
+    }
     if (workMissing) {
       try {
         return await selectPublicRows<ChildRow>(`tree_children?select=${withPhoto}&order=id.asc`);
       } catch (inner) {
-        const innerMessage = inner instanceof Error ? inner.message : '';
-        const innerMissing =
-          innerMessage.includes('does not exist') || innerMessage.includes('schema cache');
-        if (innerMessage.includes('photo_url') && innerMissing) {
-          return selectPublicRows<ChildRow>(`tree_children?select=${withGender}&order=id.asc`);
-        }
-        if (innerMessage.includes('gender') && innerMissing) {
-          return selectPublicRows<ChildRow>(`tree_children?select=${core}&order=id.asc`);
-        }
-        if (innerMessage.includes('birth_order') && innerMissing) {
-          return selectPublicRows<ChildRow>(
-            'tree_children?select=id,branch_key,parent_name,name,child_name,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased&order=id.asc',
-          );
-        }
-        throw inner;
+        return loadTreeChildrenFallback(inner, {
+          core,
+          withGender,
+          withPhoto,
+          withWork,
+        });
       }
     }
     if (photoMissing) {
@@ -358,6 +372,34 @@ async function loadTreeChildren() {
       'tree_children?select=id,branch_key,parent_name,name,child_name,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased&order=id.asc',
     );
   }
+}
+
+async function loadTreeChildrenFallback(
+  error: unknown,
+  cols: { core: string; withGender: string; withPhoto: string; withWork: string },
+) {
+  const message = error instanceof Error ? error.message : '';
+  const missingColumn =
+    message.includes('does not exist') || message.includes('schema cache');
+  if (message.includes('work_status') && missingColumn) {
+    try {
+      return await selectPublicRows<ChildRow>(`tree_children?select=${cols.withPhoto}&order=id.asc`);
+    } catch (inner) {
+      return loadTreeChildrenFallback(inner, cols);
+    }
+  }
+  if (message.includes('photo_url') && missingColumn) {
+    return selectPublicRows<ChildRow>(`tree_children?select=${cols.withGender}&order=id.asc`);
+  }
+  if (message.includes('gender') && missingColumn) {
+    return selectPublicRows<ChildRow>(`tree_children?select=${cols.core}&order=id.asc`);
+  }
+  if (message.includes('birth_order') && missingColumn) {
+    return selectPublicRows<ChildRow>(
+      'tree_children?select=id,branch_key,parent_name,name,child_name,birth_date_g,birth_date_h,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased&order=id.asc',
+    );
+  }
+  throw error;
 }
 
 async function loadSpouseSummaryRows() {
@@ -403,6 +445,7 @@ export async function loadPublicData() {
       familiesCount: branchParents.length || rootParentCount(rawBranchChildren),
       membersCount: stats.living,
       workStatus: stats.workStatus,
+      educationDegree: stats.educationDegree,
     };
   });
 
@@ -467,6 +510,8 @@ export async function loadMemberLineageChildren(phone: string): Promise<TreeChil
           gender: row.gender ?? null,
           photo_url: row.photo_url ?? null,
           work_status: row.work_status ?? null,
+          workplace: row.workplace ?? null,
+          education_degree: row.education_degree ?? null,
         });
       });
   } catch {

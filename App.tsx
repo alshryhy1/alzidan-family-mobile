@@ -482,6 +482,8 @@ function AppChrome() {
         name: String(row.name || prev?.name || ''),
         branchKey: String(row.branchKey || prev?.branchKey || ''),
         workStatus: row.workStatus || prev?.workStatus || null,
+        workplace: row.workplace || prev?.workplace || null,
+        educationDegree: row.educationDegree || prev?.educationDegree || null,
       });
     });
     return Array.from(byId.values());
@@ -497,6 +499,7 @@ function AppChrome() {
         ...branch,
         membersCount: stats.living,
         workStatus: stats.workStatus,
+        educationDegree: stats.educationDegree,
       };
     });
   }, [includePubliclyHiddenPeople, publicData.branches, treeChildren]);

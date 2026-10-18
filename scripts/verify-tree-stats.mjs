@@ -19,7 +19,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const {
   collectBranchTreeStats,
   isTreePersonDeceased,
+  normalizeEducationDegree,
   normalizeWorkStatus,
+  normalizeWorkplace,
   workStatusPercent,
 } = await import(pathToFileURL(join(root, 'src/utils/treeStats.ts')).href);
 
@@ -55,28 +57,39 @@ function row(name, opts = {}) {
     area: null,
     isDeceased: opts.isDeceased ?? false,
     workStatus: opts.workStatus ?? null,
+    workplace: opts.workplace ?? null,
+    educationDegree: opts.educationDegree ?? null,
   };
 }
 
-console.log('tree living/total + work_status smoke');
+console.log('tree living/total + work_status + education smoke');
 
 assert(normalizeWorkStatus('موظف') === 'employed', 'موظف → employed');
 assert(normalizeWorkStatus('متقاعد') === 'retired', 'متقاعد → retired');
 assert(normalizeWorkStatus('عاطل') === 'unemployed', 'عاطل → unemployed');
 assert(normalizeWorkStatus('') === '', 'فارغ → unset');
+assert(normalizeEducationDegree('متوسط') === 'intermediate', 'متوسط → intermediate');
+assert(normalizeEducationDegree('ثانوي') === 'secondary', 'ثانوي → secondary');
+assert(normalizeEducationDegree('دبلوم') === 'diploma', 'دبلوم → diploma');
+assert(normalizeEducationDegree('بكالوريوس') === 'bachelor', 'بكالوريوس → bachelor');
+assert(normalizeEducationDegree('ماجستير') === 'master', 'ماجستير → master');
+assert(normalizeEducationDegree('دكتوراه') === 'doctorate', 'دكتوراه → doctorate');
+assert(normalizeWorkplace('  وزارة التعليم  ') === 'وزارة التعليم', 'جهة العمل تُقلَّم');
 assert(workStatusPercent(2, 4) === 50, 'نسبة 2/4 = 50');
 assert(workStatusPercent(0, 4) === 0, 'نسبة 0/4 = 0');
 assert(workStatusPercent(1, 0) === 0, 'نسبة مع living=0 = 0');
 
 const baseRows = [
-  row(father, { workStatus: 'employed' }),
-  row(son, { parentName: father, workStatus: 'employed' }),
+  row(father, { workStatus: 'employed', educationDegree: 'bachelor', workplace: 'تعليم' }),
+  row(son, { parentName: father, workStatus: 'employed', educationDegree: 'secondary' }),
 ];
 const base = collectBranchTreeStats(baseRows, branchKey);
 assert(base.living === 2, 'قاعدة: أب + ابن حيّان → living=2');
 assert(base.total === 2, 'قاعدة: total=2');
 assert(base.deceased === 0, 'قاعدة: deceased=0');
 assert(base.workStatus.employed === 2, 'موظفان حيان');
+assert(base.educationDegree.bachelor === 1, 'بكالوريوس واحد');
+assert(base.educationDegree.secondary === 1, 'ثانوي واحد');
 
 const afterAddMember = collectBranchTreeStats(
   [...baseRows, row(member, { parentName: father, workStatus: 'unemployed' })],
@@ -99,8 +112,13 @@ assert(afterBirth.workStatus.unset === 1, 'مولود بلا حالة → unset'
 
 const afterDeath = collectBranchTreeStats(
   [
-    row(father, { workStatus: 'employed' }),
-    row(son, { parentName: father, isDeceased: true, workStatus: 'employed' }),
+    row(father, { workStatus: 'employed', educationDegree: 'bachelor' }),
+    row(son, {
+      parentName: father,
+      isDeceased: true,
+      workStatus: 'employed',
+      educationDegree: 'secondary',
+    }),
   ],
   branchKey,
 );
@@ -108,6 +126,8 @@ assert(afterDeath.living === base.living - 1, 'تسجيل وفاة → living �
 assert(afterDeath.total === base.total, 'تسجيل وفاة → total ثابت');
 assert(afterDeath.deceased === 1, 'تسجيل وفاة → deceased +1');
 assert(afterDeath.workStatus.employed === 1, 'المتوفى يخرج من نسب الموظفين');
+assert(afterDeath.educationDegree.bachelor === 1, 'المتوفى يخرج من نسب الشهادات');
+assert(afterDeath.educationDegree.secondary === 0, 'شهادة المتوفى لا تُحسب');
 
 const afterDeathThenBirth = collectBranchTreeStats(
   [

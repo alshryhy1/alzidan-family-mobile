@@ -5,8 +5,12 @@ import { DataState } from '../components/DataState';
 import { SceneShell } from '../components/scene';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
-import type { Branch, BranchWorkStatusCounts } from '../types';
-import { emptyWorkStatusCounts, workStatusPercent } from '../utils/treeStats';
+import type { Branch, BranchEducationDegreeCounts, BranchWorkStatusCounts } from '../types';
+import {
+  emptyEducationDegreeCounts,
+  emptyWorkStatusCounts,
+  workStatusPercent,
+} from '../utils/treeStats';
 
 type BranchesScreenProps = {
   branches: Branch[];
@@ -21,10 +25,27 @@ type WorkTile = {
   label: string;
 };
 
+type EducationTile = {
+  key: keyof Pick<
+    BranchEducationDegreeCounts,
+    'intermediate' | 'secondary' | 'diploma' | 'bachelor' | 'master' | 'doctorate'
+  >;
+  label: string;
+};
+
 const WORK_TILES: WorkTile[] = [
   { key: 'employed', label: 'موظفون' },
   { key: 'retired', label: 'متقاعدون' },
   { key: 'unemployed', label: 'عاطلون' },
+];
+
+const EDUCATION_TILES: EducationTile[] = [
+  { key: 'intermediate', label: 'متوسط' },
+  { key: 'secondary', label: 'ثانوي' },
+  { key: 'diploma', label: 'دبلوم' },
+  { key: 'bachelor', label: 'بكالوريوس' },
+  { key: 'master', label: 'ماجستير' },
+  { key: 'doctorate', label: 'دكتوراه' },
 ];
 
 function branchStyles(p: ThemePalette) {
@@ -103,8 +124,18 @@ function branchStyles(p: ThemePalette) {
     dot: {
       color: p.gold,
     },
+    sectionLabel: {
+      color: p.greenMid,
+      fontSize: 11,
+      fontWeight: '800',
+      marginTop: 2,
+      opacity: 0.85,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
     workRow: {
       flexDirection: 'row-reverse',
+      flexWrap: 'wrap',
       gap: 8,
       marginTop: 4,
     },
@@ -114,8 +145,23 @@ function branchStyles(p: ThemePalette) {
       borderColor: 'rgba(196,163,90,0.35)',
       borderRadius: 14,
       borderWidth: 1,
-      flex: 1,
+      flexGrow: 1,
+      flexBasis: '28%',
       gap: 2,
+      minWidth: 84,
+      paddingHorizontal: 6,
+      paddingVertical: 10,
+    },
+    eduTile: {
+      alignItems: 'center',
+      backgroundColor: 'rgba(27,94,64,0.06)',
+      borderColor: 'rgba(27,94,64,0.22)',
+      borderRadius: 14,
+      borderWidth: 1,
+      flexGrow: 1,
+      flexBasis: '28%',
+      gap: 2,
+      minWidth: 84,
       paddingHorizontal: 6,
       paddingVertical: 10,
     },
@@ -169,17 +215,58 @@ function WorkStatusTiles({
   if (!living || known <= 0) return null;
 
   return (
-    <View style={styles.workRow}>
-      {WORK_TILES.map((tile) => {
-        const count = counts[tile.key];
-        return (
-          <View key={tile.key} style={styles.workTile}>
-            <Text style={styles.workLabel}>{tile.label}</Text>
-            <Text style={styles.workValue}>{count}</Text>
-            <Text style={styles.workPct}>{workStatusPercent(count, living)}٪</Text>
-          </View>
-        );
-      })}
+    <View>
+      <Text style={styles.sectionLabel}>الحالة الوظيفية</Text>
+      <View style={styles.workRow}>
+        {WORK_TILES.map((tile) => {
+          const count = counts[tile.key];
+          return (
+            <View key={tile.key} style={styles.workTile}>
+              <Text style={styles.workLabel}>{tile.label}</Text>
+              <Text style={styles.workValue}>{count}</Text>
+              <Text style={styles.workPct}>{workStatusPercent(count, living)}٪</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function EducationDegreeTiles({
+  living,
+  educationDegree,
+  styles,
+}: {
+  living: number;
+  educationDegree?: BranchEducationDegreeCounts;
+  styles: ReturnType<typeof branchStyles>;
+}) {
+  const counts = educationDegree || emptyEducationDegreeCounts();
+  const known =
+    counts.intermediate +
+    counts.secondary +
+    counts.diploma +
+    counts.bachelor +
+    counts.master +
+    counts.doctorate;
+  if (!living || known <= 0) return null;
+
+  return (
+    <View>
+      <Text style={styles.sectionLabel}>الدرجات العلمية</Text>
+      <View style={styles.workRow}>
+        {EDUCATION_TILES.map((tile) => {
+          const count = counts[tile.key];
+          return (
+            <View key={tile.key} style={styles.eduTile}>
+              <Text style={styles.workLabel}>{tile.label}</Text>
+              <Text style={styles.workValue}>{count}</Text>
+              <Text style={styles.workPct}>{workStatusPercent(count, living)}٪</Text>
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -248,6 +335,11 @@ export function BranchesScreen({
                 living={branch.membersCount}
                 styles={styles}
                 workStatus={branch.workStatus}
+              />
+              <EducationDegreeTiles
+                educationDegree={branch.educationDegree}
+                living={branch.membersCount}
+                styles={styles}
               />
               <Text style={styles.enter}>عرض شجرة فرع {branch.name}</Text>
             </Pressable>
