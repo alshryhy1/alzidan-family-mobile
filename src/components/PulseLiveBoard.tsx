@@ -12,7 +12,12 @@ import {
   pulseTickerKindLabel,
 } from '../utils/pulseNotices';
 import type { PulseLiveModel } from '../utils/pulseFocus';
-import { pulseAffinityLine } from '../utils/pulseAffinity';
+import {
+  pulseAffinitySnap,
+  pulseAffinitySplitLine,
+  pulseAffinityTotalLine,
+  type PulseAffinitySnap,
+} from '../utils/pulseAffinity';
 import type { OccasionMotif } from '../utils/pulseOccasionTheme';
 import { occasionMark, resolveOccasionTheme } from '../utils/pulseOccasionTheme';
 import { daysWord } from '../utils/pulseSeason';
@@ -35,8 +40,8 @@ const TILE_HEIGHT = 156;
 
 type PulseLiveBoardProps = {
   model: PulseLiveModel;
-  /** Active spouses marked outside the family (مصاهرون). */
-  affinityOutsideCount?: number | null;
+  /** Active spouse affinity — same counts as web tree stats. */
+  affinity?: PulseAffinitySnap | null;
   notices?: PulseBoardNotice[];
   delegates?: PulseBoardNotice[];
   tone?: 'hero' | 'stage';
@@ -154,7 +159,7 @@ function CountdownCard({ model }: { model: PulseLiveModel }) {
 
 export function PulseLiveBoard({
   model,
-  affinityOutsideCount = null,
+  affinity = null,
   notices = [],
   delegates = [],
   tone = 'hero',
@@ -178,7 +183,10 @@ export function PulseLiveBoard({
   const tickerText = current ? formatPulseNotice(current) : '';
   const tickerKind = current && tickerText ? pulseTickerKindLabel(current.kind) : '';
   const online = model.online;
-  const affinityLine = pulseAffinityLine(affinityOutsideCount);
+  const affinitySnap = pulseAffinitySnap(affinity);
+  const affinityTotal = pulseAffinityTotalLine(affinitySnap);
+  const affinitySplit = pulseAffinitySplitLine(affinitySnap);
+  const affinityA11y = [affinityTotal, affinitySplit].filter(Boolean).join(' · ');
 
   const body = (
     <>
@@ -192,10 +200,15 @@ export function PulseLiveBoard({
         <Text style={styles.presenceCaption}>{presenceLabel(online)}</Text>
         <Text style={styles.presenceValue}>{presenceValue(online)}</Text>
       </LinearGradient>
-      {affinityLine ? (
-        <Text accessibilityLabel={affinityLine} style={styles.affinityLine}>
-          {affinityLine}
-        </Text>
+      {affinityTotal ? (
+        <View
+          accessibilityLabel={affinityA11y}
+          accessibilityRole="summary"
+          style={styles.affinityBlock}
+        >
+          <Text style={styles.affinityTotal}>{affinityTotal}</Text>
+          {affinitySplit ? <Text style={styles.affinitySplit}>{affinitySplit}</Text> : null}
+        </View>
       ) : null}
       <View style={styles.tiles}>
         <WeatherCard model={model} />
@@ -356,11 +369,23 @@ function pulseStyles(p: ThemePalette) {
       textAlign: 'center',
       writingDirection: 'rtl',
     },
-    affinityLine: {
+    affinityBlock: {
+      alignItems: 'center',
       alignSelf: 'stretch',
+      gap: 2,
+    },
+    affinityTotal: {
+      color: p.green,
+      fontSize: 15,
+      fontWeight: '800',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    affinitySplit: {
       color: p.greenMid,
       fontSize: 13,
       fontWeight: '700',
+      opacity: 0.9,
       textAlign: 'center',
       writingDirection: 'rtl',
     },

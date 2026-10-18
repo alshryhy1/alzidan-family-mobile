@@ -1,5 +1,5 @@
 /**
- * Pulse affinity line under presence (مصاهرون من خارج العائلة).
+ * Pulse affinity lines under presence (full web-style split).
  * Keep in sync with src/utils/pulseAffinity.ts + PulseLiveBoard / HomeScreen wiring.
  */
 import { readFileSync } from 'node:fs';
@@ -10,9 +10,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 register('./ts-esm-hook.mjs', import.meta.url);
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { pulseAffinityLine } = await import(
-  pathToFileURL(join(root, 'src/utils/pulseAffinity.ts')).href
-);
+const {
+  pulseAffinitySnap,
+  pulseAffinitySplitLine,
+  pulseAffinityTotalLine,
+} = await import(pathToFileURL(join(root, 'src/utils/pulseAffinity.ts')).href);
 
 function assert(cond, message) {
   if (cond) {
@@ -25,27 +27,30 @@ function assert(cond, message) {
 
 console.log('pulse affinity line smoke');
 
-assert(pulseAffinityLine(48) === 'مصاهرون من خارج العائلة · 48', 'عدد خارج العائلة');
-assert(pulseAffinityLine(0) === 'مصاهرون من خارج العائلة · 0', 'صفر يظهر');
-assert(pulseAffinityLine(null) === '', 'null يخفي السطر');
-assert(pulseAffinityLine(undefined) === '', 'undefined يخفي السطر');
-assert(pulseAffinityLine(-1) === '', 'سالب يخفي السطر');
+const snap = pulseAffinitySnap({ total: 85, insideCount: 61, outsideCount: 23 });
+assert(snap?.total === 85 && snap?.insideCount === 61 && snap?.outsideCount === 23, 'يلتقط أرقام الويب');
+assert(pulseAffinityTotalLine(snap) === 'مصاهرة · 85', 'سطر المجموع');
+assert(
+  pulseAffinitySplitLine(snap) === 'داخل العائلة 61 · خارجها 23',
+  'سطر الداخل/الخارج',
+);
+assert(pulseAffinitySnap(null) === null, 'null يخفي');
+assert(pulseAffinitySnap({ total: 0, insideCount: 0, outsideCount: 0 }) === null, 'أصفار تخفي');
 
 const board = readFileSync(join(root, 'src/components/PulseLiveBoard.tsx'), 'utf8');
 const home = readFileSync(join(root, 'src/screens/HomeScreen.tsx'), 'utf8');
 const app = readFileSync(join(root, 'App.tsx'), 'utf8');
 
-assert(board.includes('pulseAffinityLine'), 'PulseLiveBoard يستورد السطر');
-assert(board.includes('affinityOutsideCount'), 'PulseLiveBoard يقبل العدد');
-assert(board.includes('styles.affinityLine'), 'سطر المصاهرة موجود');
+assert(board.includes('pulseAffinityTotalLine'), 'PulseLiveBoard يعرض المجموع');
+assert(board.includes('pulseAffinitySplitLine'), 'PulseLiveBoard يعرض التقسيم');
+assert(home.includes('affinityStats'), 'HomeScreen يمرّر الإحصاء');
+assert(app.includes('affinityStats={publicData.affinityStats}'), 'App يمرّر affinityStats كاملة');
 const presenceClose = board.indexOf('</LinearGradient>');
-const affinityRender = board.indexOf('{affinityLine ?');
+const affinityRender = board.indexOf('affinityTotal ?');
 assert(
   presenceClose >= 0 && affinityRender > presenceClose,
-  'السطر تحت شريط الحضور لا داخله',
+  'السطور تحت شريط الحضور لا داخله',
 );
-assert(home.includes('affinityOutsideCount'), 'HomeScreen يمرّر العدد');
-assert(app.includes('affinityStats?.outsideCount'), 'App يمرّر outsideCount من البيانات العامة');
 const pulseIdx = home.indexOf('<PulseLiveBoard');
 const boardIdx = home.indexOf('وش عند الزيدان؟');
 assert(pulseIdx >= 0 && boardIdx >= 0 && pulseIdx < boardIdx, 'نبض فوق قسم اللوحة لا تحتها');
