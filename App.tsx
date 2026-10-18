@@ -1024,8 +1024,7 @@ function AppChrome() {
 
   return (
     <>
-      <SafeAreaProvider>
-        <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+      <SafeAreaView edges={['bottom']} style={styles.safeArea}>
           <StatusBar style="light" />
           <View style={styles.app}>
             <View
@@ -1093,7 +1092,6 @@ function AppChrome() {
 
         </View>
       </SafeAreaView>
-    </SafeAreaProvider>
 
       <SpecialCardModal
         card={currentSpecialCard}
@@ -1106,13 +1104,15 @@ function AppChrome() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <ForceUpdateGate>
-        <DeviceLockGate>
-          <AppChrome />
-        </DeviceLockGate>
-      </ForceUpdateGate>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <ForceUpdateGate>
+          <DeviceLockGate>
+            <AppChrome />
+          </DeviceLockGate>
+        </ForceUpdateGate>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 
