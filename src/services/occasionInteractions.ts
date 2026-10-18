@@ -219,7 +219,7 @@ export type FilterOccasionInboxOptions = {
 };
 
 /**
- * يخفي ردود جلسة فنجال منتهية حتى لا تختلط مع فنجال جديد (مثل «فنجال سايق»).
+ * يخفي ردود فنجال سابق حتى لا تظهر مع فنجال اليوم وكأنها مرسلة اليوم.
  * الفنجال غير الظاهر على المجلس لا يبقى في «وصلك من العائلة».
  */
 export function isCurrentOccasionInboxItem(
@@ -264,4 +264,26 @@ export function occasionInboxHeadline(item: OccasionInboxItem) {
   if (!person) return yours;
   if (yours === 'دعوتك') return `دعوة ${person}`;
   return `${yours} · ${person}`;
+}
+
+/** وقت الرد بالعربية حتى لا تبدو رسالة سابقة وكأنها اليوم. */
+export function formatOccasionInboxWhen(raw?: string | null, now: Date = new Date()) {
+  const at = Date.parse(String(raw || ''));
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const diffMs = now.getTime() - at;
+  if (diffMs < 0) return 'الآن';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'الآن';
+  if (mins < 60) return `قبل ${mins} د`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours === 1 ? 'قبل ساعة' : `قبل ${hours} س`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'أمس';
+  if (days < 14) return `قبل ${days} يوم`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 8) return weeks === 1 ? 'قبل أسبوع' : `قبل ${weeks} أسابيع`;
+  const d = new Date(at);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }
