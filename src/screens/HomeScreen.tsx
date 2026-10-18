@@ -248,22 +248,12 @@ export function HomeScreen({
       <View style={styles.creamStage}>
         {!loading && !error ? (
           <PulseLiveBoard
-            affinity={
-              affinityStats
-                ? {
-                    total: affinityStats.total,
-                    insideCount: affinityStats.insideCount,
-                    outsideCount: affinityStats.outsideCount,
-                  }
-                : null
-            }
-            delegates={delegates}
             model={{
               online: pulseOnline,
               weather,
               season,
             }}
-            notices={notices}
+            parts={['presence']}
             tone="stage"
           />
         ) : null}
@@ -412,6 +402,29 @@ export function HomeScreen({
             <Text style={styles.boardAddText}>أضف عرض أو طلب</Text>
           </Pressable>
         </View>
+
+        {!loading && !error ? (
+          <PulseLiveBoard
+            affinity={
+              affinityStats
+                ? {
+                    total: affinityStats.total,
+                    insideCount: affinityStats.insideCount,
+                    outsideCount: affinityStats.outsideCount,
+                  }
+                : null
+            }
+            delegates={delegates}
+            model={{
+              online: pulseOnline,
+              weather,
+              season,
+            }}
+            notices={notices}
+            parts={['affinity', 'tiles', 'notices']}
+            tone="stage"
+          />
+        ) : null}
 
         <View style={styles.creamFoot}>
           {loggedIn && (memberBranchKey || canOpenCard) ? (

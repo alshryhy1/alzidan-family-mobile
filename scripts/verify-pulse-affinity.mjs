@@ -1,6 +1,6 @@
 /**
- * Pulse affinity lines under presence (full web-style split).
- * Keep in sync with src/utils/pulseAffinity.ts + PulseLiveBoard / HomeScreen wiring.
+ * Pulse affinity + Home section order.
+ * Keep in sync with src/utils/pulseAffinity.ts + PulseLiveBoard / HomeScreen.
  */
 import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
@@ -25,7 +25,7 @@ function assert(cond, message) {
   process.exitCode = 1;
 }
 
-console.log('pulse affinity line smoke');
+console.log('pulse affinity + home order smoke');
 
 const snap = pulseAffinitySnap({ total: 85, insideCount: 61, outsideCount: 23 });
 assert(snap?.total === 85 && snap?.insideCount === 61 && snap?.outsideCount === 23, 'يلتقط أرقام الويب');
@@ -41,19 +41,30 @@ const board = readFileSync(join(root, 'src/components/PulseLiveBoard.tsx'), 'utf
 const home = readFileSync(join(root, 'src/screens/HomeScreen.tsx'), 'utf8');
 const app = readFileSync(join(root, 'App.tsx'), 'utf8');
 
+assert(board.includes("parts?: PulseBoardPart[]"), 'PulseLiveBoard يدعم تقسيم الأجزاء');
 assert(board.includes('pulseAffinityTotalLine'), 'PulseLiveBoard يعرض المجموع');
 assert(board.includes('pulseAffinitySplitLine'), 'PulseLiveBoard يعرض التقسيم');
-assert(home.includes('affinityStats'), 'HomeScreen يمرّر الإحصاء');
-assert(app.includes('affinityStats={publicData.affinityStats}'), 'App يمرّر affinityStats كاملة');
-const presenceClose = board.indexOf('</LinearGradient>');
-const affinityRender = board.indexOf('affinityTotal ?');
+assert(home.includes("parts={['presence']}"), 'الحضور أولًا وحده');
 assert(
-  presenceClose >= 0 && affinityRender > presenceClose,
-  'السطور تحت شريط الحضور لا داخله',
+  home.includes("parts={['affinity', 'tiles', 'notices']}"),
+  'المصاهرة والجو بعد الأقسام الشخصية',
 );
-const pulseIdx = home.indexOf('<PulseLiveBoard');
-const boardIdx = home.indexOf('وش عند الزيدان؟');
-assert(pulseIdx >= 0 && boardIdx >= 0 && pulseIdx < boardIdx, 'نبض فوق قسم اللوحة لا تحتها');
+assert(app.includes('affinityStats={publicData.affinityStats}'), 'App يمرّر affinityStats كاملة');
+
+const presenceCall = home.indexOf("parts={['presence']}");
+const familyAtHome = home.indexOf('عند أهلك');
+const sinceVisit = home.indexOf('منذ آخر زيارة');
+const boardTitle = home.indexOf('وش عند الزيدان؟');
+const statsCall = home.indexOf("parts={['affinity', 'tiles', 'notices']}");
+
+assert(
+  presenceCall >= 0 &&
+    familyAtHome > presenceCall &&
+    sinceVisit > familyAtHome &&
+    boardTitle > sinceVisit &&
+    statsCall > boardTitle,
+  'الترتيب: حضور → عند أهلك → منذ آخر زيارة → وش عند الزيدان → مصاهرة/جو',
+);
 
 if (process.exitCode) {
   console.error('\npulse affinity smoke failed');

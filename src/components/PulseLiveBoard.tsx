@@ -38,10 +38,16 @@ const SKY = {
 const FLAG_SA = require('../../assets/pulse/pulse-flag-sa.png');
 const TILE_HEIGHT = 156;
 
+export type PulseBoardPart = 'presence' | 'affinity' | 'tiles' | 'notices';
+
+const ALL_PULSE_PARTS: PulseBoardPart[] = ['presence', 'affinity', 'tiles', 'notices'];
+
 type PulseLiveBoardProps = {
   model: PulseLiveModel;
   /** Active spouse affinity — same counts as web tree stats. */
   affinity?: PulseAffinitySnap | null;
+  /** Which blocks to render (default: all). Lets Home split live presence above personal sections. */
+  parts?: PulseBoardPart[];
   notices?: PulseBoardNotice[];
   delegates?: PulseBoardNotice[];
   tone?: 'hero' | 'stage';
@@ -160,12 +166,14 @@ function CountdownCard({ model }: { model: PulseLiveModel }) {
 export function PulseLiveBoard({
   model,
   affinity = null,
+  parts = ALL_PULSE_PARTS,
   notices = [],
   delegates = [],
   tone = 'hero',
 }: PulseLiveBoardProps) {
   const p = useThemePalette();
   const styles = usePulseStyles();
+  const show = useMemo(() => new Set(parts.length ? parts : ALL_PULSE_PARTS), [parts]);
   const [hourSlot, setHourSlot] = useState(() => pulseHourSlot());
   useEffect(() => {
     const id = setInterval(() => {
@@ -190,17 +198,19 @@ export function PulseLiveBoard({
 
   const body = (
     <>
-      <LinearGradient
-        accessibilityLabel={`${presenceLabel(online)} ${presenceValue(online)}`}
-        colors={[p.greenMid, p.greenDeep]}
-        end={{ x: 0.2, y: 1 }}
-        start={{ x: 0.8, y: 0 }}
-        style={styles.presenceBand}
-      >
-        <Text style={styles.presenceCaption}>{presenceLabel(online)}</Text>
-        <Text style={styles.presenceValue}>{presenceValue(online)}</Text>
-      </LinearGradient>
-      {affinityTotal ? (
+      {show.has('presence') ? (
+        <LinearGradient
+          accessibilityLabel={`${presenceLabel(online)} ${presenceValue(online)}`}
+          colors={[p.greenMid, p.greenDeep]}
+          end={{ x: 0.2, y: 1 }}
+          start={{ x: 0.8, y: 0 }}
+          style={styles.presenceBand}
+        >
+          <Text style={styles.presenceCaption}>{presenceLabel(online)}</Text>
+          <Text style={styles.presenceValue}>{presenceValue(online)}</Text>
+        </LinearGradient>
+      ) : null}
+      {show.has('affinity') && affinityTotal ? (
         <View
           accessibilityLabel={affinityA11y}
           accessibilityRole="summary"
@@ -210,11 +220,13 @@ export function PulseLiveBoard({
           {affinitySplit ? <Text style={styles.affinitySplit}>{affinitySplit}</Text> : null}
         </View>
       ) : null}
-      <View style={styles.tiles}>
-        <WeatherCard model={model} />
-        <CountdownCard model={model} />
-      </View>
-      {tickerText ? (
+      {show.has('tiles') ? (
+        <View style={styles.tiles}>
+          <WeatherCard model={model} />
+          <CountdownCard model={model} />
+        </View>
+      ) : null}
+      {show.has('notices') && tickerText ? (
         <LinearGradient
           colors={[p.greenMid, p.greenDeep]}
           end={{ x: 0.15, y: 1 }}
