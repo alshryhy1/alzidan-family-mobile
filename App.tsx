@@ -981,6 +981,7 @@ function AppChrome() {
       default:
         return (
           <HomeScreen
+            affinityOutsideCount={publicData.affinityStats?.outsideCount ?? null}
             branchChildren={treeChildren}
             error={publicData.error}
             memberGreeting={memberGreeting}

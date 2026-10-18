@@ -12,6 +12,7 @@ import {
   pulseTickerKindLabel,
 } from '../utils/pulseNotices';
 import type { PulseLiveModel } from '../utils/pulseFocus';
+import { pulseAffinityLine } from '../utils/pulseAffinity';
 import type { OccasionMotif } from '../utils/pulseOccasionTheme';
 import { occasionMark, resolveOccasionTheme } from '../utils/pulseOccasionTheme';
 import { daysWord } from '../utils/pulseSeason';
@@ -34,6 +35,8 @@ const TILE_HEIGHT = 156;
 
 type PulseLiveBoardProps = {
   model: PulseLiveModel;
+  /** Active spouses marked outside the family (مصاهرون). */
+  affinityOutsideCount?: number | null;
   notices?: PulseBoardNotice[];
   delegates?: PulseBoardNotice[];
   tone?: 'hero' | 'stage';
@@ -151,6 +154,7 @@ function CountdownCard({ model }: { model: PulseLiveModel }) {
 
 export function PulseLiveBoard({
   model,
+  affinityOutsideCount = null,
   notices = [],
   delegates = [],
   tone = 'hero',
@@ -174,6 +178,7 @@ export function PulseLiveBoard({
   const tickerText = current ? formatPulseNotice(current) : '';
   const tickerKind = current && tickerText ? pulseTickerKindLabel(current.kind) : '';
   const online = model.online;
+  const affinityLine = pulseAffinityLine(affinityOutsideCount);
 
   const body = (
     <>
@@ -187,6 +192,11 @@ export function PulseLiveBoard({
         <Text style={styles.presenceCaption}>{presenceLabel(online)}</Text>
         <Text style={styles.presenceValue}>{presenceValue(online)}</Text>
       </LinearGradient>
+      {affinityLine ? (
+        <Text accessibilityLabel={affinityLine} style={styles.affinityLine}>
+          {affinityLine}
+        </Text>
+      ) : null}
       <View style={styles.tiles}>
         <WeatherCard model={model} />
         <CountdownCard model={model} />
@@ -343,6 +353,15 @@ function pulseStyles(p: ThemePalette) {
       color: p.cream,
       fontSize: 14,
       fontWeight: '700',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    affinityLine: {
+      alignSelf: 'stretch',
+      color: p.goldSoft,
+      fontSize: 13,
+      fontWeight: '700',
+      opacity: 0.92,
       textAlign: 'center',
       writingDirection: 'rtl',
     },

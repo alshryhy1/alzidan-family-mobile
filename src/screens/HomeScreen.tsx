@@ -43,6 +43,8 @@ type HomeScreenProps = {
   onRetry: () => void;
   onOpenMyCard?: () => void;
   pulseOnline?: number | null;
+  /** Active spouses from outside the family (مصاهرون). */
+  affinityOutsideCount?: number | null;
   sinceLastVisit?: SinceVisitItem[];
   onOpenSinceVisit?: (item: SinceVisitItem) => void;
   onOpenFamilyBoard?: () => void;
@@ -70,6 +72,7 @@ export function HomeScreen({
   onRetry,
   onOpenMyCard,
   pulseOnline = null,
+  affinityOutsideCount = null,
   sinceLastVisit = [],
   onOpenSinceVisit,
   onOpenFamilyBoard,
@@ -390,6 +393,7 @@ export function HomeScreen({
 
         {!loading && !error ? (
           <PulseLiveBoard
+            affinityOutsideCount={affinityOutsideCount}
             delegates={delegates}
             model={{
               online: pulseOnline,
