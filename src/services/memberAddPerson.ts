@@ -10,6 +10,7 @@ import type { TreeChild } from '../types';
 export type MemberAddPersonResult = {
   ok?: boolean;
   error?: string;
+  detail?: string;
   tree_child_id?: number;
   person_id?: string;
   parent_id?: number;
