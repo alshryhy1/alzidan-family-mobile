@@ -34,6 +34,7 @@ export function clearLocalUnlockCache() {
 }
 
 export async function isDeviceLockEnabled() {
+  if (!(await SecureStore.isAvailableAsync().catch(() => false))) return false;
   const raw = String((await SecureStore.getItemAsync(LOCK_ENABLED_KEY, secureOpts)) || '').trim();
   return raw === '1';
 }

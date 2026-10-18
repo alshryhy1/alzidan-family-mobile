@@ -101,22 +101,25 @@ export function subscribeDeviceSession(cb: (session: DeviceSession | null) => vo
   return () => listeners.delete(cb);
 }
 
+async function readSecureValue(key: string) {
+  if (!(await SecureStore.isAvailableAsync().catch(() => false))) return '';
+  return String((await SecureStore.getItemAsync(key, secureOpts)) || '').trim();
+}
+
 async function readSecret() {
-  return String((await SecureStore.getItemAsync(DEVICE_SECRET_KEY, secureOpts)) || '').trim();
+  return readSecureValue(DEVICE_SECRET_KEY);
 }
 
 async function readDeviceId() {
-  return String((await SecureStore.getItemAsync(DEVICE_ID_KEY, secureOpts)) || '').trim();
+  return readSecureValue(DEVICE_ID_KEY);
 }
 
 async function readBoundPhone() {
-  return canonicalizePhone(String((await SecureStore.getItemAsync(DEVICE_PHONE_KEY, secureOpts)) || '').trim());
+  return canonicalizePhone(await readSecureValue(DEVICE_PHONE_KEY));
 }
 
 async function readLockedPhone() {
-  return canonicalizePhone(
-    String((await SecureStore.getItemAsync(DEVICE_LOCKED_PHONE_KEY, secureOpts)) || '').trim(),
-  );
+  return canonicalizePhone(await readSecureValue(DEVICE_LOCKED_PHONE_KEY));
 }
 
 setRpcHeaderProvider(async () => {
