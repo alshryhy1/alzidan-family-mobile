@@ -37,6 +37,10 @@ export function memberAddPersonMessage(error: string) {
   if (error === 'bad_order') return 'ترتيب الميلاد يجب أن يكون رقمًا صحيحًا يبدأ من 1.';
   if (error === 'not_own_child') return 'التعديل لك ولأبنائك فقط.';
   if (error === 'update_failed') return 'تعذر حفظ التعديل في الشجرة.';
+  if (error === 'work_status_invalid') return 'اختر الحالة الوظيفية: موظف أو متقاعد أو عاطل.';
+  if (error === 'education_degree_invalid') {
+    return 'اختر الدرجة العلمية من القائمة (متوسط…دكتوراه).';
+  }
   if (error === 'bad_input') return 'اكتب الاسم بكلمة واحدة.';
   if (error === 'rpc_missing' || error === 'sql_missing') {
     return 'نفّذ أمر الصيانة في الإدارة ثم أعد المحاولة.';
@@ -135,6 +139,38 @@ export async function updateOwnTreePerson(input: {
       p_given: input.given,
       p_birth_date: input.birthDate == null ? null : input.birthDate,
       p_birth_date_h: input.birthDateHijri == null ? null : input.birthDateHijri,
+    });
+  } catch (error) {
+    const kind = classifyPublicRpcError(error);
+    if (kind === 'rpc_missing') return { ok: false, error: 'rpc_missing' };
+    if (kind === 'device_required') return { ok: false, error: 'device_required' };
+    throw error;
+  }
+}
+
+export type MemberPersonProfileInput = {
+  phone: string;
+  targetId: number;
+  city?: string | null;
+  area?: string | null;
+  workStatus?: string | null;
+  workplace?: string | null;
+  educationDegree?: string | null;
+};
+
+/** null = لا تغيّر الحقل · '' = امسح · قيمة = احفظ (نفس أعمدة الإدارة). */
+export async function setOwnTreePersonProfile(
+  input: MemberPersonProfileInput,
+): Promise<MemberAddPersonResult> {
+  try {
+    return await callPublicRpc<MemberAddPersonResult>('member_set_person_profile_v1', {
+      p_phone: input.phone,
+      p_target_id: input.targetId,
+      p_city: input.city == null ? null : String(input.city),
+      p_area: input.area == null ? null : String(input.area),
+      p_work_status: input.workStatus == null ? null : String(input.workStatus),
+      p_workplace: input.workplace == null ? null : String(input.workplace),
+      p_education_degree: input.educationDegree == null ? null : String(input.educationDegree),
     });
   } catch (error) {
     const kind = classifyPublicRpcError(error);

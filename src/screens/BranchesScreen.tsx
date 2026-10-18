@@ -105,6 +105,11 @@ function branchStyles(p: ThemePalette) {
       textAlign: 'center',
       writingDirection: 'rtl',
     },
+    heroStatGroup: {
+      alignItems: 'flex-end',
+      gap: 6,
+      width: '100%',
+    },
     house: {
       backgroundColor: p.creamLift,
       borderColor: 'rgba(196,163,90,0.45)',
@@ -357,7 +362,7 @@ function FamilyHeroPercents({
   return (
     <View style={styles.heroStatsBlock}>
       {workKnown > 0 ? (
-        <View style={{ alignItems: 'flex-end', gap: 6, width: '100%' }}>
+        <View style={styles.heroStatGroup}>
           <Text style={styles.heroStatTitle}>الحالة الوظيفية · نسب من الأحياء</Text>
           <View style={styles.heroPctRow}>
             {WORK_TILES.map((tile) => (
@@ -371,7 +376,7 @@ function FamilyHeroPercents({
         </View>
       ) : null}
       {eduKnown > 0 ? (
-        <View style={{ alignItems: 'flex-end', gap: 6, width: '100%' }}>
+        <View style={styles.heroStatGroup}>
           <Text style={styles.heroStatTitle}>الشهادات · نسب من الأحياء</Text>
           <View style={styles.heroPctRow}>
             {EDUCATION_TILES.map((tile) => (

@@ -8,6 +8,9 @@ export type TreeCardMessagePayload = {
   branch: string;
   city: string;
   area: string;
+  workStatus: string;
+  workplace: string;
+  educationDegree: string;
   children: TreeCardChild[];
   createdAt: string;
   father: string;
@@ -19,6 +22,23 @@ export type TreeCardMessagePayload = {
   submitterName: string;
   submitterPhone: string;
 };
+
+function workStatusLabel(value: string) {
+  if (value === 'employed') return 'موظف';
+  if (value === 'retired') return 'متقاعد';
+  if (value === 'unemployed') return 'عاطل';
+  return value || '';
+}
+
+function educationDegreeLabel(value: string) {
+  if (value === 'intermediate') return 'متوسط';
+  if (value === 'secondary') return 'ثانوي';
+  if (value === 'diploma') return 'دبلوم';
+  if (value === 'bachelor') return 'بكالوريوس';
+  if (value === 'master') return 'ماجستير';
+  if (value === 'doctorate') return 'دكتوراه';
+  return value || '';
+}
 
 export function treeCardRequestId() {
   const part1 = Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -45,6 +65,9 @@ export function buildTreeCardMessage(payload: TreeCardMessagePayload) {
   lines.push(`تاريخ الميلاد (اختياري): ${payload.personDob}`);
   lines.push(`المدينة (اختياري): ${payload.city}`);
   lines.push(`الحي/القرية (اختياري): ${payload.area}`);
+  lines.push(`الحالة الوظيفية (اختياري): ${workStatusLabel(payload.workStatus)}`);
+  lines.push(`وين موظف (اختياري): ${payload.workplace}`);
+  lines.push(`الدرجة العلمية (اختياري): ${educationDegreeLabel(payload.educationDegree)}`);
   lines.push('');
   lines.push('الأبناء (اختياري):');
   if (payload.children.length) {
@@ -76,6 +99,9 @@ export function buildTreeCardMessage(payload: TreeCardMessagePayload) {
         birth_date_g: payload.personDob,
         city: payload.city,
         area: payload.area,
+        work_status: payload.workStatus,
+        workplace: payload.workplace,
+        education_degree: payload.educationDegree,
         children: payload.children,
         submitter: {
           name: payload.submitterName,

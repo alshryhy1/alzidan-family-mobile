@@ -131,6 +131,9 @@ function buildTreeCardMessage(payload) {
   lines.push(`تاريخ الميلاد (اختياري): ${payload.personDob}`);
   lines.push(`المدينة (اختياري): ${payload.city}`);
   lines.push(`الحي/القرية (اختياري): ${payload.area}`);
+  lines.push(`الحالة الوظيفية (اختياري): ${payload.workStatus || ''}`);
+  lines.push(`وين موظف (اختياري): ${payload.workplace || ''}`);
+  lines.push(`الدرجة العلمية (اختياري): ${payload.educationDegree || ''}`);
   lines.push('');
   lines.push('الأبناء (اختياري):');
   if (payload.children.length) {
@@ -161,6 +164,9 @@ function buildTreeCardMessage(payload) {
         birth_date_g: payload.personDob,
         city: payload.city,
         area: payload.area,
+        work_status: payload.workStatus || '',
+        workplace: payload.workplace || '',
+        education_degree: payload.educationDegree || '',
         children: payload.children,
         submitter: {
           name: payload.submitterName,
@@ -181,6 +187,9 @@ const sample = {
   branch: 'زيدان',
   city: 'الرياض',
   area: 'النرجس',
+  workStatus: 'employed',
+  workplace: 'تعليم',
+  educationDegree: 'bachelor',
   children: [{ name: 'محمد', dob: '2010-05-01' }],
   createdAt: new Date().toISOString(),
   father: 'سعود',

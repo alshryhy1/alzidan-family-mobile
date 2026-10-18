@@ -118,6 +118,9 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
   const [personDob, setPersonDob] = useState('');
   const [personCity, setPersonCity] = useState('');
   const [personArea, setPersonArea] = useState('');
+  const [personWorkStatus, setPersonWorkStatus] = useState('');
+  const [personWorkplace, setPersonWorkplace] = useState('');
+  const [personEducationDegree, setPersonEducationDegree] = useState('');
   const [submitterName, setSubmitterName] = useState('');
   const [phoneCountryId, setPhoneCountryId] = useState(DEFAULT_PHONE_COUNTRY_ID);
   const [phoneNational, setPhoneNational] = useState('');
@@ -266,6 +269,9 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
         branch,
         city: personCity.trim(),
         area: personArea.trim(),
+        workStatus: personWorkStatus,
+        workplace: personWorkplace.trim(),
+        educationDegree: personEducationDegree,
         children: [],
         createdAt,
         father: f,
@@ -308,6 +314,9 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
       setPersonDob('');
       setPersonCity('');
       setPersonArea('');
+      setPersonWorkStatus('');
+      setPersonWorkplace('');
+      setPersonEducationDegree('');
       setStatus({ kind: 'success', text: `تم إرسال طلب الإضافة لمندوب فرع ${branch}.` });
     } catch (error) {
       setStatus({
@@ -508,6 +517,63 @@ export function AdditionsScreen({ branches, intent = 'person' }: AdditionsScreen
           textAlign="right"
           value={personArea}
         />
+        <Text style={styles.fieldHint}>الحالة الوظيفية (اختياري)</Text>
+        <View style={styles.branchPicker}>
+          {(
+            [
+              { key: '', label: 'غير محدد' },
+              { key: 'employed', label: 'موظف' },
+              { key: 'retired', label: 'متقاعد' },
+              { key: 'unemployed', label: 'عاطل' },
+            ] as const
+          ).map((item) => {
+            const active = personWorkStatus === item.key;
+            return (
+              <Pressable
+                key={item.key || 'work-unset'}
+                onPress={() => setPersonWorkStatus(item.key)}
+                style={[styles.chip, active && styles.activeChip]}
+              >
+                <Text style={[styles.chipText, active && styles.activeChipText]}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {personWorkStatus === 'employed' ? (
+          <TextInput
+            onChangeText={setPersonWorkplace}
+            placeholder="وين موظف (جهة العمل)"
+            placeholderTextColor={p.textMuted}
+            style={styles.input}
+            textAlign="right"
+            value={personWorkplace}
+          />
+        ) : null}
+        <Text style={styles.fieldHint}>الدرجة العلمية (اختياري)</Text>
+        <View style={styles.branchPicker}>
+          {(
+            [
+              { key: '', label: 'غير محدد' },
+              { key: 'intermediate', label: 'متوسط' },
+              { key: 'secondary', label: 'ثانوي' },
+              { key: 'diploma', label: 'دبلوم' },
+              { key: 'bachelor', label: 'بكالوريوس' },
+              { key: 'master', label: 'ماجستير' },
+              { key: 'doctorate', label: 'دكتوراه' },
+            ] as const
+          ).map((item) => {
+            const active = personEducationDegree === item.key;
+            return (
+              <Pressable
+                key={item.key || 'edu-unset'}
+                onPress={() => setPersonEducationDegree(item.key)}
+                style={[styles.chip, active && styles.activeChip]}
+              >
+                <Text style={[styles.chipText, active && styles.activeChipText]}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
         <ActionButton
           label={submitting ? 'جاري الإرسال...' : 'إرسال طلب إضافة فرد'}
           onPress={submitAddPerson}
