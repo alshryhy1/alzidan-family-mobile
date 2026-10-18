@@ -40,6 +40,7 @@ import {
 import {
   fetchOccasionInbox,
   filterCurrentOccasionInbox,
+  formatOccasionInboxWhen,
   occasionInboxHeadline,
   type OccasionInboxItem,
 } from '../services/occasionInteractions';
@@ -884,6 +885,9 @@ export function ProfileScreen({
                   </View>
                   <View style={styles.inboxMeta}>
                     {!open ? <Text style={styles.inboxPreview}>{preview}</Text> : <View style={{ flex: 1 }} />}
+                    {formatOccasionInboxWhen(item.latest_at) ? (
+                      <Text style={styles.inboxWhen}>{formatOccasionInboxWhen(item.latest_at)}</Text>
+                    ) : null}
                     <Text style={styles.inboxChip}>
                       {msgCount === 1
                         ? 'رسالة واحدة'
@@ -901,11 +905,13 @@ export function ProfileScreen({
                       const textMsg = String(m.message || m.full_text || m.label || '').trim();
                       if (!textMsg) return null;
                       const sender = senderLabel(m.sender_name || '');
+                      const when = formatOccasionInboxWhen(m.created_at || item.latest_at);
                       return (
                         <View key={m.id} style={styles.inboxMsgRow}>
                           <Text style={styles.inboxSender}>{sender}</Text>
                           <Text style={styles.inboxSep}> · </Text>
                           <Text style={styles.inboxMsg}>{textMsg}</Text>
+                          {when ? <Text style={styles.inboxMsgWhen}>{when}</Text> : null}
                         </View>
                       );
                     })
@@ -958,6 +964,12 @@ function profileStyles(p: ThemePalette) {
     borderRadius: 999,
     overflow: 'hidden',
     backgroundColor: p.accentSoft,
+  },
+  inboxWhen: {
+    color: p.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    writingDirection: 'rtl',
   },
   inboxChevron: {
     color: p.primary,
@@ -1037,6 +1049,15 @@ function profileStyles(p: ThemePalette) {
     textAlign: 'right',
     writingDirection: 'rtl',
     flexShrink: 1,
+  },
+  inboxMsgWhen: {
+    width: '100%',
+    marginTop: 4,
+    color: p.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'left',
+    writingDirection: 'rtl',
   },
   input: {
     backgroundColor: p.surfaceMuted,

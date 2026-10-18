@@ -67,6 +67,27 @@ function occasionInboxHeadline(item) {
   return `${yours} · ${person}`;
 }
 
+function formatOccasionInboxWhen(raw, now = new Date()) {
+  const at = Date.parse(String(raw || ''));
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const diffMs = now.getTime() - at;
+  if (diffMs < 0) return 'الآن';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'الآن';
+  if (mins < 60) return `قبل ${mins} د`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours === 1 ? 'قبل ساعة' : `قبل ${hours} س`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'أمس';
+  if (days < 14) return `قبل ${days} يوم`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 8) return weeks === 1 ? 'قبل أسبوع' : `قبل ${weeks} أسابيع`;
+  const d = new Date(at);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
 const now = new Date('2026-10-15T12:00:00+03:00');
 const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
 const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
@@ -86,7 +107,7 @@ const oldFinjal = {
 const liveFinjal = {
   occasion_id: 99,
   occasion_type: 'finjal_isha',
-  occasion_person: 'سايق',
+  occasion_person: 'أحمد',
   total: 1,
   latest_at: oneHourAgo,
   messages: [{ id: 3, sender_name: 'خالد', message: 'حاضر إن شاء الله', created_at: oneHourAgo }],
@@ -114,12 +135,16 @@ const checks = [
     'empty board falls back to age',
     isCurrentOccasionInboxItem(liveFinjal, { activeOccasionIds: [], now }),
   ],
-  ['headline names the invitation', occasionInboxHeadline(liveFinjal) === 'دعوة سايق'],
+  ['headline names the invitation', occasionInboxHeadline(liveFinjal) === 'دعوة أحمد'],
+  ['old reply shows weeks ago', formatOccasionInboxWhen(twoWeeksAgo, now) === 'قبل 2 أسابيع'],
+  ['fresh reply shows one hour', formatOccasionInboxWhen(oneHourAgo, now) === 'قبل ساعة'],
   ['source exports filter', src.includes('export function filterCurrentOccasionInbox')],
   ['source exports headline', src.includes('export function occasionInboxHeadline')],
-  ['source hides finished finjal session', src.includes('isFinjalEventType')],
+  ['source exports when label', src.includes('export function formatOccasionInboxWhen')],
+  ['source hides previous finjal replies', src.includes('فنجال سابق') || src.includes('isFinjalEventType')],
   ['profile filters visible inbox', profile.includes('filterCurrentOccasionInbox')],
   ['profile shows invitation person', profile.includes('occasionInboxHeadline')],
+  ['profile shows reply time', profile.includes('formatOccasionInboxWhen')],
   ['profile accepts active ids', profile.includes('activeOccasionIds')],
   ['app passes active occasion ids', app.includes('activeOccasionIds={activeOccasionIds}')],
   ['app filters badge inbox', app.includes('filterCurrentOccasionInbox(occasionInbox')],
