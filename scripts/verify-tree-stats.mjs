@@ -1,38 +1,27 @@
 /**
- * Living tree count: marking متوفى decreases the total,
- * adding a living newborn increases it. Keep in sync with src/utils/treeStats.ts.
+ * Living / total tree counts + work_status tallies.
+ * Mirrors src/utils/treeStats.collectBranchTreeStats (same path the Branches UI uses).
+ *
+ * Rules under test:
+ * - إضافة عضو حي → living +1 و total +1
+ * - إضافة مولود حي → living +1 و total +1
+ * - تسجيل وفاة لشخص موجود → living −1 و total ثابت و deceased +1
+ * - إضافة عضو متوفى من البداية → total +1 و living لا يزيد
+ * - المجموع الكلي للفروع = مجموع living لكل فرع
  */
+import { register } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-function parseExplicitBoolValue(value) {
-  if (value === true || value === false) return value;
-  if (value == null) return null;
-  if (typeof value === 'number') return value === 1 ? true : value === 0 ? false : null;
-  const text = String(value).trim().toLowerCase();
-  if (!text) return null;
-  if (['true', 't', '1', 'yes', 'y', 'on'].includes(text)) return true;
-  if (['false', 'f', '0', 'no', 'n', 'off'].includes(text)) return false;
-  if (['نعم', 'متوفي', 'متوفى', 'متوفاة', 'متوفاه'].includes(text)) return true;
-  if (['لا', 'حي', 'حية', 'غير متوفي', 'غير متوفى'].includes(text)) return false;
-  return null;
-}
+register('./ts-esm-hook.mjs', import.meta.url);
 
-function isTreePersonDeceased(...values) {
-  return values.some((value) => parseExplicitBoolValue(value) === true);
-}
-
-function livingCount(people) {
-  const nodes = new Set();
-  const dead = new Set();
-  for (const person of people) {
-    const id = String(person.name || '').trim();
-    if (!id) continue;
-    nodes.add(id);
-    if (isTreePersonDeceased(person.isDeceased, person.deceased, person.is_deceased)) {
-      dead.add(id);
-    }
-  }
-  return Math.max(0, nodes.size - dead.size);
-}
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const {
+  collectBranchTreeStats,
+  isTreePersonDeceased,
+  normalizeWorkStatus,
+  workStatusPercent,
+} = await import(pathToFileURL(join(root, 'src/utils/treeStats.ts')).href);
 
 function assert(cond, message) {
   if (cond) {
@@ -43,44 +32,141 @@ function assert(cond, message) {
   process.exitCode = 1;
 }
 
-const father = 'زيدان بن مطلق بن زيدان/خميس';
-const son = 'زيدان بن مطلق بن زيدان/خميس/أحمد';
-const newborn = 'زيدان بن مطلق بن زيدان/خميس/أحمد/مولود';
+const branchKey = 'زيدان';
+const rootName = 'زيدان بن مطلق بن زيدان';
+const father = `${rootName}/خميس`;
+const son = `${rootName}/خميس/أحمد`;
+const newborn = `${rootName}/خميس/أحمد/مولود`;
+const cousin = `${rootName}/عبدالله/سعد`;
+const member = `${rootName}/خميس/سعد`;
 
-const base = [
-  { name: father, isDeceased: false },
-  { name: son, isDeceased: false },
+let nextId = 1;
+function row(name, opts = {}) {
+  return {
+    id: opts.id ?? nextId++,
+    branchKey: opts.branchKey || branchKey,
+    parentName: opts.parentName || rootName,
+    name,
+    birthOrder: null,
+    birthDateGregorian: null,
+    birthDateHijri: null,
+    birthYear: null,
+    city: null,
+    area: null,
+    isDeceased: opts.isDeceased ?? false,
+    workStatus: opts.workStatus ?? null,
+  };
+}
+
+console.log('tree living/total + work_status smoke');
+
+assert(normalizeWorkStatus('موظف') === 'employed', 'موظف → employed');
+assert(normalizeWorkStatus('متقاعد') === 'retired', 'متقاعد → retired');
+assert(normalizeWorkStatus('عاطل') === 'unemployed', 'عاطل → unemployed');
+assert(normalizeWorkStatus('') === '', 'فارغ → unset');
+assert(workStatusPercent(2, 4) === 50, 'نسبة 2/4 = 50');
+assert(workStatusPercent(0, 4) === 0, 'نسبة 0/4 = 0');
+assert(workStatusPercent(1, 0) === 0, 'نسبة مع living=0 = 0');
+
+const baseRows = [
+  row(father, { workStatus: 'employed' }),
+  row(son, { parentName: father, workStatus: 'employed' }),
 ];
+const base = collectBranchTreeStats(baseRows, branchKey);
+assert(base.living === 2, 'قاعدة: أب + ابن حيّان → living=2');
+assert(base.total === 2, 'قاعدة: total=2');
+assert(base.deceased === 0, 'قاعدة: deceased=0');
+assert(base.workStatus.employed === 2, 'موظفان حيان');
 
-const afterDeath = [
-  { name: father, isDeceased: false },
-  { name: son, isDeceased: true },
-];
+const afterAddMember = collectBranchTreeStats(
+  [...baseRows, row(member, { parentName: father, workStatus: 'unemployed' })],
+  branchKey,
+);
+assert(afterAddMember.living === base.living + 1, 'إضافة عضو حي → living +1');
+assert(afterAddMember.total === base.total + 1, 'إضافة عضو حي → total +1');
+assert(afterAddMember.deceased === 0, 'إضافة عضو حي → deceased ثابت');
 
-const afterBirth = [
-  { name: father, isDeceased: false },
-  { name: son, isDeceased: false },
-  { name: newborn, isDeceased: false },
-];
+const afterBirth = collectBranchTreeStats(
+  [
+    ...baseRows,
+    row(newborn, { parentName: son, workStatus: null }),
+  ],
+  branchKey,
+);
+assert(afterBirth.living === base.living + 1, 'إضافة مولود حي → living +1');
+assert(afterBirth.total === base.total + 1, 'إضافة مولود حي → total +1');
+assert(afterBirth.workStatus.unset === 1, 'مولود بلا حالة → unset');
 
-const afterDeathThenBirth = [
-  { name: father, isDeceased: false },
-  { name: son, isDeceased: true },
-  { name: newborn, isDeceased: false },
-];
+const afterDeath = collectBranchTreeStats(
+  [
+    row(father, { workStatus: 'employed' }),
+    row(son, { parentName: father, isDeceased: true, workStatus: 'employed' }),
+  ],
+  branchKey,
+);
+assert(afterDeath.living === base.living - 1, 'تسجيل وفاة → living −1');
+assert(afterDeath.total === base.total, 'تسجيل وفاة → total ثابت');
+assert(afterDeath.deceased === 1, 'تسجيل وفاة → deceased +1');
+assert(afterDeath.workStatus.employed === 1, 'المتوفى يخرج من نسب الموظفين');
 
-const deceasedNewborn = [
-  { name: father, isDeceased: false },
-  { name: son, isDeceased: false },
-  { name: newborn, is_deceased: false, deceased: true },
-];
+const afterDeathThenBirth = collectBranchTreeStats(
+  [
+    row(father, { workStatus: 'employed' }),
+    row(son, { parentName: father, isDeceased: true, workStatus: 'employed' }),
+    row(newborn, { parentName: son, workStatus: null }),
+  ],
+  branchKey,
+);
+assert(
+  afterDeathThenBirth.living === base.living - 1 + 1,
+  'وفاة ثم مولود حي: living يعود لنفس القاعدة (2−1+1)',
+);
+assert(afterDeathThenBirth.total === base.total + 1, 'وفاة ثم مولود → total +1 (المولود فقط)');
+assert(afterDeathThenBirth.deceased === 1, 'وفاة ثم مولود → deceased=1');
 
-console.log('tree living-count smoke');
-assert(livingCount(base) === 2, 'قاعدة: أب + ابن حيّان = 2');
-assert(livingCount(afterDeath) === 1, 'وسم الابن متوفي ينقص العدد إلى 1');
-assert(livingCount(afterBirth) === 3, 'إضافة مولود حي ترفع العدد إلى 3');
-assert(livingCount(afterDeathThenBirth) === 2, 'وفاة ثم مولود حي: 2 − 1 + 1 = 2');
-assert(livingCount(deceasedNewborn) === 2, 'مولود متوفى لا يزيد الأحياء');
+const deceasedNewborn = collectBranchTreeStats(
+  [
+    ...baseRows,
+    row(newborn, { parentName: son, isDeceased: true }),
+  ],
+  branchKey,
+);
+assert(deceasedNewborn.living === base.living, 'مولود متوفى لا يزيد الأحياء');
+assert(deceasedNewborn.total === base.total + 1, 'مولود متوفى يزيد total فقط');
+assert(deceasedNewborn.deceased === 1, 'مولود متوفى → deceased=1');
+
+const addDeceasedMember = collectBranchTreeStats(
+  [
+    ...baseRows,
+    row(cousin, { isDeceased: true, workStatus: 'retired' }),
+  ],
+  branchKey,
+);
+assert(addDeceasedMember.living === base.living, 'إضافة عضو متوفى لا تزيد living');
+assert(addDeceasedMember.total === base.total + 1, 'إضافة عضو متوفى تزيد total');
+assert(addDeceasedMember.workStatus.retired === 0, 'المتوفى لا يدخل نسب المتقاعدين');
+
+// مجموع كلي عبر فرعين — نفس جمع شاشة الفروع
+const mazidKey = 'مزيد';
+const mazidRoot = 'مزيد بن مطلق بن زيدان';
+const mazidChild = `${mazidRoot}/خميس`;
+const zidanLiving = collectBranchTreeStats(baseRows, branchKey).living;
+const mazidLiving = collectBranchTreeStats(
+  [
+    row(mazidChild, {
+      id: 9001,
+      branchKey: mazidKey,
+      parentName: mazidRoot,
+      workStatus: 'employed',
+    }),
+  ],
+  mazidKey,
+).living;
+const heroTotal = zidanLiving + mazidLiving;
+assert(zidanLiving === 2, 'فرع زيدان living=2');
+assert(mazidLiving === 1, 'فرع مزيد living=1');
+assert(heroTotal === 3, 'المجموع الكلي = مجموع living لكل فرع');
+
 assert(isTreePersonDeceased(false, true) === true, 'عمود deceased=true يكفي ولو is_deceased=false');
 assert(isTreePersonDeceased('متوفى') === true, 'قيمة عربية متوفى تُعدّ وفاة');
 assert(isTreePersonDeceased(false, false) === false, 'حيّ صريح لا يُعدّ متوفى');

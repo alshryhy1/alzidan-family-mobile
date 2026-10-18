@@ -481,6 +481,7 @@ function AppChrome() {
         parentName: String(row.parentName || prev?.parentName || ''),
         name: String(row.name || prev?.name || ''),
         branchKey: String(row.branchKey || prev?.branchKey || ''),
+        workStatus: row.workStatus || prev?.workStatus || null,
       });
     });
     return Array.from(byId.values());
@@ -489,11 +490,13 @@ function AppChrome() {
     if (!includePubliclyHiddenPeople) return publicData.branches;
     return publicData.branches.map((branch) => {
       const branchChildren = treeChildren.filter((child) => child.branchKey === branch.id);
+      const stats = collectBranchTreeStats(branchChildren, branch.id, {
+        includePubliclyHidden: true,
+      });
       return {
         ...branch,
-        membersCount: collectBranchTreeStats(branchChildren, branch.id, {
-          includePubliclyHidden: true,
-        }).living,
+        membersCount: stats.living,
+        workStatus: stats.workStatus,
       };
     });
   }, [includePubliclyHiddenPeople, publicData.branches, treeChildren]);

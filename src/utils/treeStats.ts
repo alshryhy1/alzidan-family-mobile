@@ -5,11 +5,69 @@ import {
   normalizePersonName,
 } from './groupChildrenRows';
 
+export type BranchWorkStatusCounts = {
+  employed: number;
+  retired: number;
+  unemployed: number;
+  unset: number;
+};
+
 export type BranchTreeStats = {
   deceased: number;
   living: number;
   total: number;
+  workStatus: BranchWorkStatusCounts;
 };
+
+export function normalizeWorkStatus(value: unknown): 'employed' | 'retired' | 'unemployed' | '' {
+  const g = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (!g) return '';
+  if (
+    g === 'employed' ||
+    g === 'employee' ||
+    g === 'working' ||
+    g === 'job' ||
+    g === 'موظف' ||
+    g === 'موظفين' ||
+    g === 'يعمل' ||
+    g === 'على رأس العمل'
+  ) {
+    return 'employed';
+  }
+  if (
+    g === 'retired' ||
+    g === 'retiree' ||
+    g === 'pension' ||
+    g === 'متقاعد' ||
+    g === 'متقاعدين' ||
+    g === 'تقاعد'
+  ) {
+    return 'retired';
+  }
+  if (
+    g === 'unemployed' ||
+    g === 'jobless' ||
+    g === 'without_work' ||
+    g === 'عاطل' ||
+    g === 'عاطلين' ||
+    g === 'بدون عمل' ||
+    g === 'بدون_عمل'
+  ) {
+    return 'unemployed';
+  }
+  return '';
+}
+
+export function emptyWorkStatusCounts(): BranchWorkStatusCounts {
+  return { employed: 0, retired: 0, unemployed: 0, unset: 0 };
+}
+
+export function workStatusPercent(count: number, living: number) {
+  if (!living || count <= 0) return 0;
+  return Math.round((count / living) * 100);
+}
 
 export function parseExplicitBoolValue(value: unknown): boolean | null {
   if (value === true || value === false) return value;
@@ -43,6 +101,7 @@ function mergeTreeMeta(prev: TreeChild, next: TreeChild): TreeChild {
     ...next,
     name: next.name || prev.name,
     isDeceased: isTreePersonDeceased(prev.isDeceased, next.isDeceased) ? true : next.isDeceased ?? prev.isDeceased,
+    workStatus: normalizeWorkStatus(next.workStatus) || normalizeWorkStatus(prev.workStatus) || null,
   };
 }
 
@@ -77,11 +136,20 @@ export function collectBranchTreeStats(
   if (root) nodes.add(root);
 
   let deceasedCount = 0;
+  const workStatus = emptyWorkStatusCounts();
   nodes.forEach((nodeId) => {
     const id = normalizePersonName(nodeId);
     if (!id || id === root) return;
     const meta = metaById.get(id);
-    if (isTreePersonDeceased(meta?.isDeceased)) deceasedCount += 1;
+    if (isTreePersonDeceased(meta?.isDeceased)) {
+      deceasedCount += 1;
+      return;
+    }
+    const status = normalizeWorkStatus(meta?.workStatus);
+    if (status === 'employed') workStatus.employed += 1;
+    else if (status === 'retired') workStatus.retired += 1;
+    else if (status === 'unemployed') workStatus.unemployed += 1;
+    else workStatus.unset += 1;
   });
 
   const total = Math.max(0, nodes.size - (root ? 1 : 0));
@@ -89,5 +157,6 @@ export function collectBranchTreeStats(
     total,
     deceased: deceasedCount,
     living: Math.max(0, total - deceasedCount),
+    workStatus,
   };
 }
