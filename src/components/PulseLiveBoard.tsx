@@ -12,6 +12,11 @@ import {
   pulseTickerKindLabel,
 } from '../utils/pulseNotices';
 import type { PulseLiveModel } from '../utils/pulseFocus';
+import {
+  pulseAffinityCaption,
+  pulseAffinitySnap,
+  type PulseAffinitySnap,
+} from '../utils/pulseAffinity';
 import type { OccasionMotif } from '../utils/pulseOccasionTheme';
 import { occasionMark, resolveOccasionTheme } from '../utils/pulseOccasionTheme';
 import { daysWord } from '../utils/pulseSeason';
@@ -19,6 +24,14 @@ import {
   resolveWeatherSky,
   weatherSkyAssetKey,
 } from '../utils/pulseSky';
+import {
+  pulseAffinityCircles,
+  pulseStatCirclesA11y,
+  pulseWorkCircles,
+  pulseWorkSnap,
+  type PulseStatCircle,
+  type PulseWorkSnap,
+} from '../utils/pulseStatCircles';
 
 const SKY = {
   nightClear: require('../../assets/pulse/pulse-sky-night-clear.jpg'),
@@ -31,9 +44,20 @@ const SKY = {
 
 const FLAG_SA = require('../../assets/pulse/pulse-flag-sa.png');
 const TILE_HEIGHT = 156;
+const STAT_CIRCLE = 52;
+
+export type PulseBoardPart = 'presence' | 'affinity' | 'tiles' | 'notices';
+
+const ALL_PULSE_PARTS: PulseBoardPart[] = ['presence', 'affinity', 'tiles', 'notices'];
 
 type PulseLiveBoardProps = {
   model: PulseLiveModel;
+  /** Active spouse affinity — same counts as web tree stats. */
+  affinity?: PulseAffinitySnap | null;
+  /** Family work-status percents of living — same as Branches hero. */
+  workStatus?: PulseWorkSnap | null;
+  /** Which blocks to render (default: all). Lets Home split live presence above personal sections. */
+  parts?: PulseBoardPart[];
   notices?: PulseBoardNotice[];
   delegates?: PulseBoardNotice[];
   tone?: 'hero' | 'stage';
@@ -149,14 +173,61 @@ function CountdownCard({ model }: { model: PulseLiveModel }) {
   );
 }
 
+function StatCircle({
+  item,
+  styles,
+}: {
+  item: PulseStatCircle;
+  styles: ReturnType<typeof usePulseStyles>;
+}) {
+  return (
+    <View style={styles.statCircleWrap}>
+      <View style={styles.statCircle}>
+        <Text style={styles.statCirclePct}>{item.percent}٪</Text>
+      </View>
+      <Text style={styles.statCircleLabel}>{item.label}</Text>
+    </View>
+  );
+}
+
+function StatCircleGroup({
+  title,
+  circles,
+  styles,
+}: {
+  title: string;
+  circles: PulseStatCircle[];
+  styles: ReturnType<typeof usePulseStyles>;
+}) {
+  if (!circles.length) return null;
+  return (
+    <View
+      accessibilityLabel={pulseStatCirclesA11y(title, circles)}
+      accessibilityRole="summary"
+      style={styles.statGroup}
+    >
+      <Text style={styles.statGroupTitle}>{title}</Text>
+      <View style={styles.statCircleRow}>
+        {circles.map((item) => (
+          <StatCircle key={item.key} item={item} styles={styles} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function PulseLiveBoard({
   model,
+  affinity = null,
+  workStatus = null,
+  parts = ALL_PULSE_PARTS,
   notices = [],
   delegates = [],
   tone = 'hero',
 }: PulseLiveBoardProps) {
   const p = useThemePalette();
   const styles = usePulseStyles();
+  const show = useMemo(() => new Set(parts.length ? parts : ALL_PULSE_PARTS), [parts]);
   const [hourSlot, setHourSlot] = useState(() => pulseHourSlot());
   useEffect(() => {
     const id = setInterval(() => {
@@ -174,24 +245,44 @@ export function PulseLiveBoard({
   const tickerText = current ? formatPulseNotice(current) : '';
   const tickerKind = current && tickerText ? pulseTickerKindLabel(current.kind) : '';
   const online = model.online;
+  const affinitySnap = pulseAffinitySnap(affinity);
+  const affinityCircles = pulseAffinityCircles(affinitySnap);
+  const affinityCaption = pulseAffinityCaption(affinitySnap);
+  const workSnap = pulseWorkSnap(workStatus);
+  const workCircles = pulseWorkCircles(workSnap);
+  const showStatCircles =
+    show.has('affinity') && (affinityCircles.length > 0 || workCircles.length > 0);
 
   const body = (
     <>
-      <LinearGradient
-        accessibilityLabel={`${presenceLabel(online)} ${presenceValue(online)}`}
-        colors={[p.greenMid, p.greenDeep]}
-        end={{ x: 0.2, y: 1 }}
-        start={{ x: 0.8, y: 0 }}
-        style={styles.presenceBand}
-      >
-        <Text style={styles.presenceCaption}>{presenceLabel(online)}</Text>
-        <Text style={styles.presenceValue}>{presenceValue(online)}</Text>
-      </LinearGradient>
-      <View style={styles.tiles}>
-        <WeatherCard model={model} />
-        <CountdownCard model={model} />
-      </View>
-      {tickerText ? (
+      {show.has('presence') ? (
+        <LinearGradient
+          accessibilityLabel={`${presenceLabel(online)} ${presenceValue(online)}`}
+          colors={[p.greenMid, p.greenDeep]}
+          end={{ x: 0.2, y: 1 }}
+          start={{ x: 0.8, y: 0 }}
+          style={styles.presenceBand}
+        >
+          <Text style={styles.presenceCaption}>{presenceLabel(online)}</Text>
+          <Text style={styles.presenceValue}>{presenceValue(online)}</Text>
+        </LinearGradient>
+      ) : null}
+      {showStatCircles ? (
+        <View style={styles.statCirclesBlock}>
+          <StatCircleGroup title="المصاهرة" circles={affinityCircles} styles={styles} />
+          {affinityCaption && affinityCircles.length ? (
+            <Text style={styles.statCaption}>{affinityCaption}</Text>
+          ) : null}
+          <StatCircleGroup title="الموظفون" circles={workCircles} styles={styles} />
+        </View>
+      ) : null}
+      {show.has('tiles') ? (
+        <View style={styles.tiles}>
+          <WeatherCard model={model} />
+          <CountdownCard model={model} />
+        </View>
+      ) : null}
+      {show.has('notices') && tickerText ? (
         <LinearGradient
           colors={[p.greenMid, p.greenDeep]}
           end={{ x: 0.15, y: 1 }}
@@ -343,6 +434,67 @@ function pulseStyles(p: ThemePalette) {
       color: p.cream,
       fontSize: 14,
       fontWeight: '700',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    statCirclesBlock: {
+      alignItems: 'center',
+      alignSelf: 'stretch',
+      gap: 10,
+    },
+    statGroup: {
+      alignItems: 'center',
+      alignSelf: 'stretch',
+      gap: 6,
+    },
+    statGroupTitle: {
+      color: p.greenMid,
+      fontSize: 12,
+      fontWeight: '800',
+      opacity: 0.88,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    statCircleRow: {
+      flexDirection: 'row-reverse',
+      flexWrap: 'wrap',
+      gap: 10,
+      justifyContent: 'center',
+    },
+    statCircleWrap: {
+      alignItems: 'center',
+      gap: 4,
+      width: STAT_CIRCLE + 8,
+    },
+    statCircle: {
+      alignItems: 'center',
+      backgroundColor: 'rgba(196,163,90,0.12)',
+      borderColor: 'rgba(196,163,90,0.55)',
+      borderRadius: STAT_CIRCLE / 2,
+      borderWidth: 1.5,
+      height: STAT_CIRCLE,
+      justifyContent: 'center',
+      width: STAT_CIRCLE,
+    },
+    statCirclePct: {
+      color: p.green,
+      fontSize: 13,
+      fontWeight: '800',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    statCircleLabel: {
+      color: p.greenMid,
+      fontSize: 11,
+      fontWeight: '700',
+      textAlign: 'center',
+      writingDirection: 'rtl',
+    },
+    statCaption: {
+      color: p.greenMid,
+      fontSize: 11,
+      fontWeight: '700',
+      opacity: 0.75,
       textAlign: 'center',
       writingDirection: 'rtl',
     },

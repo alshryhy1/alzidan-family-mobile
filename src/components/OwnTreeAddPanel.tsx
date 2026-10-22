@@ -7,11 +7,29 @@ import {
   announceOwnTreeBirth,
   memberAddPersonMessage,
   parentDisplayName,
+  setOwnTreePersonProfile,
 } from '../services/memberAddPerson';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import type { TreeChild } from '../types';
+
+const WORK_OPTIONS = [
+  { key: '', label: 'غير محدد' },
+  { key: 'employed', label: 'موظف' },
+  { key: 'retired', label: 'متقاعد' },
+  { key: 'unemployed', label: 'عاطل' },
+] as const;
+
+const EDUCATION_OPTIONS = [
+  { key: '', label: 'غير محدد' },
+  { key: 'intermediate', label: 'متوسط' },
+  { key: 'secondary', label: 'ثانوي' },
+  { key: 'diploma', label: 'دبلوم' },
+  { key: 'bachelor', label: 'بكالوريوس' },
+  { key: 'master', label: 'ماجستير' },
+  { key: 'doctorate', label: 'دكتوراه' },
+] as const;
 
 type Props = {
   phone: string;
@@ -38,6 +56,11 @@ export function OwnTreeAddPanel({
   const [hijri, setHijri] = useState('');
   const [greg, setGreg] = useState('');
   const [order, setOrder] = useState('');
+  const [city, setCity] = useState('');
+  const [area, setArea] = useState('');
+  const [workStatus, setWorkStatus] = useState('');
+  const [workplace, setWorkplace] = useState('');
+  const [educationDegree, setEducationDegree] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ kind: 'idle' | 'success' | 'error'; text: string }>({
     kind: 'idle',
@@ -84,6 +107,30 @@ export function OwnTreeAddPanel({
         });
         return;
       }
+      const childId = Number(result.tree_child_id || 0);
+      if (kind === 'person' && childId > 0) {
+        const profile = await setOwnTreePersonProfile({
+          phone,
+          targetId: childId,
+          city: city.trim(),
+          area: area.trim(),
+          workStatus,
+          workplace: workplace.trim(),
+          educationDegree,
+        });
+        if (!profile?.ok) {
+          const code = String(profile?.error || '');
+          setStatus({
+            kind: 'error',
+            text:
+              code === 'rpc_missing' || code === 'sql_missing'
+                ? `أُضيف ${name}، لكن نفّذ أمر ملف الشخص في مساحة SQL لحفظ الموقع والشهادة.`
+                : `أُضيف ${name}، لكن تعذر حفظ الموقع/الحالة: ${memberAddPersonMessage(code)}`,
+          });
+          onAdded?.();
+          return;
+        }
+      }
       if (kind === 'birth') {
         await announceOwnTreeBirth({
           phone,
@@ -98,6 +145,11 @@ export function OwnTreeAddPanel({
       setHijri('');
       setGreg('');
       setOrder('');
+      setCity('');
+      setArea('');
+      setWorkStatus('');
+      setWorkplace('');
+      setEducationDegree('');
       setStatus({
         kind: 'success',
         text:
@@ -191,6 +243,66 @@ export function OwnTreeAddPanel({
         textAlign="right"
         value={order}
       />
+      {kind === 'person' ? (
+        <>
+          <TextInput
+            onChangeText={setCity}
+            placeholder="المدينة (اختياري)"
+            placeholderTextColor={p.textMuted}
+            style={styles.input}
+            textAlign="right"
+            value={city}
+          />
+          <TextInput
+            onChangeText={setArea}
+            placeholder="الحي/القرية (اختياري)"
+            placeholderTextColor={p.textMuted}
+            style={styles.input}
+            textAlign="right"
+            value={area}
+          />
+          <Text style={styles.hint}>الحالة الوظيفية</Text>
+          <View style={styles.chips}>
+            {WORK_OPTIONS.map((item) => {
+              const active = workStatus === item.key;
+              return (
+                <Pressable
+                  key={item.key || 'work-unset'}
+                  onPress={() => setWorkStatus(item.key)}
+                  style={[styles.chip, active && styles.chipActive]}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {workStatus === 'employed' ? (
+            <TextInput
+              onChangeText={setWorkplace}
+              placeholder="وين موظف (جهة العمل)"
+              placeholderTextColor={p.textMuted}
+              style={styles.input}
+              textAlign="right"
+              value={workplace}
+            />
+          ) : null}
+          <Text style={styles.hint}>الدرجة العلمية</Text>
+          <View style={styles.chips}>
+            {EDUCATION_OPTIONS.map((item) => {
+              const active = educationDegree === item.key;
+              return (
+                <Pressable
+                  key={item.key || 'edu-unset'}
+                  onPress={() => setEducationDegree(item.key)}
+                  style={[styles.chip, active && styles.chipActive]}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
       <ActionButton
         label={busy ? 'جاري الإضافة...' : kind === 'birth' ? 'إضافة المولود في شجرتك' : 'إضافة في شجرتك'}
         onPress={() => {

@@ -43,6 +43,15 @@ type HomeScreenProps = {
   onRetry: () => void;
   onOpenMyCard?: () => void;
   pulseOnline?: number | null;
+  /** Active spouse affinity — mirrors web tree affinity stats. */
+  affinityStats?: { total: number; insideCount: number; outsideCount: number } | null;
+  /** Family work-status counts of living — same source as Branches. */
+  workStatusStats?: {
+    living: number;
+    employed: number;
+    retired: number;
+    unemployed: number;
+  } | null;
   sinceLastVisit?: SinceVisitItem[];
   onOpenSinceVisit?: (item: SinceVisitItem) => void;
   onOpenFamilyBoard?: () => void;
@@ -70,6 +79,8 @@ export function HomeScreen({
   onRetry,
   onOpenMyCard,
   pulseOnline = null,
+  affinityStats = null,
+  workStatusStats = null,
   sinceLastVisit = [],
   onOpenSinceVisit,
   onOpenFamilyBoard,
@@ -243,6 +254,18 @@ export function HomeScreen({
       <DataState error={error} loading={loading} onRetry={onRetry} />
 
       <View style={styles.creamStage}>
+        {!loading && !error ? (
+          <PulseLiveBoard
+            model={{
+              online: pulseOnline,
+              weather,
+              season,
+            }}
+            parts={['presence']}
+            tone="stage"
+          />
+        ) : null}
+
         {remembrances.length ? (
           <View style={styles.sinceBox}>
             <Text style={styles.sinceTitle}>ذكرى اليوم</Text>
@@ -390,6 +413,16 @@ export function HomeScreen({
 
         {!loading && !error ? (
           <PulseLiveBoard
+            affinity={
+              affinityStats
+                ? {
+                    total: affinityStats.total,
+                    insideCount: affinityStats.insideCount,
+                    outsideCount: affinityStats.outsideCount,
+                  }
+                : null
+            }
+            workStatus={workStatusStats}
             delegates={delegates}
             model={{
               online: pulseOnline,
@@ -397,6 +430,7 @@ export function HomeScreen({
               season,
             }}
             notices={notices}
+            parts={['affinity', 'tiles', 'notices']}
             tone="stage"
           />
         ) : null}

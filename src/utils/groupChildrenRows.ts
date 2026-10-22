@@ -177,6 +177,9 @@ function mergeChildMeta(prev: TreeChild, next: TreeChild): TreeChild {
     area: preferred.area ?? other.area,
     isDeceased: preferred.isDeceased === true || other.isDeceased === true ? true : preferred.isDeceased ?? other.isDeceased,
     photoUrl: preferred.photoUrl || other.photoUrl || null,
+    workStatus: preferred.workStatus || other.workStatus || null,
+    workplace: preferred.workplace || other.workplace || null,
+    educationDegree: preferred.educationDegree || other.educationDegree || null,
   };
 }
 

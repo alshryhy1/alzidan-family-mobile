@@ -138,9 +138,34 @@ export function PersonEncounterScreen({
 
   const selfInfoRows = useMemo(() => {
     if (mode !== 'self') return [];
+    const workLabel =
+      person.workStatus === 'employed'
+        ? 'موظف'
+        : person.workStatus === 'retired'
+          ? 'متقاعد'
+          : person.workStatus === 'unemployed'
+            ? 'عاطل'
+            : '';
+    const educationLabel =
+      person.educationDegree === 'intermediate'
+        ? 'متوسط'
+        : person.educationDegree === 'secondary'
+          ? 'ثانوي'
+          : person.educationDegree === 'diploma'
+            ? 'دبلوم'
+            : person.educationDegree === 'bachelor'
+              ? 'بكالوريوس'
+              : person.educationDegree === 'master'
+                ? 'ماجستير'
+                : person.educationDegree === 'doctorate'
+                  ? 'دكتوراه'
+                  : '';
     return [
       person.city ? { label: 'المدينة', value: person.city } : null,
       person.area ? { label: 'الحي / القرية', value: person.area } : null,
+      workLabel ? { label: 'الحالة الوظيفية', value: workLabel } : null,
+      person.workplace ? { label: 'وين موظف', value: person.workplace } : null,
+      educationLabel ? { label: 'الدرجة العلمية', value: educationLabel } : null,
       person.birthDateHijri
         ? { label: 'الميلاد الهجري', value: person.birthDateHijri }
         : null,
