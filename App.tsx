@@ -64,7 +64,7 @@ import { eventIdFromOpenUrl } from './src/utils/eventShareCard';
 import { kinshipLabelForPerson } from './src/utils/maternalKinship';
 import { canonicalizePhone } from './src/utils/phone';
 import { resolveEncounterMode } from './src/utils/personEncounter';
-import { collectBranchTreeStats } from './src/utils/treeStats';
+import { collectBranchTreeStats, emptyWorkStatusCounts } from './src/utils/treeStats';
 
 I18nManager.allowRTL(true);
 
@@ -503,6 +503,23 @@ function AppChrome() {
       };
     });
   }, [includePubliclyHiddenPeople, publicData.branches, treeChildren]);
+
+  const pulseWorkStatusStats = useMemo(() => {
+    const work = branches.reduce(
+      (acc, branch) => {
+        const c = branch.workStatus || emptyWorkStatusCounts();
+        return {
+          employed: acc.employed + c.employed,
+          retired: acc.retired + c.retired,
+          unemployed: acc.unemployed + c.unemployed,
+        };
+      },
+      { employed: 0, retired: 0, unemployed: 0 },
+    );
+    const living = branches.reduce((sum, branch) => sum + (branch.membersCount || 0), 0);
+    if (!living || work.employed + work.retired + work.unemployed <= 0) return null;
+    return { living, ...work };
+  }, [branches]);
 
   const reloadMyRequests = useCallback(async () => {
     const rows = await loadMyRequests(memberPhoneForRequests);
@@ -988,6 +1005,7 @@ function AppChrome() {
         return (
           <HomeScreen
             affinityStats={publicData.affinityStats}
+            workStatusStats={pulseWorkStatusStats}
             branchChildren={treeChildren}
             error={publicData.error}
             memberGreeting={memberGreeting}

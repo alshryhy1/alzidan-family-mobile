@@ -45,6 +45,13 @@ type HomeScreenProps = {
   pulseOnline?: number | null;
   /** Active spouse affinity — mirrors web tree affinity stats. */
   affinityStats?: { total: number; insideCount: number; outsideCount: number } | null;
+  /** Family work-status counts of living — same source as Branches. */
+  workStatusStats?: {
+    living: number;
+    employed: number;
+    retired: number;
+    unemployed: number;
+  } | null;
   sinceLastVisit?: SinceVisitItem[];
   onOpenSinceVisit?: (item: SinceVisitItem) => void;
   onOpenFamilyBoard?: () => void;
@@ -73,6 +80,7 @@ export function HomeScreen({
   onOpenMyCard,
   pulseOnline = null,
   affinityStats = null,
+  workStatusStats = null,
   sinceLastVisit = [],
   onOpenSinceVisit,
   onOpenFamilyBoard,
@@ -414,6 +422,7 @@ export function HomeScreen({
                   }
                 : null
             }
+            workStatus={workStatusStats}
             delegates={delegates}
             model={{
               online: pulseOnline,

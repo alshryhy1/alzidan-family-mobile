@@ -38,3 +38,9 @@ export function pulseAffinitySplitLine(snap: PulseAffinitySnap | null | undefine
   if (!snap) return '';
   return `داخل العائلة ${snap.insideCount} · خارجها ${snap.outsideCount}`;
 }
+
+/** Quiet caption under the affinity circles. */
+export function pulseAffinityCaption(snap: PulseAffinitySnap | null | undefined): string {
+  if (!snap) return '';
+  return `مصاهرة · ${snap.total}`;
+}
