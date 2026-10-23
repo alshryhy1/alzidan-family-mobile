@@ -95,9 +95,11 @@ export function emptyEducationDegreeCounts(): BranchEducationDegreeCounts {
   };
 }
 
+/** Percent of living. Sparse counts (e.g. 2 / 2000) must not round to 0٪. */
 export function workStatusPercent(count: number, living: number) {
   if (!living || count <= 0) return 0;
-  return Math.round((count / living) * 100);
+  const pct = Math.round((count / living) * 100);
+  return pct === 0 ? 1 : pct;
 }
 
 export function normalizeWorkplace(value: unknown): string {

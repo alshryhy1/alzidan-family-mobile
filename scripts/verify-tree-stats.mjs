@@ -78,6 +78,8 @@ assert(normalizeWorkplace('  وزارة التعليم  ') === 'وزارة ال�
 assert(workStatusPercent(2, 4) === 50, 'نسبة 2/4 = 50');
 assert(workStatusPercent(0, 4) === 0, 'نسبة 0/4 = 0');
 assert(workStatusPercent(1, 0) === 0, 'نسبة مع living=0 = 0');
+assert(workStatusPercent(2, 2000) === 1, '٢ موظف من ٢٠٠٠ لا تُقرَّب لصفر');
+assert(workStatusPercent(1, 500) === 1, 'عدد صغير يظهر ١٪ على الأقل');
 
 const baseRows = [
   row(father, { workStatus: 'employed', educationDegree: 'bachelor', workplace: 'تعليم' }),
