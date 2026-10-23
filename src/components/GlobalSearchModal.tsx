@@ -13,7 +13,8 @@ import {
 
 import { fetchApprovedMemoryItems, type MemoryItem } from '../services/memory';
 import { personDisplayName, searchAllBranches } from '../services/treeSearch';
-import { colors, spacing, typography } from '../theme';
+import { spacing, typography, type ThemePalette } from '../theme';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import { matchesSearchQuery } from '../utils/searchText';
 import type { Branch, FamilyEvent, TreeChild, TreeParent } from '../types';
 
@@ -24,8 +25,8 @@ type GlobalSearchModalProps = {
   childrenRows: TreeChild[];
   parents: TreeParent[];
   events: FamilyEvent[];
-  onOpenTree: (branchKey: string, treeChildId: number) => void;
-  onOpenEvents: () => void;
+  onOpenPerson: (branchKey: string, treeChildId: number) => void;
+  onOpenEvent: (eventId: string) => void;
   onOpenMemory: () => void;
 };
 
@@ -42,10 +43,11 @@ export function GlobalSearchModal({
   childrenRows,
   parents,
   events,
-  onOpenTree,
-  onOpenEvents,
+  onOpenPerson,
+  onOpenEvent,
   onOpenMemory,
 }: GlobalSearchModalProps) {
+  const styles = useThemedStyles(searchStyles);
   const [query, setQuery] = useState('');
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [memoryLoading, setMemoryLoading] = useState(false);
@@ -131,7 +133,7 @@ export function GlobalSearchModal({
             autoFocus
             onChangeText={setQuery}
             placeholder="ابحث عن شخص، مناسبة، أو ذكرى"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={styles.placeholder.color}
             returnKeyType="search"
             style={styles.input}
             textAlign="right"
@@ -158,7 +160,7 @@ export function GlobalSearchModal({
                   <Pressable
                     key={`tree-${result.person.id}-${result.path.map((item) => item.id).join('-')}`}
                     onPress={() => {
-                      onOpenTree(result.branchKey, Number(result.person.id));
+                      onOpenPerson(result.branchKey, Number(result.person.id));
                       onClose();
                     }}
                     style={({ pressed }) => [styles.resultRow, pressed && styles.pressed]}
@@ -179,7 +181,7 @@ export function GlobalSearchModal({
                   <Pressable
                     key={`event-${event.id}`}
                     onPress={() => {
-                      onOpenEvents();
+                      onOpenEvent(String(event.id));
                       onClose();
                     }}
                     style={({ pressed }) => [styles.resultRow, pressed && styles.pressed]}
@@ -226,110 +228,115 @@ export function GlobalSearchModal({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(30, 41, 37, 0.45)',
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '88%',
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-  },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  title: {
-    color: colors.text,
-    fontSize: typography.title,
-    fontWeight: '800',
-    writingDirection: 'rtl',
-  },
-  closeButton: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  closeButtonText: {
-    color: colors.primary,
-    fontSize: typography.body,
-    fontWeight: '700',
-    writingDirection: 'rtl',
-  },
-  input: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    color: colors.text,
-    fontSize: typography.body,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    writingDirection: 'rtl',
-  },
-  results: {
-    gap: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  hint: {
-    color: colors.textMuted,
-    fontSize: typography.body,
-    lineHeight: 22,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  empty: {
-    color: colors.textMuted,
-    fontSize: typography.body,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  section: {
-    gap: spacing.xs,
-  },
-  sectionTitle: {
-    color: colors.primary,
-    fontSize: typography.caption,
-    fontWeight: '800',
-    marginBottom: 2,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  resultRow: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  pressed: {
-    opacity: 0.75,
-  },
-  resultTitle: {
-    color: colors.text,
-    fontSize: typography.body,
-    fontWeight: '700',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  resultMeta: {
-    color: colors.textMuted,
-    fontSize: typography.caption,
-    lineHeight: 18,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-});
+function searchStyles(p: ThemePalette) {
+  return {
+    overlay: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    backdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(30, 41, 37, 0.45)',
+    },
+    sheet: {
+      backgroundColor: p.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      maxHeight: '88%',
+      paddingBottom: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+    },
+    header: {
+      alignItems: 'center',
+      flexDirection: 'row-reverse',
+      justifyContent: 'space-between',
+      marginBottom: spacing.sm,
+    },
+    title: {
+      color: p.text,
+      fontSize: typography.title,
+      fontWeight: '800',
+      writingDirection: 'rtl',
+    },
+    closeButton: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
+    closeButtonText: {
+      color: p.primary,
+      fontSize: typography.body,
+      fontWeight: '700',
+      writingDirection: 'rtl',
+    },
+    placeholder: {
+      color: p.textMuted,
+    },
+    input: {
+      backgroundColor: p.background,
+      borderColor: p.border,
+      borderRadius: 14,
+      borderWidth: 1,
+      color: p.text,
+      fontSize: typography.body,
+      marginBottom: spacing.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      writingDirection: 'rtl',
+    },
+    results: {
+      gap: spacing.md,
+      paddingBottom: spacing.xl,
+    },
+    hint: {
+      color: p.textMuted,
+      fontSize: typography.body,
+      lineHeight: 22,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    empty: {
+      color: p.textMuted,
+      fontSize: typography.body,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    section: {
+      gap: spacing.xs,
+    },
+    sectionTitle: {
+      color: p.primary,
+      fontSize: typography.caption,
+      fontWeight: '800',
+      marginBottom: 2,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    resultRow: {
+      backgroundColor: p.background,
+      borderColor: p.border,
+      borderRadius: 14,
+      borderWidth: 1,
+      gap: 4,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    pressed: {
+      opacity: 0.75,
+    },
+    resultTitle: {
+      color: p.text,
+      fontSize: typography.body,
+      fontWeight: '700',
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    resultMeta: {
+      color: p.textMuted,
+      fontSize: typography.caption,
+      lineHeight: 18,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+  };
+}
