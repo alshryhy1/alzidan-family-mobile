@@ -1,3 +1,4 @@
+import { familyAdminSearchAttempts, mergeFamilyAdminPeople } from '../utils/familyAdminSearch';
 import { digitsOnly } from '../utils/phone';
 import { callPublicRpc } from './supabase';
 
@@ -236,6 +237,43 @@ export async function searchFamilyAdminPeople(
   }
   assertOk(row);
   return (row?.rows || []).map(mapPerson).filter((item): item is FamilyAdminPerson => Boolean(item));
+}
+
+export async function searchFamilyAdminPeopleSmart(
+  adminPhone: string,
+  query: string,
+  requestName: string,
+  branchKey?: string | null,
+): Promise<FamilyAdminPerson[]> {
+  const attempts = familyAdminSearchAttempts(query, requestName);
+  const branch = branchKey ? String(branchKey).trim() : null;
+  let lastError: unknown = null;
+  const merged: FamilyAdminPerson[] = [];
+
+  for (const attempt of attempts) {
+    try {
+      const rows = await searchFamilyAdminPeople(adminPhone, attempt, branch);
+      merged.push(...rows);
+      if (merged.length) return mergeFamilyAdminPeople(merged);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (branch) {
+    for (const attempt of attempts) {
+      try {
+        const rows = await searchFamilyAdminPeople(adminPhone, attempt, null);
+        merged.push(...rows);
+        if (merged.length) return mergeFamilyAdminPeople(merged);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastError && !merged.length) throw lastError;
+  return mergeFamilyAdminPeople(merged);
 }
 
 export async function updateFamilyAdminPerson(args: {
