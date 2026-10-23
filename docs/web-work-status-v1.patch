@@ -1,0 +1,490 @@
+diff --git a/assets/js/admin-family-mgmt.js b/assets/js/admin-family-mgmt.js
+index e5a1727..5cfb7fd 100644
+--- a/assets/js/admin-family-mgmt.js
++++ b/assets/js/admin-family-mgmt.js
+@@ -317,9 +317,9 @@
+ 
+   function todayGregorianISO() { const now = new Date(); const y = String(now.getFullYear()).padStart(4, "0"); const m = String(now.getMonth() + 1).padStart(2, "0"); const d = String(now.getDate()).padStart(2, "0"); return y + "-" + m + "-" + d; }
+ 
+-  function groupChildrenRows(rows, branchKey) { const key = normalizePersonName(branchKey || ""); const branchRoot = key ? getBranchRootName(key) : ""; const byParent = {}; const idsByBase = new Map(); const buildChildId = (parentId, baseName) =>{ const p = normalizePersonName(parentId || ""); const b = normalizePersonName(baseName || ""); if (!p || !b) return ""; return p + "/" + b; }; const indexKnownId = (nodeId) =>{ const id = normalizePersonName(nodeId || ""); if (!id) return; const parts = id.split("/").map((p) =>normalizePersonName(p)).filter(Boolean); const base = parts.length ? parts[parts.length - 1] : id; if (!base) return; const existing = idsByBase.get(base); if (existing) { existing.add(id); return; } idsByBase.set(base, new Set([id])); }; const addOrMergeChildById = (parentId, child) =>{ const parent = normalizePersonName(parentId || ""); const name = normalizePersonName(child && child.name ? child.name : ""); if (!parent || !name) return; if (!byParent[parent]) byParent[parent] = []; const list = byParent[parent]; const idx = (Array.isArray(list) ? list : []).findIndex((c) =>normalizePersonName(c && c.name ? c.name : "") === name); const merged = { name, personId: child && child.personId ? String(child.personId) : "", parentPersonId: child && child.parentPersonId ? String(child.parentPersonId) : "", year: child && child.year ? String(child.year) : "", order: child && child.order ? String(child.order) : "", gdate: child && child.gdate ? String(child.gdate) : "", hdate: child && child.hdate ? String(child.hdate) : "", ddate: child && child.ddate ? String(child.ddate) : "", dhdate: child && child.dhdate ? String(child.dhdate) : "", city: child && child.city ? String(child.city) : "", area: child && child.area ? String(child.area) : "", photoUrl: child && child.photoUrl ? String(child.photoUrl) : "", gender: child && child.gender ? String(child.gender) : "", deceased: !!(child && child.deceased) }; if (idx< 0) { list.push(merged); return; } const prev = list[idx]; if (prev) { if (!prev.personId && merged.personId) prev.personId = merged.personId; if (!prev.parentPersonId && merged.parentPersonId) prev.parentPersonId = merged.parentPersonId; if (!prev.year && merged.year) prev.year = merged.year; if (!prev.order && merged.order) prev.order = merged.order; if (!prev.gdate && merged.gdate) prev.gdate = merged.gdate; if (!prev.hdate && merged.hdate) prev.hdate = merged.hdate; if (!prev.ddate && merged.ddate) prev.ddate = merged.ddate; if (!prev.dhdate && merged.dhdate) prev.dhdate = merged.dhdate; if (!prev.city && merged.city) prev.city = merged.city; if (!prev.area && merged.area) prev.area = merged.area; if (!prev.photoUrl && merged.photoUrl) prev.photoUrl = merged.photoUrl; if (!prev.gender && merged.gender) prev.gender = merged.gender; if (!prev.deceased && merged.deceased) prev.deceased = true; } }; const addOrMergeChildAndIndex = (parentId, child) =>{ addOrMergeChildById(parentId, child); const p = normalizePersonName(parentId || ""); if (p) indexKnownId(p); const n = normalizePersonName(child && child.name ? child.name : ""); if (n) indexKnownId(n); }; const ensureParentId = (rawParent, childRaw) =>{ const raw = normalizePersonName(rawParent || ""); if (!raw) return ""; if (raw.includes("/")) return raw; if (branchRoot && (raw === branchRoot || raw === key)) return branchRoot; const pathDerived = (function(){ const childFull = normalizePersonName(childRaw || ""); if (!childFull || !childFull.includes("/")) return ""; const parts = childFull.split("/").map((p) =>normalizePersonName(p)).filter(Boolean); if (parts.length < 2) return ""; const derivedParent = parts.slice(0, -1).join("/"); const derivedLeaf = parts[parts.length - 2] || ""; if (derivedLeaf === raw || normalizePersonBaseName(derivedParent) === raw || derivedParent.endsWith("/" + raw)) return derivedParent; return ""; })(); if (pathDerived) return pathDerived; const candidates = idsByBase.get(raw); if (candidates && candidates.size === 1) return Array.from(candidates)[0]; if (candidates && candidates.size > 1) return raw; if (branchRoot) { const parentId = buildChildId(branchRoot, raw); if (parentId) addOrMergeChildAndIndex(branchRoot, { name: parentId, year: "", gdate: "", hdate: "", city: "", area: "" }); return parentId; } return raw; }; const stripBranchSuffix = (tokens) =>{ const t = Array.isArray(tokens) ? tokens.map((x) =>normalizePersonName(x)).filter(Boolean) : []; if (!key) return t; if (t.length >= 3) { const a = normalizePersonName(t[t.length - 3] || ""); const b = normalizePersonName(t[t.length - 2] || ""); const c = normalizePersonName(t[t.length - 1] || ""); if (a === key && b === "مطلق" && c === "زيدان") return t.slice(0, -3); } if (t.length >= 2) { const b = normalizePersonName(t[t.length - 2] || ""); const c = normalizePersonName(t[t.length - 1] || ""); if (b === key && c === "مطلق") return t.slice(0, -2); } if (t.length >= 1 && normalizePersonName(t[t.length - 1] || "") === key) return t.slice(0, -1); return t; }; const normalizeChildId = (rawChildId, parentId) =>{ const c = normalizePersonName(rawChildId || ""); if (!c || !c.includes("/")) return c; const p = normalizePersonName(parentId || ""); if (!p) return c; if (c === p || c.startsWith(p + "/")) return c; if (branchRoot && (c === branchRoot || c.startsWith(branchRoot + "/"))) return c; const base = p.split("/").map((x) =>normalizePersonName(x)).filter(Boolean).slice(-1)[0] || ""; if (base && c.startsWith(base + "/")) return p + "/" + c.slice((base + "/").length); return c; }; const addChain = (anchorParentId, basesOldestToYoungest, leafMeta) =>{ const anchor = normalizePersonName(anchorParentId || ""); const chain = Array.isArray(basesOldestToYoungest) ? basesOldestToYoungest.map((x) =>normalizePersonName(x)).filter(Boolean) : []; if (!anchor || !chain.length) return; let current = anchor; indexKnownId(current); for (let i = 0; i< chain.length; i++) { const base = chain[i]; const childId = buildChildId(current, base); if (!childId) return; const isLeaf = i === chain.length - 1; addOrMergeChildAndIndex( current, isLeaf ? { ...(leafMeta || {}), name: childId } : { name: childId, year: "", gdate: "", hdate: "", city: "", area: "", created_at: "" } ); current = childId; } }; (Array.isArray(rows) ? rows : []).forEach((r) =>{ let parentRaw = normalizeParentName(r.parent_name || r.parent || "", key); let childRaw = normalizePersonName(r.child_name || r.name || ""); if (!parentRaw || !childRaw) return; const meta = { name: "", personId: normalizePersonName(r.person_id || ""), parentPersonId: normalizePersonName(r.parent_person_id || ""), year: r.birth_year == null ? "" : String(r.birth_year), order: r.birth_order == null ? "" : String(r.birth_order), gdate: normalizePersonName(r.birth_date_g || r.birth_date || ""), hdate: normalizePersonName(r.birth_date_h || ""), ddate: normalizePersonName(String(r.death_date_g || r.death_date || "").slice(0, 10)), dhdate: normalizePersonName(r.death_date_h || ""), city: normalizePersonName(r.city || ""), area: normalizePersonName(r.area || ""), gender: String(r.gender || "").trim(), photoUrl: String(r.photo_url || r.photoUrl || "").trim(), deceased: parseTruthyValue(r.is_deceased) || parseTruthyValue(r.deceased) || parseTruthyValue(r.is_dead) || parseTruthyValue(r.dead) || parseTruthyValue(r.isDead) }; const parentId = ensureParentId(parentRaw, childRaw); if (!parentId) return; if (childRaw.includes("/")) { addOrMergeChildAndIndex(parentId, { ...meta, name: normalizeChildId(childRaw, parentId) }); return; } const rawTokens = tokenizeLineageInput(normalizePersonBaseName(childRaw)); const tokens = stripBranchSuffix(rawTokens); if (!tokens.length) return; const hadBranchSuffix = tokens.length !== rawTokens.length; if (hadBranchSuffix && branchRoot) { const chainOldest = tokens.slice().reverse(); addChain(branchRoot, chainOldest, meta); return; } if (tokens.length >1) { const chainOldest = tokens.slice().reverse(); const parentBase = normalizePersonBaseName(parentId); if (chainOldest.length && parentBase && chainOldest[0] === parentBase) chainOldest.shift(); addChain(parentId, chainOldest, meta); return; } addChain(parentId, [tokens[0]], meta); }); const forcedMap = {}; const forcedBases = Object.keys(FORCED_RAHMA_BY_BASE); if (forcedBases.length) { const pickBestId = (ids) =>{ const list = (Array.isArray(ids) ? ids : []).map((x) =>normalizePersonName(x)).filter(Boolean); if (!list.length) return ""; const root = normalizePersonName(branchRoot); list.sort((a, b) =>{ const aInRoot = root ? (a === root || a.startsWith(root + "/")) : false; const bInRoot = root ? (b === root || b.startsWith(root + "/")) : false; if (aInRoot !== bInRoot) return aInRoot ? -1 : 1; const aDepth = a.split("/").filter(Boolean).length; const bDepth = b.split("/").filter(Boolean).length; if (aDepth !== bDepth) return aDepth - bDepth; if (a.length !== b.length) return a.length - b.length; return a.localeCompare(b, "ar"); }); return list[0] || ""; }; forcedBases.forEach((base) =>{ const b = normalizePersonName(base); if (!b) return; const set = idsByBase.get(b); if (!set || !set.size) return; const picked = pickBestId(Array.from(set)); if (picked) forcedMap[b] = picked; }); } if (key) state.forcedRahmaByBranch[key] = forcedMap; return byParent; }
++  function groupChildrenRows(rows, branchKey) { const key = normalizePersonName(branchKey || ""); const branchRoot = key ? getBranchRootName(key) : ""; const byParent = {}; const idsByBase = new Map(); const buildChildId = (parentId, baseName) =>{ const p = normalizePersonName(parentId || ""); const b = normalizePersonName(baseName || ""); if (!p || !b) return ""; return p + "/" + b; }; const indexKnownId = (nodeId) =>{ const id = normalizePersonName(nodeId || ""); if (!id) return; const parts = id.split("/").map((p) =>normalizePersonName(p)).filter(Boolean); const base = parts.length ? parts[parts.length - 1] : id; if (!base) return; const existing = idsByBase.get(base); if (existing) { existing.add(id); return; } idsByBase.set(base, new Set([id])); }; const addOrMergeChildById = (parentId, child) =>{ const parent = normalizePersonName(parentId || ""); const name = normalizePersonName(child && child.name ? child.name : ""); if (!parent || !name) return; if (!byParent[parent]) byParent[parent] = []; const list = byParent[parent]; const idx = (Array.isArray(list) ? list : []).findIndex((c) =>normalizePersonName(c && c.name ? c.name : "") === name); const merged = { name, personId: child && child.personId ? String(child.personId) : "", parentPersonId: child && child.parentPersonId ? String(child.parentPersonId) : "", year: child && child.year ? String(child.year) : "", order: child && child.order ? String(child.order) : "", gdate: child && child.gdate ? String(child.gdate) : "", hdate: child && child.hdate ? String(child.hdate) : "", ddate: child && child.ddate ? String(child.ddate) : "", dhdate: child && child.dhdate ? String(child.dhdate) : "", city: child && child.city ? String(child.city) : "", area: child && child.area ? String(child.area) : "", photoUrl: child && child.photoUrl ? String(child.photoUrl) : "", gender: child && child.gender ? String(child.gender) : "", workStatus: child && child.workStatus ? String(child.workStatus) : "", deceased: !!(child && child.deceased) }; if (idx< 0) { list.push(merged); return; } const prev = list[idx]; if (prev) { if (!prev.personId && merged.personId) prev.personId = merged.personId; if (!prev.parentPersonId && merged.parentPersonId) prev.parentPersonId = merged.parentPersonId; if (!prev.year && merged.year) prev.year = merged.year; if (!prev.order && merged.order) prev.order = merged.order; if (!prev.gdate && merged.gdate) prev.gdate = merged.gdate; if (!prev.hdate && merged.hdate) prev.hdate = merged.hdate; if (!prev.ddate && merged.ddate) prev.ddate = merged.ddate; if (!prev.dhdate && merged.dhdate) prev.dhdate = merged.dhdate; if (!prev.city && merged.city) prev.city = merged.city; if (!prev.area && merged.area) prev.area = merged.area; if (!prev.photoUrl && merged.photoUrl) prev.photoUrl = merged.photoUrl; if (!prev.gender && merged.gender) prev.gender = merged.gender; if (!prev.workStatus && merged.workStatus) prev.workStatus = merged.workStatus; if (!prev.deceased && merged.deceased) prev.deceased = true; } }; const addOrMergeChildAndIndex = (parentId, child) =>{ addOrMergeChildById(parentId, child); const p = normalizePersonName(parentId || ""); if (p) indexKnownId(p); const n = normalizePersonName(child && child.name ? child.name : ""); if (n) indexKnownId(n); }; const ensureParentId = (rawParent, childRaw) =>{ const raw = normalizePersonName(rawParent || ""); if (!raw) return ""; if (raw.includes("/")) return raw; if (branchRoot && (raw === branchRoot || raw === key)) return branchRoot; const pathDerived = (function(){ const childFull = normalizePersonName(childRaw || ""); if (!childFull || !childFull.includes("/")) return ""; const parts = childFull.split("/").map((p) =>normalizePersonName(p)).filter(Boolean); if (parts.length < 2) return ""; const derivedParent = parts.slice(0, -1).join("/"); const derivedLeaf = parts[parts.length - 2] || ""; if (derivedLeaf === raw || normalizePersonBaseName(derivedParent) === raw || derivedParent.endsWith("/" + raw)) return derivedParent; return ""; })(); if (pathDerived) return pathDerived; const candidates = idsByBase.get(raw); if (candidates && candidates.size === 1) return Array.from(candidates)[0]; if (candidates && candidates.size > 1) return raw; if (branchRoot) { const parentId = buildChildId(branchRoot, raw); if (parentId) addOrMergeChildAndIndex(branchRoot, { name: parentId, year: "", gdate: "", hdate: "", city: "", area: "" }); return parentId; } return raw; }; const stripBranchSuffix = (tokens) =>{ const t = Array.isArray(tokens) ? tokens.map((x) =>normalizePersonName(x)).filter(Boolean) : []; if (!key) return t; if (t.length >= 3) { const a = normalizePersonName(t[t.length - 3] || ""); const b = normalizePersonName(t[t.length - 2] || ""); const c = normalizePersonName(t[t.length - 1] || ""); if (a === key && b === "مطلق" && c === "زيدان") return t.slice(0, -3); } if (t.length >= 2) { const b = normalizePersonName(t[t.length - 2] || ""); const c = normalizePersonName(t[t.length - 1] || ""); if (b === key && c === "مطلق") return t.slice(0, -2); } if (t.length >= 1 && normalizePersonName(t[t.length - 1] || "") === key) return t.slice(0, -1); return t; }; const normalizeChildId = (rawChildId, parentId) =>{ const c = normalizePersonName(rawChildId || ""); if (!c || !c.includes("/")) return c; const p = normalizePersonName(parentId || ""); if (!p) return c; if (c === p || c.startsWith(p + "/")) return c; if (branchRoot && (c === branchRoot || c.startsWith(branchRoot + "/"))) return c; const base = p.split("/").map((x) =>normalizePersonName(x)).filter(Boolean).slice(-1)[0] || ""; if (base && c.startsWith(base + "/")) return p + "/" + c.slice((base + "/").length); return c; }; const addChain = (anchorParentId, basesOldestToYoungest, leafMeta) =>{ const anchor = normalizePersonName(anchorParentId || ""); const chain = Array.isArray(basesOldestToYoungest) ? basesOldestToYoungest.map((x) =>normalizePersonName(x)).filter(Boolean) : []; if (!anchor || !chain.length) return; let current = anchor; indexKnownId(current); for (let i = 0; i< chain.length; i++) { const base = chain[i]; const childId = buildChildId(current, base); if (!childId) return; const isLeaf = i === chain.length - 1; addOrMergeChildAndIndex( current, isLeaf ? { ...(leafMeta || {}), name: childId } : { name: childId, year: "", gdate: "", hdate: "", city: "", area: "", created_at: "" } ); current = childId; } }; (Array.isArray(rows) ? rows : []).forEach((r) =>{ let parentRaw = normalizeParentName(r.parent_name || r.parent || "", key); let childRaw = normalizePersonName(r.child_name || r.name || ""); if (!parentRaw || !childRaw) return; const meta = { name: "", personId: normalizePersonName(r.person_id || ""), parentPersonId: normalizePersonName(r.parent_person_id || ""), year: r.birth_year == null ? "" : String(r.birth_year), order: r.birth_order == null ? "" : String(r.birth_order), gdate: normalizePersonName(r.birth_date_g || r.birth_date || ""), hdate: normalizePersonName(r.birth_date_h || ""), ddate: normalizePersonName(String(r.death_date_g || r.death_date || "").slice(0, 10)), dhdate: normalizePersonName(r.death_date_h || ""), city: normalizePersonName(r.city || ""), area: normalizePersonName(r.area || ""), gender: String(r.gender || "").trim(), workStatus: normalizeTreeChildWorkStatus(r.work_status || r.workStatus || ""), photoUrl: String(r.photo_url || r.photoUrl || "").trim(), deceased: parseTruthyValue(r.is_deceased) || parseTruthyValue(r.deceased) || parseTruthyValue(r.is_dead) || parseTruthyValue(r.dead) || parseTruthyValue(r.isDead) }; const parentId = ensureParentId(parentRaw, childRaw); if (!parentId) return; if (childRaw.includes("/")) { addOrMergeChildAndIndex(parentId, { ...meta, name: normalizeChildId(childRaw, parentId) }); return; } const rawTokens = tokenizeLineageInput(normalizePersonBaseName(childRaw)); const tokens = stripBranchSuffix(rawTokens); if (!tokens.length) return; const hadBranchSuffix = tokens.length !== rawTokens.length; if (hadBranchSuffix && branchRoot) { const chainOldest = tokens.slice().reverse(); addChain(branchRoot, chainOldest, meta); return; } if (tokens.length >1) { const chainOldest = tokens.slice().reverse(); const parentBase = normalizePersonBaseName(parentId); if (chainOldest.length && parentBase && chainOldest[0] === parentBase) chainOldest.shift(); addChain(parentId, chainOldest, meta); return; } addChain(parentId, [tokens[0]], meta); }); const forcedMap = {}; const forcedBases = Object.keys(FORCED_RAHMA_BY_BASE); if (forcedBases.length) { const pickBestId = (ids) =>{ const list = (Array.isArray(ids) ? ids : []).map((x) =>normalizePersonName(x)).filter(Boolean); if (!list.length) return ""; const root = normalizePersonName(branchRoot); list.sort((a, b) =>{ const aInRoot = root ? (a === root || a.startsWith(root + "/")) : false; const bInRoot = root ? (b === root || b.startsWith(root + "/")) : false; if (aInRoot !== bInRoot) return aInRoot ? -1 : 1; const aDepth = a.split("/").filter(Boolean).length; const bDepth = b.split("/").filter(Boolean).length; if (aDepth !== bDepth) return aDepth - bDepth; if (a.length !== b.length) return a.length - b.length; return a.localeCompare(b, "ar"); }); return list[0] || ""; }; forcedBases.forEach((base) =>{ const b = normalizePersonName(base); if (!b) return; const set = idsByBase.get(b); if (!set || !set.size) return; const picked = pickBestId(Array.from(set)); if (picked) forcedMap[b] = picked; }); } if (key) state.forcedRahmaByBranch[key] = forcedMap; return byParent; }
+ 
+-  const __treeChildrenInflight = new Map(); async function loadChildrenForBranch(branchKey, opts) { const options = opts || {}; const sb = getSupabaseClient(); if (!sb) return { ok: false, reason: "not_configured" }; const key = String(branchKey || "").trim(); if (!key) return { ok: false, reason: "missing_branch" }; const cacheKey = key + "|" + (options.applyToState === true ? "1" : "0"); if (__treeChildrenInflight.has(cacheKey)) return __treeChildrenInflight.get(cacheKey); const __loadPromise = (async () => { const fieldAttempts = [ "id,person_id,parent_person_id,parent_name,parent,child_name,name,gender,photo_url,birth_date_g,birth_date_h,birth_year,birth_order,death_date_g,death_date_h,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,birth_order,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent,name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent,child_name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,name,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,name,birth_year,city,area,is_deceased,deceased,created_at", "parent,name,birth_year,city,area,is_deceased,deceased,created_at", "parent,child_name,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent_name,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent_name,child_name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent_name,name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent,name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent,child_name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent_name,parent,child_name,name,birth_year,city,area,deceased,created_at", "parent_name,child_name,name,birth_year,city,area,deceased,created_at", "parent_name,child_name,birth_year,city,area,deceased,created_at", "parent_name,name,birth_year,city,area,deceased,created_at", "parent,name,birth_year,city,area,deceased,created_at", "parent,child_name,birth_year,city,area,deceased,created_at", "parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent_name,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent_name,child_name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent_name,name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent,name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent,child_name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent_name,parent,child_name,name,birth_year,city,area,created_at", "parent_name,child_name,name,birth_year,city,area,created_at", "parent_name,child_name,birth_year,city,area,created_at", "parent_name,name,birth_year,city,area,created_at", "parent,name,birth_year,city,area,created_at", "parent,child_name,birth_year,city,area,created_at", "parent_name,parent,child_name,name,created_at", "parent_name,child_name,name,created_at", "parent_name,child_name,created_at", "parent_name,name,created_at", "parent,child_name,created_at", "parent,name,created_at", "parent_name,parent,child_name,name", "parent_name,child_name,name", "parent_name,child_name", "parent_name,name", "parent,child_name", "parent,name", "parent_name,parent,child_name,name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent_name,name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent,name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent,child_name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,year,city,area,created_at", "parent_name,child_name,name,year,city,area,created_at", "parent_name,child_name,year,city,area,created_at", "parent_name,name,year,city,area,created_at", "parent,name,year,city,area,created_at", "parent,child_name,year,city,area,created_at" ]; let lastError = null; let deceasedFallbackHint = ""; for (let i = 0; i< fieldAttempts.length; i++) { const usedFields = fieldAttempts[i]; const res = await loadChildrenQuery(sb, key, usedFields); if (!res.error) { const map = groupChildrenRows(res.data, key); const supportsDeceased = usedFields.includes("is_deceased") || usedFields.includes("deceased"); if (options.applyToState === true) { const __FM = (typeof window !== "undefined" && window.AlzidanFamilyPersonCore) ? window.AlzidanFamilyPersonCore : {}; state.children = (typeof __FM.unionChildrenMapByParentPersonId === "function") ? __FM.unionChildrenMapByParentPersonId(map, normalizePersonName) : map; if (typeof __FM.isolateChildrenMapArrays === "function") __FM.isolateChildrenMapArrays(state.children); } return { ok: true, map, rows: Array.isArray(res.data) ? res.data : [], capabilities: { deceased: supportsDeceased, deceased_hint: supportsDeceased ? "" : deceasedFallbackHint } }; } if (!deceasedFallbackHint && (usedFields.includes("is_deceased") || usedFields.includes("deceased"))) { deceasedFallbackHint = classifyTreeChildrenDbError(res.error); } const msg = String(res.error.message || "").toLowerCase(); const isColumnMissing = msg.includes("column") && msg.includes("does not exist"); const isSchemaCacheMissingColumn = msg.includes("تحديث الخدمة") && msg.includes("could not find") && msg.includes("column"); const canRetry = isColumnMissing || isSchemaCacheMissingColumn; if (!canRetry) return { ok: false, reason: "error", error: res.error }; lastError = res.error; } return { ok: false, reason: "error", error: lastError };  })(); __treeChildrenInflight.set(cacheKey, __loadPromise); try { return await __loadPromise; } finally { __treeChildrenInflight.delete(cacheKey); } }
++  const __treeChildrenInflight = new Map(); async function loadChildrenForBranch(branchKey, opts) { const options = opts || {}; const sb = getSupabaseClient(); if (!sb) return { ok: false, reason: "not_configured" }; const key = String(branchKey || "").trim(); if (!key) return { ok: false, reason: "missing_branch" }; const cacheKey = key + "|" + (options.applyToState === true ? "1" : "0"); if (__treeChildrenInflight.has(cacheKey)) return __treeChildrenInflight.get(cacheKey); const __loadPromise = (async () => { const fieldAttempts = [ "id,person_id,parent_person_id,parent_name,parent,child_name,name,gender,photo_url,work_status,birth_date_g,birth_date_h,birth_year,birth_order,death_date_g,death_date_h,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,birth_order,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent,name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent,child_name,birth_date_g,birth_date_h,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,name,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,name,birth_year,city,area,is_deceased,deceased,created_at", "parent,name,birth_year,city,area,is_deceased,deceased,created_at", "parent,child_name,birth_year,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent_name,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent_name,child_name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent_name,name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent,name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent,child_name,birth_date_g,birth_date_h,birth_year,city,area,deceased,created_at", "parent_name,parent,child_name,name,birth_year,city,area,deceased,created_at", "parent_name,child_name,name,birth_year,city,area,deceased,created_at", "parent_name,child_name,birth_year,city,area,deceased,created_at", "parent_name,name,birth_year,city,area,deceased,created_at", "parent,name,birth_year,city,area,deceased,created_at", "parent,child_name,birth_year,city,area,deceased,created_at", "parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent_name,child_name,name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent_name,child_name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent_name,name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent,name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent,child_name,birth_date_g,birth_date_h,birth_year,city,area,created_at", "parent_name,parent,child_name,name,birth_year,city,area,created_at", "parent_name,child_name,name,birth_year,city,area,created_at", "parent_name,child_name,birth_year,city,area,created_at", "parent_name,name,birth_year,city,area,created_at", "parent,name,birth_year,city,area,created_at", "parent,child_name,birth_year,city,area,created_at", "parent_name,parent,child_name,name,created_at", "parent_name,child_name,name,created_at", "parent_name,child_name,created_at", "parent_name,name,created_at", "parent,child_name,created_at", "parent,name,created_at", "parent_name,parent,child_name,name", "parent_name,child_name,name", "parent_name,child_name", "parent_name,name", "parent,child_name", "parent,name", "parent_name,parent,child_name,name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent_name,child_name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent_name,name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent,name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent,child_name,gdate,hdate,year,city,area,is_deceased,deceased,created_at", "parent_name,parent,child_name,name,year,city,area,created_at", "parent_name,child_name,name,year,city,area,created_at", "parent_name,child_name,year,city,area,created_at", "parent_name,name,year,city,area,created_at", "parent,name,year,city,area,created_at", "parent,child_name,year,city,area,created_at" ]; let lastError = null; let deceasedFallbackHint = ""; for (let i = 0; i< fieldAttempts.length; i++) { const usedFields = fieldAttempts[i]; const res = await loadChildrenQuery(sb, key, usedFields); if (!res.error) { const map = groupChildrenRows(res.data, key); const supportsDeceased = usedFields.includes("is_deceased") || usedFields.includes("deceased"); if (options.applyToState === true) { const __FM = (typeof window !== "undefined" && window.AlzidanFamilyPersonCore) ? window.AlzidanFamilyPersonCore : {}; state.children = (typeof __FM.unionChildrenMapByParentPersonId === "function") ? __FM.unionChildrenMapByParentPersonId(map, normalizePersonName) : map; if (typeof __FM.isolateChildrenMapArrays === "function") __FM.isolateChildrenMapArrays(state.children); } return { ok: true, map, rows: Array.isArray(res.data) ? res.data : [], capabilities: { deceased: supportsDeceased, deceased_hint: supportsDeceased ? "" : deceasedFallbackHint } }; } if (!deceasedFallbackHint && (usedFields.includes("is_deceased") || usedFields.includes("deceased"))) { deceasedFallbackHint = classifyTreeChildrenDbError(res.error); } const msg = String(res.error.message || "").toLowerCase(); const isColumnMissing = msg.includes("column") && msg.includes("does not exist"); const isSchemaCacheMissingColumn = msg.includes("تحديث الخدمة") && msg.includes("could not find") && msg.includes("column"); const canRetry = isColumnMissing || isSchemaCacheMissingColumn; if (!canRetry) return { ok: false, reason: "error", error: res.error }; lastError = res.error; } return { ok: false, reason: "error", error: lastError };  })(); __treeChildrenInflight.set(cacheKey, __loadPromise); try { return await __loadPromise; } finally { __treeChildrenInflight.delete(cacheKey); } }
+ 
+   async function loadChildrenQuery(sb, branchKey, fields) {
+     const token = getAdminToken();
+@@ -523,6 +523,22 @@
+         if (stamped.error && !isRpcMissingError(stamped.error)) return { ok: false, error: stamped.error };
+       }
+     }
++    const hasWorkStatusKey =
++      Object.prototype.hasOwnProperty.call(payload, "work_status") ||
++      Object.prototype.hasOwnProperty.call(payload, "workStatus");
++    const workStatus = normalizeTreeChildWorkStatus(payload.work_status || payload.workStatus || "");
++    if (hasWorkStatusKey || workStatus) {
++      const savedIdWs = data && typeof data === "object" && !Array.isArray(data) ? Number(data.id || 0) : 0;
++      const idForWs = Number.isFinite(savedIdWs) && savedIdWs > 0 ? savedIdWs : Number(payload.id || 0);
++      if (Number.isFinite(idForWs) && idForWs > 0) {
++        const byIdWs = await sb.rpc("admin_tree_child_set_work_status_by_id_v1", {
++          p_token: token,
++          p_id: idForWs,
++          p_work_status: workStatus || "",
++        });
++        if (byIdWs.error && !isRpcMissingError(byIdWs.error)) return { ok: false, error: byIdWs.error };
++      }
++    }
+     return { ok: true, data };
+   }
+ 
+@@ -1360,6 +1376,7 @@
+       city: r.city || "",
+       area: r.area || "",
+       gender: String(r.gender || "").trim(),
++      workStatus: normalizeTreeChildWorkStatus(r.work_status || r.workStatus || ""),
+       deceased: !!(r.is_deceased || r.deceased),
+     };
+   }
+@@ -1409,7 +1426,7 @@
+     if (!rows.length) {
+       const { data, error } = await sb
+         .from("tree_children")
+-        .select("id,person_id,parent_person_id,branch_key,parent_name,parent,child_name,name,gender,birth_order,birth_date_h,birth_date_g,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased")
++        .select("id,person_id,parent_person_id,branch_key,parent_name,parent,child_name,name,gender,work_status,birth_order,birth_date_h,birth_date_g,birth_year,death_date_g,death_date_h,city,area,is_deceased,deceased")
+         .eq("branch_key", state.branch)
+         .in("parent_name", Array.from(parentCandidates))
+         .limit(500);
+@@ -1537,6 +1554,53 @@
+     return "";
+   }
+ 
++  function normalizeTreeChildWorkStatus(value) {
++    const g = String(value || "").trim().toLowerCase();
++    if (!g) return "";
++    if (
++      g === "employed" ||
++      g === "employee" ||
++      g === "working" ||
++      g === "job" ||
++      g === "موظف" ||
++      g === "موظفين" ||
++      g === "يعمل" ||
++      g === "على رأس العمل"
++    ) {
++      return "employed";
++    }
++    if (
++      g === "retired" ||
++      g === "retiree" ||
++      g === "pension" ||
++      g === "متقاعد" ||
++      g === "متقاعدين" ||
++      g === "تقاعد"
++    ) {
++      return "retired";
++    }
++    if (
++      g === "unemployed" ||
++      g === "jobless" ||
++      g === "without_work" ||
++      g === "عاطل" ||
++      g === "عاطلين" ||
++      g === "بدون عمل" ||
++      g === "بدون_عمل"
++    ) {
++      return "unemployed";
++    }
++    return "";
++  }
++
++  function workStatusLabel(value) {
++    const s = normalizeTreeChildWorkStatus(value);
++    if (s === "employed") return "موظف";
++    if (s === "retired") return "متقاعد";
++    if (s === "unemployed") return "عاطل";
++    return "";
++  }
++
+   async function familyApiSaveChild(payload) {
+     const writeCtx = await ensureAdminWriteContext();
+     if (!writeCtx.ok) return writeCtx;
+@@ -1651,6 +1715,7 @@
+           area: area || null,
+           is_deceased: deceased,
+           gender: normalizeTreeChildGender(payload.gender) || null,
++          work_status: normalizeTreeChildWorkStatus(payload.workStatus || payload.work_status || "") || null,
+           created_at: nowIso,
+         };
+         const insertRes = await adminRpcUpsertTreeChild(row);
+@@ -1756,6 +1821,7 @@
+       area: area || null,
+       is_deceased: deceased,
+       gender: normalizeTreeChildGender(payload.gender) || null,
++      work_status: normalizeTreeChildWorkStatus(payload.workStatus || payload.work_status || "") || null,
+       created_at: nowIso,
+     };
+     const insertRes = await adminRpcUpsertTreeChild(row);
+@@ -1927,6 +1993,7 @@
+     const city = deceased ? "" : normalizePersonName(payload.city || "");
+     const area = deceased ? "" : normalizePersonName(payload.area || "");
+     const gender = normalizeTreeChildGender(payload.gender);
++    const workStatus = normalizeTreeChildWorkStatus(payload.workStatus || payload.work_status || "");
+     const sb = getSupabaseClient();
+     if (!sb) return { ok: false, message: "تعذر الحفظ حالياً، حاول لاحقاً أو تواصل مع الإدارة." };
+     const patch = {
+@@ -1939,6 +2006,7 @@
+       city: city || null,
+       area: area || null,
+       is_deceased: deceased,
++      work_status: workStatus || "",
+     };
+     const personId = normalizePersonName(payload.personId || child.personId || "");
+     const res = await adminRpcUpsertTreeChild(
+diff --git a/assets/js/admin-source-tree.js b/assets/js/admin-source-tree.js
+index 1ec9be0..1176243 100644
+--- a/assets/js/admin-source-tree.js
++++ b/assets/js/admin-source-tree.js
+@@ -286,6 +286,7 @@
+     const branch = getSourceTreeBranch();
+     setSourceTreeStatus("جاري تحميل الشجرة...");
+     const fields = [
++      "id,person_id,parent_person_id,branch_key,parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,birth_order,death_date_g,death_date_h,city,area,work_status,is_deceased,deceased,created_at",
+       "id,person_id,parent_person_id,branch_key,parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,birth_order,death_date_g,death_date_h,city,area,is_deceased,deceased,created_at",
+       "id,person_id,parent_person_id,branch_key,parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,birth_order,city,area,is_deceased,deceased,created_at",
+       "id,branch_key,parent_name,parent,child_name,name,birth_date_g,birth_date_h,birth_year,birth_order,city,area,is_deceased,deceased,created_at",
+@@ -467,6 +468,12 @@
+       '<div class="field"><label>الحي/القرية</label><input data-extra-child-area type="text" value="' +
+       escapeHtml(data.area || "") +
+       '"></div>' +
++      '<div class="field"><label>الحالة الوظيفية</label><select data-extra-child-work-status>' +
++      '<option value=""' + (!data.work_status && !data.workStatus ? " selected" : "") + '>غير محدد</option>' +
++      '<option value="employed"' + ((data.work_status || data.workStatus) === "employed" ? " selected" : "") + '>موظف</option>' +
++      '<option value="retired"' + ((data.work_status || data.workStatus) === "retired" ? " selected" : "") + '>متقاعد</option>' +
++      '<option value="unemployed"' + ((data.work_status || data.workStatus) === "unemployed" ? " selected" : "") + '>عاطل</option>' +
++      "</select></div>" +
+       '<label style="grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:4px 0;"><input data-extra-child-deceased type="checkbox"' +
+       ((data.is_deceased || data.deceased) ? " checked" : "") +
+       '> <span>متوفى / رحمه الله</span></label>' +
+@@ -823,6 +830,7 @@
+       death_date_h: val("[data-extra-child-death-h]"),
+       city: val("[data-extra-child-city]"),
+       area: val("[data-extra-child-area]"),
++      work_status: val("[data-extra-child-work-status]"),
+       is_deceased: checked("[data-extra-child-deceased]"),
+       deceased: checked("[data-extra-child-deceased]"),
+       _age: val("[data-extra-child-age]"),
+@@ -979,6 +987,18 @@
+       p_row: payload,
+     });
+     if (error) return setSourceTreeStatus("تعذر حفظ البطاقة: " + formatRpcError(error));
++    const savedId = data && typeof data === "object" && !Array.isArray(data) ? Number(data.id || 0) : 0;
++    const idForWs = Number.isFinite(savedId) && savedId > 0 ? savedId : Number(payload.id || cardRow && cardRow.dataset.id || 0);
++    if (Number.isFinite(idForWs) && idForWs > 0 && Object.prototype.hasOwnProperty.call(payload, "work_status")) {
++      const ws = await sb.rpc("admin_tree_child_set_work_status_by_id_v1", {
++        p_token: token,
++        p_id: idForWs,
++        p_work_status: String(payload.work_status || "").trim(),
++      });
++      if (ws.error && !/could not find|does not exist|42883/i.test(String(ws.error.message || ""))) {
++        return setSourceTreeStatus("تم حفظ البطاقة، لكن تعذر حفظ الحالة الوظيفية: " + formatRpcError(ws.error));
++      }
++    }
+     const memberRes = await upsertMemberProfileFromTreeCard(cardRow, payload, data && data.id ? data.id : payload.id);
+     if (!memberRes.ok) {
+       setSourceTreeStatus(
+diff --git a/assets/js/modules/admin-sql-presets.js b/assets/js/modules/admin-sql-presets.js
+index 84228a8..823ccdf 100644
+--- a/assets/js/modules/admin-sql-presets.js
++++ b/assets/js/modules/admin-sql-presets.js
+@@ -4675,6 +4675,15 @@ select
+       order: 10.3691,
+       supabaseOnce: true,
+     },
++    {
++      id: "maint.tree_children_work_status_v1",
++      title: "الحالة الوظيفية: موظف / متقاعد / عاطل",
++      desc: "عمود work_status على tree_children، ختم من الإدارة، وإحصاء الأحياء حسب الفرع. شغّله مرة ثم Hard Refresh قبل تعبئة الحقل من إدارة العائلة.",
++      file: "../supabase/sql/COPY-ME-tree-children-work-status-v1.sql",
++      sql: "-- COPY-ME: run in Supabase SQL Editor / SQL Workspace\n-- Preset id: maint.tree_children_work_status_v1\n--\n-- الحالة الوظيفية على فرد الشجرة: موظف / متقاعد / عاطل.\n-- عمود tree_children.work_status + تطبيع + ختم من الإدارة بالـ id.\n-- إحصاء الأحياء حسب الحالة (فرع أو كل العائلة).\n-- Safe to re-run.\n-- ملاحظة: نستخدم وسوم مسماة مثل ws و fn فقط حتى لا ينكسر التقسيم في مساحة SQL.\n\nalter table public.tree_children\n  add column if not exists work_status text;\n\ncreate or replace function public.tree_child_normalize_work_status(p_status text)\nreturns text\nlanguage sql\nimmutable\nas $ws$\n  select case\n    when g in (\n      'employed', 'employee', 'working', 'job',\n      'موظف', 'موظفين', 'يعمل', 'على رأس العمل'\n    ) then 'employed'\n    when g in (\n      'retired', 'retiree', 'pension',\n      'متقاعد', 'متقاعدين', 'تقاعد'\n    ) then 'retired'\n    when g in (\n      'unemployed', 'jobless', 'without_work',\n      'عاطل', 'عاطلين', 'بدون عمل', 'بدون_عمل'\n    ) then 'unemployed'\n    else null\n  end\n  from (\n    select lower(btrim(coalesce(p_status, ''))) as g\n  ) s\n$ws$;\n\ngrant execute on function public.tree_child_normalize_work_status(text) to anon, authenticated;\n\ncreate or replace function public.admin_tree_child_set_work_status_by_id_v1(\n  p_token text,\n  p_id bigint,\n  p_work_status text\n) returns boolean\nlanguage plpgsql\nsecurity definer\nset search_path = public\nas $fn$\ndeclare\n  v_status text;\nbegin\n  if not public.admin_token_ok_v1(p_token) then\n    raise exception 'not allowed';\n  end if;\n  if p_id is null or p_id < 1 then\n    return false;\n  end if;\n\n  v_status := public.tree_child_normalize_work_status(p_work_status);\n  if nullif(btrim(coalesce(p_work_status, '')), '') is not null and v_status is null then\n    raise exception 'work_status_invalid';\n  end if;\n\n  update public.tree_children c\n  set work_status = v_status\n  where c.id = p_id;\n\n  return found;\nend;\n$fn$;\n\nrevoke all on function public.admin_tree_child_set_work_status_by_id_v1(text, bigint, text) from public;\ngrant execute on function public.admin_tree_child_set_work_status_by_id_v1(text, bigint, text) to anon, authenticated;\n\ncreate or replace function public.tree_work_status_stats_v1(p_branch_key text default null)\nreturns table(\n  branch_key text,\n  work_status text,\n  living_count bigint\n)\nlanguage sql\nstable\nsecurity definer\nset search_path = public\nas $ws$\n  with living as (\n    select\n      coalesce(nullif(btrim(c.branch_key), ''), '—') as branch_key,\n      coalesce(\n        public.tree_child_normalize_work_status(c.work_status),\n        'unset'\n      ) as work_status\n    from public.tree_children c\n    where coalesce(c.is_deceased, false) is not true\n      and coalesce(c.deceased, false) is not true\n      and (\n        nullif(btrim(coalesce(p_branch_key, '')), '') is null\n        or c.branch_key = btrim(p_branch_key)\n      )\n      and lower(btrim(coalesce(c.gender, ''))) not in (\n        'daughter', 'female', 'f', 'أنثى', 'انثى', 'ابنة', 'بنت'\n      )\n  )\n  select\n    l.branch_key,\n    l.work_status,\n    count(*)::bigint as living_count\n  from living l\n  group by l.branch_key, l.work_status\n  order by l.branch_key, l.work_status\n$ws$;\n\ngrant execute on function public.tree_work_status_stats_v1(text) to anon, authenticated;\n\nnotify pgrst, 'reload schema';\n\nselect\n  (to_regclass('public.tree_children') is not null) as has_tree_children,\n  exists (\n    select 1\n    from information_schema.columns\n    where table_schema = 'public'\n      and table_name = 'tree_children'\n      and column_name = 'work_status'\n  ) as has_work_status_column,\n  (to_regprocedure('public.tree_child_normalize_work_status(text)') is not null) as has_normalize,\n  (to_regprocedure('public.admin_tree_child_set_work_status_by_id_v1(text,bigint,text)') is not null) as has_admin_set,\n  (to_regprocedure('public.tree_work_status_stats_v1(text)') is not null) as has_stats;\n",
++      order: 10.36905,
++      supabaseOnce: true,
++    },
+     {
+       id: "maint.tree_member_photo_v1",
+       title: "صورة العضو: إضافة وتغيير وحذف",
+diff --git a/assets/js/modules/family-management/family-add-sheet.js b/assets/js/modules/family-management/family-add-sheet.js
+index 141250e..c230bc9 100644
+--- a/assets/js/modules/family-management/family-add-sheet.js
++++ b/assets/js/modules/family-management/family-add-sheet.js
+@@ -59,7 +59,13 @@
+       '<div class="field"><label>ترتيب الميلاد</label><input type="number" data-fm-child-order min="1" step="1" inputmode="numeric" placeholder="مثال: 1" /></div>' +
+       '<div class="field"><label>المدينة</label><input type="text" data-fm-child-city /></div>' +
+       '<div class="field"><label>الحي / القرية</label><input type="text" data-fm-child-area /></div>' +
+-      '<div class="field"><label>الحالة</label><label style="display:flex;align-items:center;gap:8px;min-height:38px;"><input type="checkbox" data-fm-child-deceased /> متوفى</label></div>' +
++      '<div class="field"><label>الحالة الوظيفية</label><select data-fm-child-work-status>' +
++      '<option value="">غير محدد</option>' +
++      '<option value="employed">موظف</option>' +
++      '<option value="retired">متقاعد</option>' +
++      '<option value="unemployed">عاطل</option>' +
++      "</select></div>" +
++      '<div class="field"><label>الوفاة</label><label style="display:flex;align-items:center;gap:8px;min-height:38px;"><input type="checkbox" data-fm-child-deceased /> متوفى</label></div>' +
+       "</div>" +
+       '<div class="fm-toolbar" style="margin-top:12px;">' +
+       '<button type="button" class="btn btn-primary" data-fm-save-sheet>حفظ</button>' +
+@@ -113,7 +119,8 @@
+     var childGreg = sheet.querySelector("[data-fm-child-greg]");
+     var childCity = sheet.querySelector("[data-fm-child-city]");
+     var childArea = sheet.querySelector("[data-fm-child-area]");
+-    bindDeceasedToggle(childDeceased, [childAge, childHijri, childGreg, childCity, childArea]);
++    var childWorkStatus = sheet.querySelector("[data-fm-child-work-status]");
++    bindDeceasedToggle(childDeceased, [childAge, childHijri, childGreg, childCity, childArea, childWorkStatus]);
+     bindBirthDateSync(childHijri, childGreg, api);
+     bindAgeToBirthDates(childAge, childHijri, childGreg, api);
+     if (window.AlzidanPhoneIntl) {
+@@ -344,6 +351,7 @@
+         order: sheet.querySelector("[data-fm-child-order]").value,
+         city: childCity ? childCity.value : "",
+         area: childArea ? childArea.value : "",
++        workStatus: childWorkStatus ? childWorkStatus.value : "",
+         deceased: !!(childDeceased && childDeceased.checked),
+       });
+       if (childRes && childRes.needsConfirm) {
+@@ -366,6 +374,7 @@
+           order: sheet.querySelector("[data-fm-child-order]").value,
+           city: childCity ? childCity.value : "",
+           area: childArea ? childArea.value : "",
++          workStatus: childWorkStatus ? childWorkStatus.value : "",
+           deceased: !!(childDeceased && childDeceased.checked),
+           confirmSimilarName: true,
+         });
+diff --git a/assets/js/modules/family-management/family-children-section.js b/assets/js/modules/family-management/family-children-section.js
+index 7f82308..313005f 100644
+--- a/assets/js/modules/family-management/family-children-section.js
++++ b/assets/js/modules/family-management/family-children-section.js
+@@ -134,6 +134,10 @@
+         : String(child && child.area ? child.area : "");
+       if (city) parts.push("المدينة: " + city);
+       if (area) parts.push("الحي: " + area);
++      var workStatus = child && child.workStatus ? String(child.workStatus) : "";
++      if (workStatus === "employed") parts.push("الحالة الوظيفية: موظف");
++      else if (workStatus === "retired") parts.push("الحالة الوظيفية: متقاعد");
++      else if (workStatus === "unemployed") parts.push("الحالة الوظيفية: عاطل");
+       return { parts: parts, childId: childId, parentKey: parentKey };
+     }
+ 
+@@ -433,7 +437,13 @@
+         '<div class="field"><label>ترتيب الميلاد</label><input type="number" data-fm-edit-order min="1" step="1" inputmode="numeric" /></div>' +
+         '<div class="field"><label>المدينة</label><input type="text" data-fm-edit-city /></div>' +
+         '<div class="field"><label>الحي / القرية</label><input type="text" data-fm-edit-area /></div>' +
+-        '<div class="field"><label>الحالة</label><label style="display:flex;align-items:center;gap:8px;min-height:38px;"><input type="checkbox" data-fm-edit-deceased /> متوفى</label></div>' +
++        '<div class="field"><label>الحالة الوظيفية</label><select data-fm-edit-work-status>' +
++        '<option value="">غير محدد</option>' +
++        '<option value="employed">موظف</option>' +
++        '<option value="retired">متقاعد</option>' +
++        '<option value="unemployed">عاطل</option>' +
++        "</select></div>" +
++        '<div class="field"><label>الوفاة</label><label style="display:flex;align-items:center;gap:8px;min-height:38px;"><input type="checkbox" data-fm-edit-deceased /> متوفى</label></div>' +
+         '<div class="field" data-fm-death-field><label>تاريخ الوفاة (هجري)</label><input type="text" data-fm-edit-death-hijri dir="ltr" lang="en" inputmode="numeric" placeholder="1445-09-01" /></div>' +
+         '<div class="field" data-fm-death-field><label>تاريخ الوفاة (ميلادي)</label><input type="date" data-fm-edit-death-greg dir="ltr" lang="en" /></div>' +
+         '<div class="fm-edit-preview" data-fm-edit-preview style="grid-column:1/-1;"></div>' +
+@@ -525,6 +535,12 @@
+       if (cityEl) cityEl.value = String(child && child.city ? child.city : "");
+       var areaEl = wrap.querySelector("[data-fm-edit-area]");
+       if (areaEl) areaEl.value = String(child && child.area ? child.area : "");
++      var workStatusEl = wrap.querySelector("[data-fm-edit-work-status]");
++      if (workStatusEl) {
++        var ws = String(child && child.workStatus ? child.workStatus : "").trim();
++        workStatusEl.value =
++          ws === "employed" || ws === "retired" || ws === "unemployed" ? ws : "";
++      }
+       if (deceasedEl) {
+         deceasedEl.checked = !!(child && child.deceased);
+         deceasedEl.addEventListener("change", syncDeathDateFields);
+@@ -623,6 +639,14 @@
+       var originalOrder = child && child.order ? String(child.order) : "";
+       var originalCity = String(child && child.city ? child.city : "");
+       var originalArea = String(child && child.area ? child.area : "");
++      var originalWorkStatus = String(child && child.workStatus ? child.workStatus : "").trim();
++      if (
++        originalWorkStatus !== "employed" &&
++        originalWorkStatus !== "retired" &&
++        originalWorkStatus !== "unemployed"
++      ) {
++        originalWorkStatus = "";
++      }
+       var originalDeceased = !!(child && child.deceased);
+       var originalDeathHijri = String(child && child.dhdate ? child.dhdate : "");
+       var originalDeathGreg = toDateInputValue(child && child.ddate ? child.ddate : "");
+@@ -679,9 +703,21 @@
+         if (nextArea !== originalArea) {
+           lines.push("الحي/القرية: «" + (originalArea || "—") + "» → «" + (nextArea || "—") + "»");
+         }
++        var nextWorkStatus = workStatusEl ? String(workStatusEl.value || "").trim() : "";
++        if (nextWorkStatus !== originalWorkStatus) {
++          function workLabel(v) {
++            if (v === "employed") return "موظف";
++            if (v === "retired") return "متقاعد";
++            if (v === "unemployed") return "عاطل";
++            return "غير محدد";
++          }
++          lines.push(
++            "الحالة الوظيفية: «" + workLabel(originalWorkStatus) + "» → «" + workLabel(nextWorkStatus) + "»"
++          );
++        }
+         var nextDeceased = !!(deceasedEl && deceasedEl.checked);
+         if (nextDeceased !== originalDeceased) {
+-          lines.push("الحالة: «" + (originalDeceased ? "متوفى" : "حي") + "» → «" + (nextDeceased ? "متوفى" : "حي") + "»");
++          lines.push("الوفاة: «" + (originalDeceased ? "متوفى" : "حي") + "» → «" + (nextDeceased ? "متوفى" : "حي") + "»");
+         }
+         var nextDeathHijri = deathHijriEl ? String(deathHijriEl.value || "").trim() : "";
+         var nextDeathGreg = deathGregEl ? String(deathGregEl.value || "").trim() : "";
+@@ -763,6 +799,7 @@
+           order: orderEl ? orderEl.value : "",
+           city: cityEl ? cityEl.value : "",
+           area: areaEl ? areaEl.value : "",
++          workStatus: workStatusEl ? workStatusEl.value : "",
+           deceased: !!(deceasedEl && deceasedEl.checked),
+           deathHijri: deathHijriEl ? deathHijriEl.value : "",
+           deathGreg: deathGregEl ? deathGregEl.value : "",
+@@ -790,6 +827,7 @@
+             order: orderEl ? orderEl.value : "",
+             city: cityEl ? cityEl.value : "",
+             area: areaEl ? areaEl.value : "",
++            workStatus: workStatusEl ? workStatusEl.value : "",
+             deceased: !!(deceasedEl && deceasedEl.checked),
+             deathHijri: deathHijriEl ? deathHijriEl.value : "",
+             deathGreg: deathGregEl ? deathGregEl.value : "",
+diff --git a/supabase/sql/COPY-ME-tree-children-work-status-v1.sql b/supabase/sql/COPY-ME-tree-children-work-status-v1.sql
+new file mode 100644
+index 0000000..6bf6a86
+--- /dev/null
++++ b/supabase/sql/COPY-ME-tree-children-work-status-v1.sql
+@@ -0,0 +1,128 @@
++-- COPY-ME: run in Supabase SQL Editor / SQL Workspace
++-- Preset id: maint.tree_children_work_status_v1
++--
++-- الحالة الوظيفية على فرد الشجرة: موظف / متقاعد / عاطل.
++-- عمود tree_children.work_status + تطبيع + ختم من الإدارة بالـ id.
++-- إحصاء الأحياء حسب الحالة (فرع أو كل العائلة).
++-- Safe to re-run.
++-- ملاحظة: نستخدم وسوم مسماة مثل ws و fn فقط حتى لا ينكسر التقسيم في مساحة SQL.
++
++alter table public.tree_children
++  add column if not exists work_status text;
++
++create or replace function public.tree_child_normalize_work_status(p_status text)
++returns text
++language sql
++immutable
++as $ws$
++  select case
++    when g in (
++      'employed', 'employee', 'working', 'job',
++      'موظف', 'موظفين', 'يعمل', 'على رأس العمل'
++    ) then 'employed'
++    when g in (
++      'retired', 'retiree', 'pension',
++      'متقاعد', 'متقاعدين', 'تقاعد'
++    ) then 'retired'
++    when g in (
++      'unemployed', 'jobless', 'without_work',
++      'عاطل', 'عاطلين', 'بدون عمل', 'بدون_عمل'
++    ) then 'unemployed'
++    else null
++  end
++  from (
++    select lower(btrim(coalesce(p_status, ''))) as g
++  ) s
++$ws$;
++
++grant execute on function public.tree_child_normalize_work_status(text) to anon, authenticated;
++
++create or replace function public.admin_tree_child_set_work_status_by_id_v1(
++  p_token text,
++  p_id bigint,
++  p_work_status text
++) returns boolean
++language plpgsql
++security definer
++set search_path = public
++as $fn$
++declare
++  v_status text;
++begin
++  if not public.admin_token_ok_v1(p_token) then
++    raise exception 'not allowed';
++  end if;
++  if p_id is null or p_id < 1 then
++    return false;
++  end if;
++
++  v_status := public.tree_child_normalize_work_status(p_work_status);
++  if nullif(btrim(coalesce(p_work_status, '')), '') is not null and v_status is null then
++    raise exception 'work_status_invalid';
++  end if;
++
++  update public.tree_children c
++  set work_status = v_status
++  where c.id = p_id;
++
++  return found;
++end;
++$fn$;
++
++revoke all on function public.admin_tree_child_set_work_status_by_id_v1(text, bigint, text) from public;
++grant execute on function public.admin_tree_child_set_work_status_by_id_v1(text, bigint, text) to anon, authenticated;
++
++create or replace function public.tree_work_status_stats_v1(p_branch_key text default null)
++returns table(
++  branch_key text,
++  work_status text,
++  living_count bigint
++)
++language sql
++stable
++security definer
++set search_path = public
++as $ws$
++  with living as (
++    select
++      coalesce(nullif(btrim(c.branch_key), ''), '—') as branch_key,
++      coalesce(
++        public.tree_child_normalize_work_status(c.work_status),
++        'unset'
++      ) as work_status
++    from public.tree_children c
++    where coalesce(c.is_deceased, false) is not true
++      and coalesce(c.deceased, false) is not true
++      and (
++        nullif(btrim(coalesce(p_branch_key, '')), '') is null
++        or c.branch_key = btrim(p_branch_key)
++      )
++      and lower(btrim(coalesce(c.gender, ''))) not in (
++        'daughter', 'female', 'f', 'أنثى', 'انثى', 'ابنة', 'بنت'
++      )
++  )
++  select
++    l.branch_key,
++    l.work_status,
++    count(*)::bigint as living_count
++  from living l
++  group by l.branch_key, l.work_status
++  order by l.branch_key, l.work_status
++$ws$;
++
++grant execute on function public.tree_work_status_stats_v1(text) to anon, authenticated;
++
++notify pgrst, 'reload schema';
++
++select
++  (to_regclass('public.tree_children') is not null) as has_tree_children,
++  exists (
++    select 1
++    from information_schema.columns
++    where table_schema = 'public'
++      and table_name = 'tree_children'
++      and column_name = 'work_status'
++  ) as has_work_status_column,
++  (to_regprocedure('public.tree_child_normalize_work_status(text)') is not null) as has_normalize,
++  (to_regprocedure('public.admin_tree_child_set_work_status_by_id_v1(text,bigint,text)') is not null) as has_admin_set,
++  (to_regprocedure('public.tree_work_status_stats_v1(text)') is not null) as has_stats;
