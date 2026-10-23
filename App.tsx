@@ -971,6 +971,8 @@ function AppChrome() {
         return (
           <AidRequestScreen
             memberPhone={memberPhoneForRequests}
+            viewerPerson={memberViewerPerson}
+            childrenRows={treeChildren}
             onBack={() => setScreen('profile')}
           />
         );

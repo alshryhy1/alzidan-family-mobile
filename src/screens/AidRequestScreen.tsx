@@ -366,6 +366,10 @@ function aidStyles(p: ThemePalette) {
       backgroundColor: 'rgba(196,163,90,0.2)',
       borderColor: '#C4A35A',
     },
+    lockedChip: {
+      alignSelf: 'flex-end' as const,
+      marginBottom: 8,
+    },
     chipText: {
       color: p.textMuted,
       fontWeight: '700' as const,
