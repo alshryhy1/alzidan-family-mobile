@@ -467,6 +467,7 @@ type MemberViewerRpcRow = {
   id?: number;
   child_name?: string | null;
   parent_name?: string | null;
+  married_outside?: boolean | null;
   branch_key?: string | null;
   gender?: string | null;
   display_name?: string | null;
@@ -530,6 +531,25 @@ export async function loadMemberViewerPerson(phone: string): Promise<TreeChild |
   if (!row?.id) return null;
   const name = String(row.child_name || '').trim();
   const parentName = String(row.parent_name || '').trim();
+  let marriedOutside =
+    row.married_outside === true
+      ? true
+      : row.married_outside === false
+        ? false
+        : null;
+  if (marriedOutside == null) {
+    try {
+      const flagRows = await selectPublicRows<{ married_outside?: boolean | null }>(
+        `tree_children?id=eq.${Number(row.id)}&select=married_outside&limit=1`,
+      );
+      const flagRow = Array.isArray(flagRows) ? flagRows[0] : null;
+      if (flagRow && typeof flagRow.married_outside === 'boolean') {
+        marriedOutside = flagRow.married_outside;
+      }
+    } catch {
+      marriedOutside = null;
+    }
+  }
   return {
     id: Number(row.id),
     branchKey: String(row.branch_key || ''),
@@ -544,6 +564,7 @@ export async function loadMemberViewerPerson(phone: string): Promise<TreeChild |
     isDeceased: null,
     gender: row.gender ?? null,
     photoUrl: String(row.photo_url || '').trim() || null,
+    marriedOutside,
   };
 }
 
@@ -740,6 +761,11 @@ export type SelfPathLoadedFacts = {
   isWidow: boolean;
   /** From tree_spouses status — divorced wife. */
   isDivorced: boolean;
+  /**
+   * Married to a husband outside the family tree — no husband name,
+   * and not labeled أرملة/مطلقة on the self card.
+   */
+  marriedOutside: boolean;
   /**
    * Aid form situation inferred from the marriage file.
    * null = not known from profile (show «أخرى» only).
@@ -992,6 +1018,7 @@ export async function loadSelfPathFacts(
     spouseRole: null,
     isWidow: false,
     isDivorced: false,
+    marriedOutside: false,
     aidSituation: null,
     childNames: [],
     daughterNames: [],
@@ -1002,6 +1029,19 @@ export async function loadSelfPathFacts(
   };
   const id = Number(viewer?.id || 0);
   if (!id || !viewer) return empty;
+
+  let marriedOutsideFlag = viewer.marriedOutside === true;
+  try {
+    const flagRows = await selectPublicRows<{ married_outside?: boolean | null }>(
+      `tree_children?id=eq.${id}&select=married_outside&limit=1`,
+    );
+    const flagRow = Array.isArray(flagRows) ? flagRows[0] : null;
+    if (flagRow && typeof flagRow.married_outside === 'boolean') {
+      marriedOutsideFlag = flagRow.married_outside === true;
+    }
+  } catch {
+    // column missing until COPY-ME-married-outside-v1.sql is applied
+  }
 
   let motherName: string | null = null;
   try {
@@ -1116,10 +1156,10 @@ export async function loadSelfPathFacts(
       (isTreePersonDeceased(husband.isDeceased) ||
         Boolean(String(husband.deathDateGregorian || husband.deathDateHijri || '').trim())),
   );
-  const isWidow =
+  let isWidow =
     picked?.partner.role === 'wife' &&
     (husbandDeceased || spouseStatusImpliesWidow(picked.spouse.status));
-  const isDivorced =
+  let isDivorced =
     picked?.partner.role === 'wife' &&
     !isWidow &&
     (spouseStatusImpliesDivorced(picked.spouse.status) ||
@@ -1127,18 +1167,15 @@ export async function loadSelfPathFacts(
         (row) =>
           row.partner.role === 'wife' && spouseStatusImpliesDivorced(row.spouse.status),
       ));
-  const aidSituation: 'widow' | 'divorced' | null = isWidow
-    ? 'widow'
-    : isDivorced
-      ? 'divorced'
-      : null;
-  const spousePartnerName =
+  let spousePartnerName =
     currentMarriage || isWidow
       ? (
           (currentMarriage || picked)?.partner.name ||
           (husband ? leafPersonName(husband.name) : '')
         ).trim() || null
       : null;
+  let spouseRole: 'husband' | 'wife' | null =
+    currentMarriage?.partner.role || picked?.partner.role || null;
 
   let childNames: string[] = [];
   let daughterNames: string[] = [];
@@ -1335,13 +1372,33 @@ export async function loadSelfPathFacts(
   }
 
   const externalOffspringNames = await loadExternalOffspringByPhone(String(phone || ''));
+  // Explicit flag, or external kids with no in-family wife marriage row.
+  const marriedOutside =
+    marriedOutsideFlag || (externalOffspringNames.length > 0 && !picked);
+
+  if (marriedOutside) {
+    // Outside husband is never a tree node — never show his name or أرملة/مطلقة.
+    isWidow = false;
+    isDivorced = false;
+    spousePartnerName = null;
+    spouseRole = null;
+  }
+
+  const aidSituation: 'widow' | 'divorced' | null = marriedOutside
+    ? null
+    : isWidow
+      ? 'widow'
+      : isDivorced
+        ? 'divorced'
+        : null;
 
   return {
     motherName,
     spousePartnerName,
-    spouseRole: currentMarriage?.partner.role || picked?.partner.role || null,
+    spouseRole,
     isWidow,
     isDivorced,
+    marriedOutside,
     aidSituation,
     childNames,
     daughterNames,

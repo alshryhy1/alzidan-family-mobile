@@ -44,6 +44,7 @@ export function AidRequestScreen({
   const [situation, setSituation] = useState<AidSituation>('other');
   const [situationLocked, setSituationLocked] = useState(false);
   const [situationLoading, setSituationLoading] = useState(false);
+  const [marriedOutside, setMarriedOutside] = useState(false);
   const [needText, setNeedText] = useState('');
   const [hideName, setHideName] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -76,6 +77,7 @@ export function AidRequestScreen({
     let alive = true;
     if (!viewerPerson?.id) {
       setSituationLocked(false);
+      setMarriedOutside(false);
       setSituationLoading(false);
       return () => {
         alive = false;
@@ -85,6 +87,12 @@ export function AidRequestScreen({
     loadSelfPathFacts(viewerPerson, childrenRows, phone)
       .then((facts) => {
         if (!alive) return;
+        setMarriedOutside(Boolean(facts.marriedOutside));
+        if (facts.marriedOutside) {
+          setSituation('other');
+          setSituationLocked(true);
+          return;
+        }
         if (facts.aidSituation === 'widow' || facts.aidSituation === 'divorced') {
           setSituation(facts.aidSituation);
           setSituationLocked(true);
@@ -96,6 +104,7 @@ export function AidRequestScreen({
       .catch(() => {
         if (!alive) return;
         setSituationLocked(false);
+        setMarriedOutside(false);
       })
       .finally(() => {
         if (alive) setSituationLoading(false);
@@ -204,10 +213,16 @@ export function AidRequestScreen({
                 <>
                   <View style={[styles.chip, styles.chipActive, styles.lockedChip]}>
                     <Text style={[styles.chipText, styles.chipTextActive]}>
-                      {AID_SITUATIONS.find((s) => s.id === situation)?.label || situation}
+                      {marriedOutside
+                        ? 'متزوجة من خارج العائلة'
+                        : AID_SITUATIONS.find((s) => s.id === situation)?.label || situation}
                     </Text>
                   </View>
-                  <Text style={styles.hint}>من ملفك في الشجرة — لا حاجة للاختيار.</Text>
+                  <Text style={styles.hint}>
+                    {marriedOutside
+                      ? 'من ملفك — لا تُعرض أرملة/مطلقة ولا اسم الزوج. الطلب يُرسل كحالة أخرى.'
+                      : 'من ملفك في الشجرة — لا حاجة للاختيار.'}
+                  </Text>
                 </>
               ) : (
                 <>

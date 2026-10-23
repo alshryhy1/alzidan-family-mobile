@@ -107,6 +107,7 @@ export function PersonEncounterScreen({
   const [ownDaughters, setOwnDaughters] = useState<{ id: number; name: string }[]>([]);
   const [ownSons, setOwnSons] = useState<TreeChild[]>([]);
   const [isWidow, setIsWidow] = useState(false);
+  const [marriedOutside, setMarriedOutside] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editChildId, setEditChildId] = useState<number | null>(null);
@@ -219,6 +220,7 @@ export function PersonEncounterScreen({
       setOwnDaughters([]);
       setOwnSons([]);
       setIsWidow(false);
+      setMarriedOutside(false);
       setSelfPathLoading(false);
       return () => {
         alive = false;
@@ -280,11 +282,13 @@ export function PersonEncounterScreen({
         );
         setOwnSons(factSons);
         setIsWidow(Boolean(facts.isWidow));
+        setMarriedOutside(Boolean(facts.marriedOutside));
         setSelfPathRings(
           buildSelfPathRings(person, {
             motherName: facts.motherName,
             spousePartnerName: facts.spousePartnerName,
             spouseRole: facts.spouseRole,
+            marriedOutside: Boolean(facts.marriedOutside),
             siblingNames: siblingNames.filter((name) => !sisterSet.has(name)),
             sisterNames,
             childNames: factSons.length
@@ -366,6 +370,8 @@ export function PersonEncounterScreen({
             </View>
           ) : mode === 'visitor' ? (
             <Text style={styles.heroSub}>من عائلة الزيدان</Text>
+          ) : mode === 'self' && marriedOutside ? (
+            <Text style={styles.heroSub}>متزوجة من خارج العائلة</Text>
           ) : mode === 'self' && isWidow ? (
             <Text style={styles.heroSub}>أرملة · مكانك في العائلة</Text>
           ) : mode === 'self' ? (
@@ -466,7 +472,11 @@ export function PersonEncounterScreen({
                 style={({ pressed }) => [styles.aidButton, pressed && { opacity: 0.8 }]}
               >
                 <Text style={styles.aidButtonTitle}>
-                  {isWidow ? 'طلب مساعدة — أرملة' : 'طلب مساعدة خاص'}
+                  {marriedOutside
+                    ? 'طلب مساعدة خاص'
+                    : isWidow
+                      ? 'طلب مساعدة — أرملة'
+                      : 'طلب مساعدة خاص'}
                 </Text>
                 <Text style={styles.aidButtonHint}>
                   سري للإدارة · عند النشر بلا اسم · التحويل عبر صندوق العائلة
