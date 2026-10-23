@@ -1,3 +1,4 @@
+import { familyAdminSearchAttempts, mergeFamilyAdminPeople } from '../utils/familyAdminSearch';
 import { digitsOnly } from '../utils/phone';
 import { callPublicRpc } from './supabase';
 
@@ -238,6 +239,43 @@ export async function searchFamilyAdminPeople(
   return (row?.rows || []).map(mapPerson).filter((item): item is FamilyAdminPerson => Boolean(item));
 }
 
+export async function searchFamilyAdminPeopleSmart(
+  adminPhone: string,
+  query: string,
+  requestName: string,
+  branchKey?: string | null,
+): Promise<FamilyAdminPerson[]> {
+  const attempts = familyAdminSearchAttempts(query, requestName);
+  const branch = branchKey ? String(branchKey).trim() : null;
+  let lastError: unknown = null;
+  const merged: FamilyAdminPerson[] = [];
+
+  for (const attempt of attempts) {
+    try {
+      const rows = await searchFamilyAdminPeople(adminPhone, attempt, branch);
+      merged.push(...rows);
+      if (merged.length) return mergeFamilyAdminPeople(merged);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (branch) {
+    for (const attempt of attempts) {
+      try {
+        const rows = await searchFamilyAdminPeople(adminPhone, attempt, null);
+        merged.push(...rows);
+        if (merged.length) return mergeFamilyAdminPeople(merged);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastError && !merged.length) throw lastError;
+  return mergeFamilyAdminPeople(merged);
+}
+
 export async function updateFamilyAdminPerson(args: {
   adminPhone: string;
   treeChildId: number;
@@ -344,6 +382,22 @@ export async function approveFamilyAdminRequest(adminPhone: string, requestId: n
   let row: ActionRpc | undefined;
   try {
     row = await callPublicRpc<ActionRpc>('family_admin_request_approve_v1', {
+      p_phone: cleaned,
+      p_request_id: requestId,
+    });
+  } catch (error) {
+    throwIfMissingRpc(error);
+  }
+  assertOk(row);
+}
+
+/** يجد الشخص بنفس منطق قبول الطلب عند الإرسال ثم يربط الجوال ويعتمد. */
+export async function approveMemberPhoneRequest(adminPhone: string, requestId: number): Promise<void> {
+  const cleaned = String(adminPhone || '').trim();
+  if (!cleaned || requestId < 1) throw new Error('bad_input');
+  let row: ActionRpc | undefined;
+  try {
+    row = await callPublicRpc<ActionRpc>('family_admin_approve_member_phone_request_v1', {
       p_phone: cleaned,
       p_request_id: requestId,
     });
@@ -550,6 +604,8 @@ export function familyAdminActionMessage(error: unknown): string {
       return 'سجّل الرقم على الشخص في الشجرة ثم اعتمد الطلب.';
     case 'bind_failed':
       return 'ما تم الربط. شغّل أمر «قبول طلب الجوال في التطبيق» من صيانة الإدارة ثم أعد القبول.';
+    case 'name_not_unique':
+      return 'لم يُعثر على شخص واحد بهذا الاسم في الفرع. اختره يدوياً من البحث أو صحّح الشجرة.';
     case 'unknown_role':
       return 'هذا الدور غير معروف.';
     case 'missing_secret_hash':

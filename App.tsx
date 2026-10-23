@@ -21,6 +21,7 @@ import { FamilySpaceMotionLab } from './src/screens/FamilySpaceMotionLab';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { MemoryScreen } from './src/screens/MemoryScreen';
 import { PersonEncounterScreen } from './src/screens/PersonEncounterScreen';
+import { GlobalSearchModal } from './src/components/GlobalSearchModal';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { GivingScreen } from './src/screens/GivingScreen';
@@ -31,7 +32,11 @@ import { DelegateInboxScreen } from './src/screens/DelegateInboxScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
 import { isPublicLineageHiddenPerson } from './src/utils/personVisibility';
-import { fetchOccasionInbox, type OccasionInboxItem } from './src/services/occasionInteractions';
+import {
+  fetchOccasionInbox,
+  filterCurrentOccasionInbox,
+  type OccasionInboxItem,
+} from './src/services/occasionInteractions';
 import { loadLastSeen, markSurfaceSeen, type LastSeenMap } from './src/services/lastSeen';
 import { buildSinceLastVisit, countNewEvents, countNewInbox } from './src/utils/sinceLastVisit';
 import {
@@ -264,6 +269,7 @@ function AppChrome() {
   const [specialCardTickerItems, setSpecialCardTickerItems] = useState<string[]>([]);
   const [pulseOnline, setPulseOnline] = useState<number | null>(null);
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
+  const [searchVisible, setSearchVisible] = useState(false);
 
   useEffect(() => {
     if (!__DEV__) return;
@@ -814,18 +820,26 @@ function AppChrome() {
     });
   }, [encounterPerson, memberPhoneForRequests, memberTreeChildId]);
 
+  const activeOccasionIds = useMemo(
+    () => activeEvents.map((event) => event.id).filter((id) => id != null && String(id).trim()),
+    [activeEvents],
+  );
+  const currentOccasionInbox = useMemo(
+    () => filterCurrentOccasionInbox(occasionInbox, { activeOccasionIds }),
+    [occasionInbox, activeOccasionIds],
+  );
   const sinceLastVisit = useMemo(
     () =>
       buildSinceLastVisit({
         events: activeEvents,
-        inbox: occasionInbox,
+        inbox: currentOccasionInbox,
         homeSeenAt: lastSeen.home,
         profileSeenAt: lastSeen.profile,
       }),
-    [activeEvents, occasionInbox, lastSeen.home, lastSeen.profile],
+    [activeEvents, currentOccasionInbox, lastSeen.home, lastSeen.profile],
   );
   const eventsBadge = countNewEvents(activeEvents, lastSeen.events);
-  const profileBadge = countNewInbox(occasionInbox, lastSeen.profile);
+  const profileBadge = countNewInbox(currentOccasionInbox, lastSeen.profile);
 
   const goToScreen = useCallback((next: PublicScreen, opts?: { eventId?: string | null }) => {
     if (next === 'events') {
@@ -929,6 +943,7 @@ function AppChrome() {
             branches={branches}
             childrenRows={treeChildren}
             viewerPerson={memberViewerPerson}
+            activeOccasionIds={activeOccasionIds}
             onOpenMemberCard={(branchKey, treeChildId) =>
               openPersonEncounter(branchKey, treeChildId, 'profile')
             }
@@ -1078,6 +1093,17 @@ function AppChrome() {
           )}
 
           {legacyChrome && screen !== 'familyLab' && screen !== 'person' && screen !== 'giving' && screen !== 'familyBoard' && screen !== 'womenAdmin' && screen !== 'familyAdmin' && screen !== 'delegateInbox' ? (
+          <Pressable
+            accessibilityLabel="بحث"
+            accessibilityRole="button"
+            onPress={() => setSearchVisible(true)}
+            style={({ pressed }) => [styles.searchFab, pressed && styles.searchFabPressed]}
+          >
+            <Text style={styles.searchFabText}>⌕</Text>
+          </Pressable>
+          ) : null}
+
+          {legacyChrome && screen !== 'familyLab' && screen !== 'person' && screen !== 'giving' && screen !== 'familyBoard' && screen !== 'womenAdmin' && screen !== 'familyAdmin' && screen !== 'delegateInbox' ? (
           <View style={styles.tabBar}>
             {tabs.map((tab) => {
               const tabScreen = screen === 'tree' ? 'branches' : screen;
@@ -1121,6 +1147,20 @@ function AppChrome() {
         card={currentSpecialCard}
         visible={specialCardVisible}
         onClose={closeSpecialCard}
+      />
+
+      <GlobalSearchModal
+        visible={searchVisible}
+        onClose={() => setSearchVisible(false)}
+        branches={branches}
+        childrenRows={treeChildren}
+        parents={publicData.parents}
+        events={activeEvents}
+        onOpenPerson={(branchKey, treeChildId) =>
+          openPersonEncounter(branchKey, treeChildId, screen === 'home' ? 'home' : 'tree')
+        }
+        onOpenEvent={(eventId) => goToScreen('events', { eventId })}
+        onOpenMemory={() => goToScreen('memory')}
       />
     </>
   );
@@ -1169,6 +1209,33 @@ function appStyles(p: ThemePalette) {
     height: 0,
     overflow: 'hidden',
     paddingVertical: 0,
+  },
+  searchFab: {
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    backgroundColor: p.primary,
+    borderRadius: 22,
+    bottom: 78,
+    elevation: 3,
+    height: 44,
+    justifyContent: 'center',
+    marginEnd: spacing.lg,
+    position: 'absolute',
+    right: 0,
+    shadowColor: '#1A2A24',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    width: 44,
+    zIndex: 20,
+  },
+  searchFabPressed: {
+    opacity: 0.85,
+  },
+  searchFabText: {
+    color: p.white,
+    fontSize: 22,
+    fontWeight: '700',
   },
   brandMark: {
     alignItems: 'center',

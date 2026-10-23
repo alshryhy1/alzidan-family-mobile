@@ -59,6 +59,7 @@ import {
   toE164,
   phonesMatch,
 } from '../utils/phone';
+import { matchesSearchQuery } from '../utils/searchText';
 
 type Filter = 'all' | FamilyEvent['category'];
 
@@ -240,6 +241,7 @@ export function EventsScreen({
   const p = useThemePalette();
   const styles = useThemedStyles(eventsStyles);
   const [filter, setFilter] = useState<Filter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [addBranch, setAddBranch] = useState(branches[0]?.id ?? 'زيدان');
   const [addFamily, setAddFamily] = useState<MobileEventFamily>('news');
@@ -280,7 +282,13 @@ export function EventsScreen({
       ? null
       : treeChildren.find((child) => child.id === memberTreeChildId) || null;
   const focusedId = String(focusEventId || '').trim();
-  const visibleEvents = filter === 'all' ? events : events.filter((event) => event.category === filter);
+  const visibleEvents = events.filter((event) => {
+    if (filter !== 'all' && event.category !== filter) return false;
+    return matchesSearchQuery(
+      [event.title, event.person, event.details, event.branch, event.categoryLabel, event.hospitalName],
+      searchQuery,
+    );
+  });
   const orderedEvents = focusedId
     ? [
         ...visibleEvents.filter((event) => String(event.id) === focusedId),
@@ -757,6 +765,16 @@ export function EventsScreen({
           );
         })}
       </View>
+
+      <TextInput
+        onChangeText={setSearchQuery}
+        placeholder="ابحث باسم الشخص أو عنوان المناسبة"
+        placeholderTextColor={p.textMuted}
+        returnKeyType="search"
+        style={styles.searchInput}
+        textAlign="right"
+        value={searchQuery}
+      />
 
       {!loading && !error ? (
         <View style={styles.summary}>
@@ -1344,6 +1362,17 @@ function eventsStyles(p: ThemePalette) {
   },
   activeFilterText: {
     color: p.white,
+  },
+  searchInput: {
+    backgroundColor: p.surface,
+    borderColor: p.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    color: p.text,
+    fontSize: typography.body,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    writingDirection: 'rtl',
   },
   summary: {
     flexDirection: 'row-reverse',

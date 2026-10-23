@@ -37,7 +37,13 @@ import {
   canonicalizePhone,
   isValidStoredPhone,
 } from '../utils/phone';
-import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '../services/occasionInteractions';
+import {
+  fetchOccasionInbox,
+  filterCurrentOccasionInbox,
+  formatOccasionInboxWhen,
+  occasionInboxHeadline,
+  type OccasionInboxItem,
+} from '../services/occasionInteractions';
 import { fetchWomenManagerSession } from '../services/womenManager';
 import { fetchFamilyAdminSession } from '../services/familyAdmin';
 import { fetchDelegateInboxSession } from '../services/delegateInbox';
@@ -46,6 +52,8 @@ type ProfileScreenProps = {
   branches: Branch[];
   childrenRows: TreeChild[];
   viewerPerson?: TreeChild | null;
+  /** مناسبات المجلس الظاهرة الآن — لإخفاء ردود فنجال جلسة منتهية. */
+  activeOccasionIds?: Array<string | number>;
   onOpenMemberCard: (branchKey: string, treeChildId: number) => void;
   onMemberSessionChange?: (phone: string | null) => void;
   onPhotoSaved?: () => void;
@@ -153,6 +161,7 @@ export function ProfileScreen({
   branches,
   childrenRows,
   viewerPerson,
+  activeOccasionIds,
   onOpenMemberCard,
   onMemberSessionChange,
   onPhotoSaved,
@@ -187,6 +196,11 @@ export function ProfileScreen({
   const [registerSending, setRegisterSending] = useState(false);
   const [registerSent, setRegisterSent] = useState(false);
   const [faceLockOn, setFaceLockOn] = useState(false);
+
+  const visibleInbox = useMemo(
+    () => filterCurrentOccasionInbox(inbox, { activeOccasionIds }),
+    [inbox, activeOccasionIds],
+  );
 
   const memberTreeRow = useMemo(() => {
     const id = Number(member?.tree_child_id || 0);
@@ -799,7 +813,7 @@ export function ProfileScreen({
       {member && familyAdminEnabled ? (
         <SceneSection title="إدارة العائلة">
           <Text style={styles.note}>
-            صلاحية يومية من الإدارة الأصلية: قبول ورفض وتعديل صلاحيات المناديب من نفس مصدر الموقع، بلا رمز الإدارة.
+            قبول ورفض الطلبات وتعديل المناديب من التطبيق مباشرة — يتطلب تفعيل السيرفر (Supabase). بلا رمز الإدارة.
           </Text>
           <ActionButton
             label="فتح إدارة العائلة"
@@ -822,14 +836,14 @@ export function ProfileScreen({
 
       {member && !womenManagerEnabled ? (
         <SceneSection title="وصلك من العائلة">
-          {inbox.length === 0 ? (
+          {visibleInbox.length === 0 ? (
             <Text style={styles.note}>
               لا تفاعلات خاصة بعد. عندما يشاركك أحد مناسبة تخصك تظهر هنا فقط لك.
             </Text>
           ) : (
-            inbox.map((item) => {
+            visibleInbox.map((item) => {
               const total = Number(item.total || 0);
-              const yours = yourOccasionPhrase(item.occasion_type);
+              const yours = occasionInboxHeadline(item);
               const senderLabel = (raw: string) => {
                 const tokens = String(raw || '')
                   .trim()
@@ -871,6 +885,9 @@ export function ProfileScreen({
                   </View>
                   <View style={styles.inboxMeta}>
                     {!open ? <Text style={styles.inboxPreview}>{preview}</Text> : <View style={{ flex: 1 }} />}
+                    {formatOccasionInboxWhen(item.latest_at) ? (
+                      <Text style={styles.inboxWhen}>{formatOccasionInboxWhen(item.latest_at)}</Text>
+                    ) : null}
                     <Text style={styles.inboxChip}>
                       {msgCount === 1
                         ? 'رسالة واحدة'
@@ -888,11 +905,13 @@ export function ProfileScreen({
                       const textMsg = String(m.message || m.full_text || m.label || '').trim();
                       if (!textMsg) return null;
                       const sender = senderLabel(m.sender_name || '');
+                      const when = formatOccasionInboxWhen(m.created_at || item.latest_at);
                       return (
                         <View key={m.id} style={styles.inboxMsgRow}>
                           <Text style={styles.inboxSender}>{sender}</Text>
                           <Text style={styles.inboxSep}> · </Text>
                           <Text style={styles.inboxMsg}>{textMsg}</Text>
+                          {when ? <Text style={styles.inboxMsgWhen}>{when}</Text> : null}
                         </View>
                       );
                     })
@@ -945,6 +964,12 @@ function profileStyles(p: ThemePalette) {
     borderRadius: 999,
     overflow: 'hidden',
     backgroundColor: p.accentSoft,
+  },
+  inboxWhen: {
+    color: p.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    writingDirection: 'rtl',
   },
   inboxChevron: {
     color: p.primary,
@@ -1024,6 +1049,15 @@ function profileStyles(p: ThemePalette) {
     textAlign: 'right',
     writingDirection: 'rtl',
     flexShrink: 1,
+  },
+  inboxMsgWhen: {
+    width: '100%',
+    marginTop: 4,
+    color: p.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'left',
+    writingDirection: 'rtl',
   },
   input: {
     backgroundColor: p.surfaceMuted,
