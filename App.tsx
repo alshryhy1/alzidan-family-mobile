@@ -901,6 +901,9 @@ function AppChrome() {
             onAdded={() => {
               void reloadPublished();
             }}
+            onOpenAidRequest={
+              encounterMode === 'self' ? () => setScreen('aidRequest') : undefined
+            }
             onClose={closePersonEncounter}
           />
         );
