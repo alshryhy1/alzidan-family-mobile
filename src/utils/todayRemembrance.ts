@@ -2,7 +2,7 @@ import moment from 'moment-hijri';
 
 import type { TreeChild } from '../types';
 import { isPublicLineageHiddenPerson } from './personVisibility';
-import { resolveProvenKinshipLabel } from './personEncounter';
+import { leafPersonName, resolveProvenKinshipLabel } from './personEncounter';
 
 export type RemembranceKind = 'birth' | 'death';
 
@@ -56,8 +56,13 @@ export function hijriToday(now = new Date()): HijriDay {
   return { year, month, day, key };
 }
 
+/** Leaf of tree path (…/ريان) — never the branch root (زيدان/…). */
 function givenName(name: string) {
-  const token = String(name || '').trim().split(/\s+/).filter(Boolean)[0] || '';
+  const leaf = leafPersonName(name);
+  const token = String(leaf || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)[0] || '';
   return token || 'قريب';
 }
 
