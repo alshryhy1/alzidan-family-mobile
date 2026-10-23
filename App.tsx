@@ -24,6 +24,7 @@ import { PersonEncounterScreen } from './src/screens/PersonEncounterScreen';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { GivingScreen } from './src/screens/GivingScreen';
+import { AidRequestScreen } from './src/screens/AidRequestScreen';
 import { FamilyBoardScreen } from './src/screens/FamilyBoardScreen';
 import { WomenAdminScreen } from './src/screens/WomenAdminScreen';
 import { FamilyAdminScreen } from './src/screens/FamilyAdminScreen';
@@ -933,6 +934,7 @@ function AppChrome() {
               openPersonEncounter(branchKey, treeChildId, 'profile')
             }
             onOpenGiving={() => setScreen('giving')}
+            onOpenAidRequest={() => setScreen('aidRequest')}
             onOpenWomenAdmin={() => setScreen('womenAdmin')}
             onOpenFamilyAdmin={() => setScreen('familyAdmin')}
             onOpenDelegateInbox={() => setScreen('delegateInbox')}
@@ -955,7 +957,19 @@ function AppChrome() {
           />
         );
       case 'giving':
-        return <GivingScreen onBack={() => setScreen('profile')} />;
+        return (
+          <GivingScreen
+            onBack={() => setScreen('profile')}
+            onOpenAidRequest={() => setScreen('aidRequest')}
+          />
+        );
+      case 'aidRequest':
+        return (
+          <AidRequestScreen
+            memberPhone={memberPhoneForRequests}
+            onBack={() => setScreen('profile')}
+          />
+        );
       case 'familyBoard':
         return (
           <FamilyBoardScreen

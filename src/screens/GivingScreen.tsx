@@ -16,11 +16,12 @@ import { useThemedStyles } from '../theme/useThemedStyles';
 
 type GivingScreenProps = {
   onBack: () => void;
+  onOpenAidRequest?: () => void;
 };
 
 type Pane = 'choose' | 'support';
 
-export function GivingScreen({ onBack }: GivingScreenProps) {
+export function GivingScreen({ onBack, onOpenAidRequest }: GivingScreenProps) {
   const p = useThemePalette();
   const styles = useThemedStyles(givingStyles);
   const [settings, setSettings] = useState<GivingSettings | null>(null);
@@ -136,6 +137,21 @@ export function GivingScreen({ onBack }: GivingScreenProps) {
               <Text style={styles.tileText}>مساهمة لاستمرار الموقع عبر بوابة الدفع — ليست منصة العائلة.</Text>
               <Text style={styles.cta}>{platformOpen ? 'اختيار المبلغ' : 'غير متاح الآن'}</Text>
             </Pressable>
+
+            {onOpenAidRequest ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={onOpenAidRequest}
+                style={({ pressed }) => [styles.tile, styles.tileAid, pressed && styles.tilePressed]}
+              >
+                <Text style={styles.kicker}>سرية</Text>
+                <Text style={styles.tileTitle}>فرص مساعدة</Text>
+                <Text style={styles.tileText}>
+                  طلبات معتمدة بلا اسم. المساعدة عبر إدارة العائلة وصندوق العائلة.
+                </Text>
+                <Text style={styles.cta}>عرض الفرص / تقديم طلب</Text>
+              </Pressable>
+            ) : null}
           </View>
         </SceneSection>
       ) : (
@@ -210,6 +226,11 @@ function givingStyles(p: ThemePalette) {
   tilePlatform: {
     backgroundColor: '#FFF8EC',
     borderColor: 'rgba(196,163,90,0.35)',
+  },
+  tileAid: {
+    backgroundColor: '#F8FAFC',
+    borderColor: 'rgba(100,116,139,0.28)',
+    flexBasis: '100%',
   },
   tilePressed: {
     opacity: 0.88,

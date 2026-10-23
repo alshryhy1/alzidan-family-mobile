@@ -50,6 +50,7 @@ type ProfileScreenProps = {
   onMemberSessionChange?: (phone: string | null) => void;
   onPhotoSaved?: () => void;
   onOpenGiving?: () => void;
+  onOpenAidRequest?: () => void;
   onOpenWomenAdmin?: () => void;
   onOpenFamilyAdmin?: () => void;
   onOpenDelegateInbox?: () => void;
@@ -157,6 +158,7 @@ export function ProfileScreen({
   onMemberSessionChange,
   onPhotoSaved,
   onOpenGiving,
+  onOpenAidRequest,
   onOpenWomenAdmin,
   onOpenFamilyAdmin,
   onOpenDelegateInbox,
@@ -681,6 +683,14 @@ export function ProfileScreen({
                 </Pressable>
               ) : null}
             </View>
+          ) : null}
+
+          {onOpenAidRequest ? (
+            <ActionButton
+              label="طلب مساعدة خاص"
+              onPress={onOpenAidRequest}
+              variant="secondary"
+            />
           ) : null}
 
           <View style={styles.logoutSplit} />
