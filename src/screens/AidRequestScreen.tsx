@@ -13,21 +13,27 @@ import {
   type MyAidRequest,
   type PublishedAidRequest,
 } from '../services/aidRequest';
+import { loadSelfPathFacts } from '../services/publicData';
 import { spacing, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
+import type { TreeChild } from '../types';
 import { canonicalizePhone } from '../utils/phone';
 
 type Pane = 'help' | 'request' | 'mine';
 
 type AidRequestScreenProps = {
   memberPhone?: string | null;
+  viewerPerson?: TreeChild | null;
+  childrenRows?: TreeChild[];
   initialPane?: Pane;
   onBack: () => void;
 };
 
 export function AidRequestScreen({
   memberPhone,
+  viewerPerson = null,
+  childrenRows = [],
   initialPane = 'help',
   onBack,
 }: AidRequestScreenProps) {
@@ -35,7 +41,9 @@ export function AidRequestScreen({
   const styles = useThemedStyles(aidStyles);
   const phone = canonicalizePhone(memberPhone || '');
   const [pane, setPane] = useState<Pane>(initialPane === 'request' && phone ? 'request' : initialPane);
-  const [situation, setSituation] = useState<AidSituation>('widow');
+  const [situation, setSituation] = useState<AidSituation>('other');
+  const [situationLocked, setSituationLocked] = useState(false);
+  const [situationLoading, setSituationLoading] = useState(false);
   const [needText, setNeedText] = useState('');
   const [hideName, setHideName] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -63,6 +71,39 @@ export function AidRequestScreen({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!viewerPerson?.id) {
+      setSituationLocked(false);
+      setSituationLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
+    setSituationLoading(true);
+    loadSelfPathFacts(viewerPerson, childrenRows, phone)
+      .then((facts) => {
+        if (!alive) return;
+        if (facts.aidSituation === 'widow' || facts.aidSituation === 'divorced') {
+          setSituation(facts.aidSituation);
+          setSituationLocked(true);
+        } else {
+          setSituation('other');
+          setSituationLocked(false);
+        }
+      })
+      .catch(() => {
+        if (!alive) return;
+        setSituationLocked(false);
+      })
+      .finally(() => {
+        if (alive) setSituationLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [viewerPerson, childrenRows, phone]);
 
   const send = async () => {
     if (!phone) {
@@ -157,21 +198,40 @@ export function AidRequestScreen({
           ) : (
             <>
               <Text style={styles.fieldLabel}>الحالة</Text>
-              <View style={styles.chips}>
-                {AID_SITUATIONS.map((item) => {
-                  const on = situation === item.id;
-                  return (
-                    <Pressable
-                      key={item.id}
-                      onPress={() => setSituation(item.id)}
-                      style={[styles.chip, on && styles.chipActive]}
-                    >
-                      <Text style={[styles.chipText, on && styles.chipTextActive]}>{item.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-              <Text style={styles.hint}>{AID_SITUATIONS.find((s) => s.id === situation)?.hint}</Text>
+              {situationLoading ? (
+                <Text style={styles.hint}>جاري قراءة حالتك من ملف الزواج…</Text>
+              ) : situationLocked ? (
+                <>
+                  <View style={[styles.chip, styles.chipActive, styles.lockedChip]}>
+                    <Text style={[styles.chipText, styles.chipTextActive]}>
+                      {AID_SITUATIONS.find((s) => s.id === situation)?.label || situation}
+                    </Text>
+                  </View>
+                  <Text style={styles.hint}>من ملفك في الشجرة — لا حاجة للاختيار.</Text>
+                </>
+              ) : (
+                <>
+                  <View style={styles.chips}>
+                    {AID_SITUATIONS.map((item) => {
+                      const on = situation === item.id;
+                      return (
+                        <Pressable
+                          key={item.id}
+                          onPress={() => setSituation(item.id)}
+                          style={[styles.chip, on && styles.chipActive]}
+                        >
+                          <Text style={[styles.chipText, on && styles.chipTextActive]}>
+                            {item.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Text style={styles.hint}>
+                    {AID_SITUATIONS.find((s) => s.id === situation)?.hint}
+                  </Text>
+                </>
+              )}
 
               <Text style={styles.fieldLabel}>الاحتياج</Text>
               <TextInput

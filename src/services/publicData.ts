@@ -738,6 +738,13 @@ export type SelfPathLoadedFacts = {
   spouseRole: 'husband' | 'wife' | null;
   /** Wife whose husband is deceased — for self-card badge / aid context. */
   isWidow: boolean;
+  /** From tree_spouses status — divorced wife. */
+  isDivorced: boolean;
+  /**
+   * Aid form situation inferred from the marriage file.
+   * null = not known from profile (show «أخرى» only).
+   */
+  aidSituation: 'widow' | 'divorced' | null;
   childNames: string[];
   daughterNames: string[];
   daughters: { id: number; name: string }[];
@@ -885,6 +892,20 @@ function spouseStatusImpliesWidow(status: string | null | undefined) {
   );
 }
 
+function spouseStatusImpliesDivorced(status: string | null | undefined) {
+  const value = String(status || '')
+    .trim()
+    .toLowerCase();
+  if (!value) return false;
+  return (
+    value === 'divorced' ||
+    value === 'مطلقة' ||
+    value === 'مطلق' ||
+    value === 'طليق' ||
+    value.includes('طلق')
+  );
+}
+
 function isConfirmedMotherLink(confidence: string | null | undefined) {
   const value = String(confidence || '').trim().toLowerCase();
   return !value || value === 'confirmed';
@@ -970,6 +991,8 @@ export async function loadSelfPathFacts(
     spousePartnerName: null,
     spouseRole: null,
     isWidow: false,
+    isDivorced: false,
+    aidSituation: null,
     childNames: [],
     daughterNames: [],
     daughters: [],
@@ -1096,6 +1119,19 @@ export async function loadSelfPathFacts(
   const isWidow =
     picked?.partner.role === 'wife' &&
     (husbandDeceased || spouseStatusImpliesWidow(picked.spouse.status));
+  const isDivorced =
+    picked?.partner.role === 'wife' &&
+    !isWidow &&
+    (spouseStatusImpliesDivorced(picked.spouse.status) ||
+      ranked.some(
+        (row) =>
+          row.partner.role === 'wife' && spouseStatusImpliesDivorced(row.spouse.status),
+      ));
+  const aidSituation: 'widow' | 'divorced' | null = isWidow
+    ? 'widow'
+    : isDivorced
+      ? 'divorced'
+      : null;
   const spousePartnerName =
     currentMarriage || isWidow
       ? (
@@ -1305,6 +1341,8 @@ export async function loadSelfPathFacts(
     spousePartnerName,
     spouseRole: currentMarriage?.partner.role || picked?.partner.role || null,
     isWidow,
+    isDivorced,
+    aidSituation,
     childNames,
     daughterNames,
     daughters,
