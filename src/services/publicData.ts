@@ -843,11 +843,16 @@ function isActiveSpouseStatus(status: string | null | undefined) {
   if (!value) return true;
   if (
     value === 'divorced' ||
+    value === 'deceased' ||
+    value === 'dead' ||
     value === 'inactive' ||
     value === 'ended' ||
     value === 'مطلقة' ||
     value === 'مطلق' ||
     value === 'طليق' ||
+    value === 'متوفاة' ||
+    value === 'متوفيه' ||
+    value === 'متوفية' ||
     value.includes('طلق')
   ) {
     return false;
