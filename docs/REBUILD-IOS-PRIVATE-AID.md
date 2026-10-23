@@ -17,6 +17,21 @@ git pull origin cursor/private-aid-requests-e8cc
 npx expo run:ios
 ```
 
+### إذا ظهر: No space left on device
+
+القرص ممتلئ (DerivedData / كاش Xcode). نفّذ ثم أعد البناء:
+
+```bash
+rm -rf ~/Library/Developer/Xcode/DerivedData/*
+rm -rf ~/Library/Developer/Xcode/Archives/*
+rm -rf ~/Library/Caches/com.apple.dt.Xcode/*
+df -h /
+cd /Users/ahshryhy/Projects/alzidan-family-mobile
+npx expo run:ios
+```
+
+إن بقي ضيقاً: احذف محاكيات قديمة من Xcode → Settings → Platforms، أو فرّغ سلة المهملات.
+
 بعد التشغيل:
 
 1. **ملفي** → يظهر أولاً زر **طلب مساعدة خاص (أرملة / مطلقة)**
