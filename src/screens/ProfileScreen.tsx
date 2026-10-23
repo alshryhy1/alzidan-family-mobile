@@ -649,17 +649,17 @@ export function ProfileScreen({
     >
       {member ? (
         <SceneSection>
+          {onOpenAidRequest ? (
+            <ActionButton
+              label="طلب مساعدة خاص (أرملة / مطلقة)"
+              onPress={onOpenAidRequest}
+            />
+          ) : null}
+
           {canOpenCard ? (
             <ActionButton
               label="فتح بطاقتي في الشجرة"
               onPress={() => onOpenMemberCard(member.branch_key, member.tree_child_id)}
-            />
-          ) : null}
-
-          {onOpenAidRequest ? (
-            <ActionButton
-              label="طلب مساعدة خاص"
-              onPress={onOpenAidRequest}
               variant="secondary"
             />
           ) : null}

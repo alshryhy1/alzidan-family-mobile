@@ -10,8 +10,8 @@ import {
   maternalRelativesForViewer,
   wifeRoleTowardViewer,
 } from '../utils/maternalKinship';
-import { leafPersonName, nodePathId, normalizePathKey } from '../utils/personEncounter';
-import { childrenOfPersonInGraph, partnerNameForMarriage, siblingsInGraph } from '../utils/selfPath';
+import { findDirectSons, leafPersonName, nodePathId, normalizePathKey } from '../utils/personEncounter';
+import { partnerNameForMarriage, siblingsInGraph } from '../utils/selfPath';
 import {
   collectBranchTreeStats,
   isTreePersonDeceased,
@@ -736,6 +736,8 @@ export type SelfPathLoadedFacts = {
   motherName: string | null;
   spousePartnerName: string | null;
   spouseRole: 'husband' | 'wife' | null;
+  /** Wife whose husband is deceased — for self-card badge / aid context. */
+  isWidow: boolean;
   childNames: string[];
   daughterNames: string[];
   daughters: { id: number; name: string }[];
@@ -849,22 +851,107 @@ function isActiveSpouseStatus(status: string | null | undefined) {
     value === 'dead' ||
     value === 'inactive' ||
     value === 'ended' ||
+    value === 'widowed' ||
+    value === 'widow' ||
     value === 'مطلقة' ||
     value === 'مطلق' ||
     value === 'طليق' ||
+    value === 'أرملة' ||
+    value === 'ارملة' ||
     value === 'متوفاة' ||
     value === 'متوفيه' ||
     value === 'متوفية' ||
-    value.includes('طلق')
+    value.includes('طلق') ||
+    value.includes('أرمل') ||
+    value.includes('ارمل')
   ) {
     return false;
   }
   return value === 'active';
 }
 
+function spouseStatusImpliesWidow(status: string | null | undefined) {
+  const value = String(status || '')
+    .trim()
+    .toLowerCase();
+  if (!value) return false;
+  return (
+    value === 'widowed' ||
+    value === 'widow' ||
+    value === 'أرملة' ||
+    value === 'ارملة' ||
+    value.includes('أرمل') ||
+    value.includes('ارمل')
+  );
+}
+
 function isConfirmedMotherLink(confidence: string | null | undefined) {
   const value = String(confidence || '').trim().toLowerCase();
   return !value || value === 'confirmed';
+}
+
+/** PostgREST eq filter for parent paths that contain `/`. */
+function parentNameEqFilter(path: string) {
+  const raw = String(path || '').trim();
+  if (!raw) return '';
+  const quoted = `"${raw.replace(/"/g, '')}"`;
+  return `parent_name=eq.${encodeURIComponent(quoted)}`;
+}
+
+function childRowToTreeChild(row: ChildRow): TreeChild {
+  return {
+    id: Number(row.id || 0),
+    branchKey: row.branch_key,
+    parentName: row.parent_name || '',
+    name: row.child_name || row.name || '',
+    birthOrder: null,
+    birthDateGregorian: null,
+    birthDateHijri: null,
+    birthYear: null,
+    city: null,
+    area: null,
+    isDeceased: row.is_deceased ?? row.deceased ?? null,
+    gender: row.gender || null,
+    photoUrl: row.photo_url || null,
+  };
+}
+
+async function loadChildrenUnderParentPath(parentPath: string): Promise<TreeChild[]> {
+  const filter = parentNameEqFilter(parentPath);
+  if (!filter) return [];
+  try {
+    const remote = await selectPublicRows<ChildRow>(
+      `tree_children?${filter}&select=id,branch_key,parent_name,name,child_name,gender,photo_url,is_deceased,deceased&limit=200`,
+    );
+    return (Array.isArray(remote) ? remote : [])
+      .map(childRowToTreeChild)
+      .filter((row) => row.id > 0);
+  } catch {
+    return [];
+  }
+}
+
+function synthesizeParentFromPath(
+  parentPath: string,
+  branchKey: string | null | undefined,
+): TreeChild {
+  const path = String(parentPath || '').trim();
+  const parts = path.split('/').map((part) => part.trim()).filter(Boolean);
+  const leaf = parts[parts.length - 1] || path;
+  const parentOfParent = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+  return {
+    id: -1,
+    branchKey: String(branchKey || ''),
+    parentName: parentOfParent,
+    name: path.includes('/') ? path : leaf,
+    birthOrder: null,
+    birthDateGregorian: null,
+    birthDateHijri: null,
+    birthYear: null,
+    city: null,
+    area: null,
+    isDeceased: null,
+  };
 }
 
 /**
@@ -882,6 +969,7 @@ export async function loadSelfPathFacts(
     motherName: null,
     spousePartnerName: null,
     spouseRole: null,
+    isWidow: false,
     childNames: [],
     daughterNames: [],
     daughters: [],
@@ -956,35 +1044,65 @@ export async function loadSelfPathFacts(
   const currentMarriage = ranked.find((row) => row.active) || null;
   const picked = currentMarriage || ranked[0] || null;
   let husband = picked?.partner.husband || null;
-  if (picked?.partner.role === 'wife' && !husband && picked.partner.husbandId) {
-    try {
-      const rows = await selectPublicRows<ChildRow>(
-        `tree_children?id=eq.${picked.partner.husbandId}&select=id,branch_key,parent_name,name,child_name&limit=1`,
-      );
-      const row = Array.isArray(rows) ? rows[0] : null;
-      if (row?.id) {
-        husband = {
-          id: Number(row.id),
-          branchKey: row.branch_key,
-          parentName: row.parent_name || '',
-          name: row.child_name || row.name || '',
-          birthOrder: null,
-          birthDateGregorian: null,
-          birthDateHijri: null,
-          birthYear: null,
-          city: null,
-          area: null,
-          isDeceased: null,
-        };
+  if (picked?.partner.role === 'wife' && picked.partner.husbandId) {
+    if (!husband || husband.isDeceased == null) {
+      try {
+        const rows = await selectPublicRows<ChildRow>(
+          `tree_children?id=eq.${picked.partner.husbandId}&select=id,branch_key,parent_name,name,child_name,is_deceased,deceased,death_date_g,death_date_h&limit=1`,
+        );
+        const row = Array.isArray(rows) ? rows[0] : null;
+        if (row?.id) {
+          const remoteHusband = {
+            ...childRowToTreeChild(row),
+            deathDateGregorian: row.death_date_g ?? null,
+            deathDateHijri: row.death_date_h ?? null,
+            isDeceased:
+              isTreePersonDeceased(row.is_deceased, row.deceased) ||
+              Boolean(String(row.death_date_g || row.death_date_h || '').trim())
+                ? true
+                : row.is_deceased ?? row.deceased ?? null,
+          };
+          husband = husband
+            ? {
+                ...husband,
+                ...remoteHusband,
+                isDeceased:
+                  isTreePersonDeceased(husband.isDeceased, remoteHusband.isDeceased) ||
+                  Boolean(
+                    String(
+                      husband.deathDateGregorian ||
+                        husband.deathDateHijri ||
+                        remoteHusband.deathDateGregorian ||
+                        remoteHusband.deathDateHijri ||
+                        '',
+                    ).trim(),
+                  )
+                    ? true
+                    : husband.isDeceased || remoteHusband.isDeceased,
+              }
+            : remoteHusband;
+        }
+      } catch {
+        // keep local husband if any
       }
-    } catch {
-      husband = null;
     }
   }
 
-  const spousePartnerName = currentMarriage
-    ? (currentMarriage.partner.name || (husband ? leafPersonName(husband.name) : '')).trim() || null
-    : null;
+  const husbandDeceased = Boolean(
+    husband &&
+      (isTreePersonDeceased(husband.isDeceased) ||
+        Boolean(String(husband.deathDateGregorian || husband.deathDateHijri || '').trim())),
+  );
+  const isWidow =
+    picked?.partner.role === 'wife' &&
+    (husbandDeceased || spouseStatusImpliesWidow(picked.spouse.status));
+  const spousePartnerName =
+    currentMarriage || isWidow
+      ? (
+          (currentMarriage || picked)?.partner.name ||
+          (husband ? leafPersonName(husband.name) : '')
+        ).trim() || null
+      : null;
 
   let childNames: string[] = [];
   let daughterNames: string[] = [];
@@ -1019,43 +1137,36 @@ export async function loadSelfPathFacts(
       .filter((row) => isConfirmedMotherLink(row.confidence))
       .map((row) => children.find((person) => Number(person.id) === Number(row.childId)))
       .filter((row): row is TreeChild => Boolean(row));
+    // Also keep link ids not yet in local cache (fetch later via expand).
+    const missingLinkIds = childLinks
+      .filter((row) => isConfirmedMotherLink(row.confidence))
+      .map((row) => Number(row.childId || 0))
+      .filter(
+        (id) => id > 0 && !children.some((person) => Number(person.id) === id),
+      );
     const parentForChildren =
       picked?.partner.role === 'wife' ? husband : viewer;
     const fromGraph = parentForChildren
-      ? childrenOfPersonInGraph(parentForChildren, children)
+      ? findDirectSons(children, parentForChildren, { includePubliclyHidden: true })
       : [];
     [...fromLinks, ...fromGraph].forEach(pushChild);
 
-    // Extra fetch: sons of a widow live under husband_id / husband path. Local
-    // branch cache can miss them if parent_name matching is flaky.
+    // Extra fetch: sons of a widow live under husband path. Quote paths with `/`.
     if (picked?.partner.role === 'wife' && husband) {
-      const husbandPath = String(husband.name || '').trim();
+      const husbandPath = nodePathId(husband) || String(husband.name || '').trim();
       if (husbandPath) {
+        (await loadChildrenUnderParentPath(husbandPath)).forEach(pushChild);
+      }
+      // Fetch any mother-linked children missing from local cache, then expand.
+      for (const childId of missingLinkIds.slice(0, 40)) {
         try {
-          const remote = await selectPublicRows<ChildRow>(
-            `tree_children?parent_name=eq.${encodeURIComponent(husbandPath)}&select=id,branch_key,parent_name,name,child_name,gender,photo_url,is_deceased,deceased&limit=200`,
+          const rows = await selectPublicRows<ChildRow>(
+            `tree_children?id=eq.${childId}&select=id,branch_key,parent_name,name,child_name,gender,photo_url,is_deceased,deceased&limit=1`,
           );
-          (Array.isArray(remote) ? remote : []).forEach((row) => {
-            const id = Number(row.id || 0);
-            if (!id) return;
-            pushChild({
-              id,
-              branchKey: row.branch_key,
-              parentName: row.parent_name || '',
-              name: row.child_name || row.name || '',
-              birthOrder: null,
-              birthDateGregorian: null,
-              birthDateHijri: null,
-              birthYear: null,
-              city: null,
-              area: null,
-              isDeceased: row.is_deceased ?? row.deceased ?? null,
-              gender: row.gender || null,
-              photoUrl: row.photo_url || null,
-            });
-          });
+          const row = Array.isArray(rows) ? rows[0] : null;
+          if (row?.id) pushChild(childRowToTreeChild(row));
         } catch {
-          // keep graph/link results
+          // ignore single-id miss
         }
       }
     }
@@ -1075,16 +1186,16 @@ export async function loadSelfPathFacts(
     );
     // Merge RPC into existing lists — do NOT wipe husband-path sons when RPC
     // only returns a mother-linked daughter.
-    rpcChildren.forEach((row) => {
+    for (const row of rpcChildren) {
       const person = children.find((item) => Number(item.id) === Number(row.id));
       if (person) {
         const parentKey = normalizePathKey(person.parentName);
-        if (parentKey && siblingKeys.has(parentKey)) return;
+        if (parentKey && siblingKeys.has(parentKey)) continue;
         pushChild(person);
-        return;
+        continue;
       }
       const name = leafPersonName(String(row.leaf_name || ''));
-      if (!name) return;
+      if (!name) continue;
       const id = Number(row.id || 0);
       if (isPublicLineageHiddenPerson({ gender: row.gender })) {
         if (id > 0 && !daughters.some((d) => d.id === id)) {
@@ -1093,7 +1204,19 @@ export async function loadSelfPathFacts(
         } else if (!id && !daughterNames.some((n) => selfChildLeafKey(n) === selfChildLeafKey(name))) {
           daughterNames.push(name);
         }
-        return;
+        // Fetch full row so we can expand brothers under the same father path.
+        if (id > 0) {
+          try {
+            const rows = await selectPublicRows<ChildRow>(
+              `tree_children?id=eq.${id}&select=id,branch_key,parent_name,name,child_name,gender,photo_url,is_deceased,deceased&limit=1`,
+            );
+            const remote = Array.isArray(rows) ? rows[0] : null;
+            if (remote?.id) pushChild(childRowToTreeChild(remote));
+          } catch {
+            // keep leaf-only daughter
+          }
+        }
+        continue;
       }
       if (id > 0 && !sons.some((s) => s.id === id)) {
         childNames.push(name);
@@ -1101,7 +1224,59 @@ export async function loadSelfPathFacts(
       } else if (!id && !childNames.some((n) => selfChildLeafKey(n) === selfChildLeafKey(name))) {
         childNames.push(name);
       }
-    });
+    }
+  }
+
+  // When a daughter is known but sons are not: expand every sibling under her
+  // father's parent_name (widow sons live on the husband path).
+  const seedIds = Array.from(
+    new Set(
+      [...daughters, ...sons]
+        .map((row) => Number(row.id || 0))
+        .filter((id) => id > 0),
+    ),
+  );
+  const parentPaths = new Set<string>();
+  if (husband) {
+    const husbandPath = nodePathId(husband) || String(husband.name || '').trim();
+    if (husbandPath) parentPaths.add(husbandPath);
+  }
+  for (const seedId of seedIds.slice(0, 40)) {
+    const local =
+      children.find((item) => Number(item.id) === Number(seedId)) || null;
+    let parentPath = local ? String(local.parentName || '').trim() : '';
+    let branchKey = local?.branchKey || husband?.branchKey || viewer.branchKey;
+    if (!parentPath) {
+      try {
+        const rows = await selectPublicRows<ChildRow>(
+          `tree_children?id=eq.${seedId}&select=id,branch_key,parent_name,name,child_name,gender,photo_url,is_deceased,deceased&limit=1`,
+        );
+        const row = Array.isArray(rows) ? rows[0] : null;
+        if (row?.id) {
+          const mapped = childRowToTreeChild(row);
+          pushChild(mapped);
+          parentPath = String(mapped.parentName || '').trim();
+          branchKey = mapped.branchKey || branchKey;
+        }
+      } catch {
+        parentPath = '';
+      }
+    }
+    if (parentPath) parentPaths.add(parentPath);
+    if (parentPath) {
+      const parentPerson =
+        children.find(
+          (item) =>
+            normalizePathKey(nodePathId(item)) === normalizePathKey(parentPath) ||
+            normalizePathKey(item.name) === normalizePathKey(parentPath),
+        ) || synthesizeParentFromPath(parentPath, branchKey);
+      findDirectSons(children, parentPerson, { includePubliclyHidden: true }).forEach(
+        pushChild,
+      );
+    }
+  }
+  for (const parentPath of parentPaths) {
+    (await loadChildrenUnderParentPath(parentPath)).forEach(pushChild);
   }
 
   const daughterKeys = new Set(daughterNames.map((name) => selfChildLeafKey(name)));
@@ -1129,6 +1304,7 @@ export async function loadSelfPathFacts(
     motherName,
     spousePartnerName,
     spouseRole: currentMarriage?.partner.role || picked?.partner.role || null,
+    isWidow,
     childNames,
     daughterNames,
     daughters,

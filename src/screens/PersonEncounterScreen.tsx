@@ -37,7 +37,6 @@ import {
 } from '../utils/personEncounter';
 import {
   buildSelfPathRings,
-  childrenOfPersonInGraph,
   siblingsInGraph,
   type SelfPathRing,
 } from '../utils/selfPath';
@@ -107,6 +106,7 @@ export function PersonEncounterScreen({
   const [selfPathLoading, setSelfPathLoading] = useState(false);
   const [ownDaughters, setOwnDaughters] = useState<{ id: number; name: string }[]>([]);
   const [ownSons, setOwnSons] = useState<TreeChild[]>([]);
+  const [isWidow, setIsWidow] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editChildId, setEditChildId] = useState<number | null>(null);
@@ -217,6 +217,8 @@ export function PersonEncounterScreen({
     if (mode !== 'self') {
       setSelfPathRings([]);
       setOwnDaughters([]);
+      setOwnSons([]);
+      setIsWidow(false);
       setSelfPathLoading(false);
       return () => {
         alive = false;
@@ -277,6 +279,7 @@ export function PersonEncounterScreen({
           (name) => name && name !== selfLeaf,
         );
         setOwnSons(factSons);
+        setIsWidow(Boolean(facts.isWidow));
         setSelfPathRings(
           buildSelfPathRings(person, {
             motherName: facts.motherName,
@@ -363,6 +366,8 @@ export function PersonEncounterScreen({
             </View>
           ) : mode === 'visitor' ? (
             <Text style={styles.heroSub}>من عائلة الزيدان</Text>
+          ) : mode === 'self' && isWidow ? (
+            <Text style={styles.heroSub}>أرملة · مكانك في العائلة</Text>
           ) : mode === 'self' ? (
             <Text style={styles.heroSub}>مكانك في العائلة</Text>
           ) : (
@@ -460,7 +465,9 @@ export function PersonEncounterScreen({
                 onPress={onOpenAidRequest}
                 style={({ pressed }) => [styles.aidButton, pressed && { opacity: 0.8 }]}
               >
-                <Text style={styles.aidButtonTitle}>طلب مساعدة خاص</Text>
+                <Text style={styles.aidButtonTitle}>
+                  {isWidow ? 'طلب مساعدة — أرملة' : 'طلب مساعدة خاص'}
+                </Text>
                 <Text style={styles.aidButtonHint}>
                   سري للإدارة · عند النشر بلا اسم · التحويل عبر صندوق العائلة
                 </Text>

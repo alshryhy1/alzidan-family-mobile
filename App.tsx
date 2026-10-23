@@ -31,7 +31,6 @@ import { FamilyAdminScreen } from './src/screens/FamilyAdminScreen';
 import { DelegateInboxScreen } from './src/screens/DelegateInboxScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
-import { isPublicLineageHiddenPerson } from './src/utils/personVisibility';
 import { fetchOccasionInbox, type OccasionInboxItem } from './src/services/occasionInteractions';
 import { loadLastSeen, markSurfaceSeen, type LastSeenMap } from './src/services/lastSeen';
 import { buildSinceLastVisit, countNewEvents, countNewInbox } from './src/utils/sinceLastVisit';
@@ -475,7 +474,9 @@ function AppChrome() {
       const id = Number(row.id);
       if (!id) return;
       const prev = byId.get(id);
-      if (!prev && !isPublicLineageHiddenPerson(row)) return;
+      // Female lineage RPC returns the full branch (sons + daughters). Always
+      // merge — skipping non-hidden rows dropped widow sons when public cache
+      // lagged or parent_name differed.
       byId.set(id, {
         ...(prev || row),
         ...row,
