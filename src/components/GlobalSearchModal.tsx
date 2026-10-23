@@ -235,7 +235,7 @@ function searchStyles(p: ThemePalette) {
       justifyContent: 'flex-end',
     },
     backdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: 'rgba(30, 41, 37, 0.45)',
     },
     sheet: {
