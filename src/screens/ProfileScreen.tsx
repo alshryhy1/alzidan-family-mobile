@@ -656,6 +656,14 @@ export function ProfileScreen({
             />
           ) : null}
 
+          {onOpenAidRequest ? (
+            <ActionButton
+              label="طلب مساعدة خاص"
+              onPress={onOpenAidRequest}
+              variant="secondary"
+            />
+          ) : null}
+
           {canManagePhoto ? (
             <View style={styles.photoActions}>
               <ActionButton
@@ -683,14 +691,6 @@ export function ProfileScreen({
                 </Pressable>
               ) : null}
             </View>
-          ) : null}
-
-          {onOpenAidRequest ? (
-            <ActionButton
-              label="طلب مساعدة خاص"
-              onPress={onOpenAidRequest}
-              variant="secondary"
-            />
           ) : null}
 
           <View style={styles.logoutSplit} />
