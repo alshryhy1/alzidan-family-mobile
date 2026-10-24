@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
+import { PublishedAidOpportunityCard } from '../components/PublishedAidOpportunityCard';
 import { SceneSection, SceneShell } from '../components/scene';
+import { loadPublishedAidRequests, type PublishedAidRequest } from '../services/aidRequest';
 import {
   canOpenEhsan,
   canOpenPlatform,
@@ -14,18 +16,28 @@ import { spacing, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
+type Pane = 'choose' | 'support' | 'aid';
+
 type GivingScreenProps = {
   onBack: () => void;
+  onOpenAidRequest?: () => void;
+  /** فتح تقديم طلب خاص (أرملة/مطلقة) من داخل التبرعات. */
+  onOpenAidSubmit?: () => void;
+  initialPane?: Pane;
 };
 
-type Pane = 'choose' | 'support';
-
-export function GivingScreen({ onBack }: GivingScreenProps) {
+export function GivingScreen({
+  onBack,
+  onOpenAidRequest,
+  onOpenAidSubmit,
+  initialPane = 'choose',
+}: GivingScreenProps) {
   const p = useThemePalette();
   const styles = useThemedStyles(givingStyles);
   const [settings, setSettings] = useState<GivingSettings | null>(null);
+  const [publishedAid, setPublishedAid] = useState<PublishedAidRequest[]>([]);
   const [loadError, setLoadError] = useState('');
-  const [pane, setPane] = useState<Pane>('choose');
+  const [pane, setPane] = useState<Pane>(initialPane === 'aid' || initialPane === 'support' ? initialPane : 'choose');
   const [amount, setAmount] = useState<number | null>(null);
   const [custom, setCustom] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,9 +46,18 @@ export function GivingScreen({ onBack }: GivingScreenProps) {
   const load = async () => {
     setLoadError('');
     try {
-      const next = await fetchGivingSettings();
+      const [next, aidRows] = await Promise.all([
+        fetchGivingSettings(),
+        loadPublishedAidRequests().catch((err) => {
+          if (__DEV__) {
+            console.warn('[giving] published aid', err instanceof Error ? err.message : err);
+          }
+          return [] as PublishedAidRequest[];
+        }),
+      ]);
       setSettings(next);
       setAmount(next.supportAmounts[0] ?? 10);
+      setPublishedAid(aidRows);
     } catch {
       setLoadError('تعذر تحميل مسارات التبرع.');
     }
@@ -90,17 +111,22 @@ export function GivingScreen({ onBack }: GivingScreenProps) {
       english="GIVING"
       eyebrow="مساران منفصلان"
       heroLead={
-        <Pressable accessibilityRole="button" onPress={pane === 'support' ? () => setPane('choose') : onBack}>
-          <Text style={styles.back}>{pane === 'support' ? 'رجوع للمربعين' : 'رجوع'}</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={pane === 'choose' ? onBack : () => setPane('choose')}
+        >
+          <Text style={styles.back}>{pane === 'choose' ? 'رجوع' : 'رجوع للمربعين'}</Text>
         </Pressable>
       }
       onRefresh={() => void load()}
       subtitle={
         pane === 'support'
           ? 'تغطي الاستضافة والتطوير — ليست صدقة خيرية.'
-          : 'خير عن الموتى عبر إحسان، ومساهمة لتشغيل المنصة.'
+          : pane === 'aid'
+            ? 'خانات مساعدة: رقم بطاقة العثيم أو مرجع فاتورة سوا — انسخ وساهم مباشرة.'
+            : 'خير عن الموتى، دعم المنصة، وفرص مساعدة سرية من داخل التبرعات.'
       }
-      title={pane === 'support' ? 'المنصة' : 'تبرع'}
+      title={pane === 'support' ? 'المنصة' : pane === 'aid' ? 'فرص مساعدة' : 'تبرع'}
       variant="identity"
     >
       {loadError ? <Text style={styles.error}>{loadError}</Text> : null}
@@ -136,7 +162,42 @@ export function GivingScreen({ onBack }: GivingScreenProps) {
               <Text style={styles.tileText}>مساهمة لاستمرار الموقع عبر بوابة الدفع — ليست منصة العائلة.</Text>
               <Text style={styles.cta}>{platformOpen ? 'اختيار المبلغ' : 'غير متاح الآن'}</Text>
             </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setStatus('');
+                setPane('aid');
+              }}
+              style={({ pressed }) => [styles.tile, styles.tileAid, pressed && styles.tilePressed]}
+            >
+              <Text style={styles.kicker}>سرية · من التبرعات</Text>
+              <Text style={styles.tileTitle}>فرص مساعدة</Text>
+              <Text style={styles.tileText}>
+                طلبات معتمدة بلا اسم: نوع الطلب والاحتياج فقط. المساهمة ببطاقة العثيم أو سداد فاتورة سوا.
+              </Text>
+              <Text style={styles.cta}>
+                {publishedAid.length ? `عرض ${publishedAid.length} فرصة` : 'فتح فرص المساعدة'}
+              </Text>
+            </Pressable>
           </View>
+        </SceneSection>
+      ) : pane === 'aid' ? (
+        <SceneSection title="فرص منشورة — خانات مساعدة">
+          <Text style={styles.aidNote}>
+            بلا اسم ولا جوال. تحت كل فرصة خانة مساعدة: رقم بطاقة العثيم أو مرجع فاتورة سوا — انسخ وساهم.
+          </Text>
+          {!publishedAid.length ? (
+            <Text style={styles.aidEmpty}>لا توجد فرص مساعدة منشورة حالياً.</Text>
+          ) : (
+            publishedAid.map((row) => <PublishedAidOpportunityCard key={row.id} row={row} />)
+          )}
+          {onOpenAidSubmit ? (
+            <ActionButton label="تقديم طلب مساعدة خاص" onPress={onOpenAidSubmit} />
+          ) : null}
+          {onOpenAidRequest ? (
+            <ActionButton label="طلباتي" onPress={onOpenAidRequest} variant="secondary" />
+          ) : null}
         </SceneSection>
       ) : (
         <SceneSection title="اختر المبلغ (ريال)">
@@ -210,6 +271,11 @@ function givingStyles(p: ThemePalette) {
   tilePlatform: {
     backgroundColor: '#FFF8EC',
     borderColor: 'rgba(196,163,90,0.35)',
+  },
+  tileAid: {
+    backgroundColor: '#F8FAFC',
+    borderColor: 'rgba(100,116,139,0.28)',
+    flexBasis: '100%',
   },
   tilePressed: {
     opacity: 0.88,
@@ -297,6 +363,22 @@ function givingStyles(p: ThemePalette) {
     color: '#8B3A2A',
     fontSize: 14,
     fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aidNote: {
+    color: p.textMuted,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: spacing.sm,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aidEmpty: {
+    color: p.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
+    marginVertical: spacing.md,
     textAlign: 'right',
     writingDirection: 'rtl',
   },

@@ -10,6 +10,17 @@ export type DelegateInboxSession = {
   canPhone: boolean;
 };
 
+const DELEGATE_APP_ROLES = new Set(['branch_editor', 'events_editor', 'full_delegate']);
+
+/** صلاحية مندوب التطبيق فقط — ليس أي عضو مسجّل. */
+export function isDelegateInboxEnabledFlag(value: unknown, roleKey?: string | null): boolean {
+  const on = value === true || value === 1 || value === 'true';
+  if (!on) return false;
+  const role = String(roleKey || '').trim();
+  if (!role) return true;
+  return DELEGATE_APP_ROLES.has(role);
+}
+
 export type DelegateInboxRequest = {
   id: number;
   requestId: string;
@@ -43,7 +54,7 @@ export class DelegateInboxRpcMissingError extends Error {
 
 type SessionRpc = {
   ok?: boolean;
-  enabled?: boolean;
+  enabled?: boolean | string | number | null;
   error?: string;
   branch_key?: string | null;
   role_key?: string | null;
@@ -144,10 +155,17 @@ export async function fetchDelegateInboxSession(phone: string): Promise<Delegate
   }
   try {
     const row = await callPublicRpc<SessionRpc>('delegate_app_session_v1', { p_phone: cleaned });
+    const roleKey = row?.role_key ? String(row.role_key) : null;
+    const branchKey = row?.branch_key ? String(row.branch_key) : null;
+    const enabled =
+      Boolean(row) &&
+      row?.ok !== false &&
+      isDelegateInboxEnabledFlag(row?.enabled, roleKey) &&
+      Boolean(branchKey);
     return {
-      enabled: Boolean(row && row.ok !== false && row.enabled),
-      branchKey: row?.branch_key ? String(row.branch_key) : null,
-      roleKey: row?.role_key ? String(row.role_key) : null,
+      enabled,
+      branchKey,
+      roleKey,
       name: row?.name ? String(row.name) : null,
       canTree: Boolean(row?.can_tree),
       canEvents: Boolean(row?.can_events),

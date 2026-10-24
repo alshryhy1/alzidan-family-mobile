@@ -56,10 +56,15 @@ export function DataState({
   }
 
   if (error) {
+    const connectionHint =
+      /تعذر الاتصال|supabase|\.env|network|fetch/i.test(String(error || ''))
+        ? 'النبض لم يُحذف. غالبًا ملف .env ناقص أو الاتصال انقطع — أصلحه ثم أعد المحاولة.'
+        : null;
     return (
       <View style={styles.box}>
         <Text style={styles.error}>تعذر تحميل البيانات.</Text>
         <Text style={styles.text}>{error}</Text>
+        {connectionHint ? <Text style={styles.text}>{connectionHint}</Text> : null}
         {onRetry ? <ActionButton label="إعادة المحاولة" onPress={onRetry} variant="secondary" /> : null}
       </View>
     );

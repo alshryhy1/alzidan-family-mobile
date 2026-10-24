@@ -3,8 +3,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DataState } from '../components/DataState';
 import { PersonPhoto } from '../components/PersonPhoto';
+import { PublishedAidOpportunityCard } from '../components/PublishedAidOpportunityCard';
 import { PulseLiveBoard } from '../components/PulseLiveBoard';
 import { SceneShell } from '../components/scene';
+import { loadPublishedAidRequests, type PublishedAidRequest } from '../services/aidRequest';
 import { loadPulseFamilyBoard } from '../services/pulseBoard';
 import { loadPulseWeather } from '../services/pulseWeather';
 import { speakArabic } from '../services/familySpeech';
@@ -55,6 +57,8 @@ type HomeScreenProps = {
   sinceLastVisit?: SinceVisitItem[];
   onOpenSinceVisit?: (item: SinceVisitItem) => void;
   onOpenFamilyBoard?: () => void;
+  /** فتح تبرع → فرص مساعدة للمساهمة (عثيم / سوا). */
+  onOpenGiving?: () => void;
   events?: FamilyEvent[];
   kinshipById?: Record<number, string>;
   onOpenEvent?: (eventId: string) => void;
@@ -84,6 +88,7 @@ export function HomeScreen({
   sinceLastVisit = [],
   onOpenSinceVisit,
   onOpenFamilyBoard,
+  onOpenGiving,
   events = [],
   kinshipById,
   onOpenEvent,
@@ -96,6 +101,7 @@ export function HomeScreen({
   const [notices, setNotices] = useState<PulseBoardNotice[]>([]);
   const [delegates, setDelegates] = useState<PulseBoardNotice[]>([]);
   const [boardPosts, setBoardPosts] = useState<FamilyBoardPost[]>([]);
+  const [publishedAid, setPublishedAid] = useState<PublishedAidRequest[]>([]);
   const [greetings, setGreetings] = useState<RemembranceGreeting[]>([]);
   const [greetNote, setGreetNote] = useState('');
   const [sendingKey, setSendingKey] = useState<string | null>(null);
@@ -227,6 +233,35 @@ export function HomeScreen({
     };
   }, [loading]);
 
+  useEffect(() => {
+    let cancelled = false;
+    function loadAid() {
+      loadPublishedAidRequests()
+        .then((rows) => {
+          if (!cancelled) setPublishedAid(rows.slice(0, 3));
+        })
+        .catch((err) => {
+          if (__DEV__) {
+            console.warn('[pulse] published aid', err instanceof Error ? err.message : err);
+          }
+          if (!cancelled) setPublishedAid([]);
+        });
+    }
+    loadAid();
+    const id = setInterval(loadAid, 90 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [loading]);
+
+  const refreshHome = () => {
+    onRetry();
+    void loadPublishedAidRequests()
+      .then((rows) => setPublishedAid(rows.slice(0, 3)))
+      .catch(() => setPublishedAid([]));
+  };
+
   return (
     <SceneShell
       english="FAMILY PULSE"
@@ -246,7 +281,7 @@ export function HomeScreen({
           </Text>
         </View>
       }
-      onRefresh={onRetry}
+      onRefresh={refreshHome}
       refreshing={loading}
       title="أهلاً بك بين أهلك"
       variant="pulse"
@@ -254,7 +289,8 @@ export function HomeScreen({
       <DataState error={error} loading={loading} onRetry={onRetry} />
 
       <View style={styles.creamStage}>
-        {!loading && !error ? (
+        {/* النبض يبقى ظاهراً حتى لو فشل تحميل عام — لا نخفي نص المتواجدين/الجو/الشريط */}
+        {!loading ? (
           <PulseLiveBoard
             model={{
               online: pulseOnline,
@@ -264,6 +300,29 @@ export function HomeScreen({
             parts={['presence']}
             tone="stage"
           />
+        ) : null}
+
+        {/* إضافة فقط عند وجود منشور — بلا تغيير شكل النبض */}
+        {!loading && publishedAid.length ? (
+          <View style={styles.aidBox}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onOpenGiving}
+              style={({ pressed }) => [styles.aidHead, pressed && styles.pressed]}
+            >
+              <Text style={styles.aidTitle}>فرص مساعدة</Text>
+              <Text style={styles.aidGo}>تبرع</Text>
+            </Pressable>
+            <Text style={styles.aidSub}>بلا اسم — نوع الطلب والاحتياج فقط · عثيم أو سوا</Text>
+            {publishedAid.map((row) => (
+              <PublishedAidOpportunityCard
+                key={row.id}
+                compact
+                onOpenGiving={onOpenGiving}
+                row={row}
+              />
+            ))}
+          </View>
         ) : null}
 
         {remembrances.length ? (
@@ -411,7 +470,7 @@ export function HomeScreen({
           </Pressable>
         </View>
 
-        {!loading && !error ? (
+        {!loading ? (
           <PulseLiveBoard
             affinity={
               affinityStats
@@ -559,6 +618,40 @@ function homeStyles(p: ThemePalette) {
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
+  },
+  aidBox: {
+    backgroundColor: p.creamLift,
+    borderColor: 'rgba(37, 92, 77, 0.28)',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  aidHead: {
+    alignItems: 'center',
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+  },
+  aidTitle: {
+    color: p.green,
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aidGo: {
+    color: p.gold,
+    fontSize: 13,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
+  aidSub: {
+    color: p.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: -4,
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   boardHead: {
     alignItems: 'center',

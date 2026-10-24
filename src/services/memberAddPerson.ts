@@ -159,6 +159,8 @@ export type MemberPersonProfileInput = {
   workStatus?: string | null;
   workplace?: string | null;
   educationDegree?: string | null;
+  /** null = لا تغيّر · true/false = احفظ */
+  marriedOutside?: boolean | null;
 };
 
 /** null = لا تغيّر الحقل · '' = امسح · قيمة = احفظ (نفس أعمدة الإدارة). */
@@ -174,6 +176,7 @@ export async function setOwnTreePersonProfile(
       p_work_status: input.workStatus == null ? null : String(input.workStatus),
       p_workplace: input.workplace == null ? null : String(input.workplace),
       p_education_degree: input.educationDegree == null ? null : String(input.educationDegree),
+      p_married_outside: input.marriedOutside == null ? null : Boolean(input.marriedOutside),
     });
   } catch (error) {
     const kind = classifyPublicRpcError(error);

@@ -1,0 +1,31 @@
+<!-- الصق داخل pages/admin.html قرب أقسام الإدارة فقط، ثم أضف سكربت admin-pulse-online.js -->
+<section id="admin-pulse-online-section" class="section admin-only-section" data-admin-module="views">
+  <div class="section-header">
+    <div>
+      <div class="section-title">أرقام جوالات المتصلين الآن</div>
+      <div class="hint">للإدارة فقط. جوالات الأعضاء المسجّلين داخل التطبيق خلال آخر ٣ دقائق. الزوار بلا تسجيل لا يظهر رقمهم.</div>
+    </div>
+  </div>
+  <div class="card">
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; align-items:end;">
+      <button id="admin-pulse-online-reload" class="btn btn-primary btn-sm" type="button">تحديث</button>
+    </div>
+    <div id="admin-pulse-online-count" class="hint" style="margin-bottom:10px; font-weight:800;">—</div>
+    <div class="table-wrap" aria-label="جدول المتصلين">
+      <table>
+        <thead>
+          <tr>
+            <th>الجوال</th>
+            <th>الاسم</th>
+            <th>الفرع</th>
+            <th>آخر نبضة</th>
+          </tr>
+        </thead>
+        <tbody id="admin-pulse-online-body">
+          <tr><td colspan="4" class="hint">اضغط «تحديث» بعد تسجيل الدخول.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="admin-pulse-online-status" class="hint" style="margin-top:10px;"></div>
+  </div>
+</section>

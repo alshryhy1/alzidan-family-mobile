@@ -21,6 +21,7 @@ import {
   isDeviceLockEnabled,
 } from '../services/deviceLock';
 import { saveMemberPhoto, uploadMemberPhoto } from '../services/personPhoto';
+import { loadSelfPathFacts } from '../services/publicData';
 import { clearPushPhone, rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { callPublicRpc, classifyPublicRpcError, selectPublicRows } from '../services/supabase';
 import { submitFamilyRequest } from '../services/submitFamilyRequest';
@@ -37,19 +38,29 @@ import {
   canonicalizePhone,
   isValidStoredPhone,
 } from '../utils/phone';
-import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '../services/occasionInteractions';
+import {
+  fetchOccasionInbox,
+  filterCurrentOccasionInbox,
+  formatOccasionInboxWhen,
+  occasionInboxHeadline,
+  type OccasionInboxItem,
+} from '../services/occasionInteractions';
 import { fetchWomenManagerSession } from '../services/womenManager';
 import { fetchFamilyAdminSession } from '../services/familyAdmin';
 import { fetchDelegateInboxSession } from '../services/delegateInbox';
+import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 
 type ProfileScreenProps = {
   branches: Branch[];
   childrenRows: TreeChild[];
   viewerPerson?: TreeChild | null;
+  /** مناسبات المجلس الظاهرة الآن — null أثناء التحميل؛ مصفوفة بعده لإخفاء المنتهي. */
+  activeOccasionIds?: Array<string | number> | null;
   onOpenMemberCard: (branchKey: string, treeChildId: number) => void;
   onMemberSessionChange?: (phone: string | null) => void;
   onPhotoSaved?: () => void;
   onOpenGiving?: () => void;
+  onOpenAidRequest?: () => void;
   onOpenWomenAdmin?: () => void;
   onOpenFamilyAdmin?: () => void;
   onOpenDelegateInbox?: () => void;
@@ -153,10 +164,12 @@ export function ProfileScreen({
   branches,
   childrenRows,
   viewerPerson,
+  activeOccasionIds,
   onOpenMemberCard,
   onMemberSessionChange,
   onPhotoSaved,
   onOpenGiving,
+  onOpenAidRequest,
   onOpenWomenAdmin,
   onOpenFamilyAdmin,
   onOpenDelegateInbox,
@@ -172,7 +185,10 @@ export function ProfileScreen({
   const [inbox, setInbox] = useState<OccasionInboxItem[]>([]);
   const [womenManagerEnabled, setWomenManagerEnabled] = useState(false);
   const [familyAdminEnabled, setFamilyAdminEnabled] = useState(false);
+  const [familyAdminTreeChildId, setFamilyAdminTreeChildId] = useState<number | null>(null);
   const [delegateInboxEnabled, setDelegateInboxEnabled] = useState(false);
+  const [canRequestPrivateAid, setCanRequestPrivateAid] = useState(false);
+  const [privateAidLabel, setPrivateAidLabel] = useState('طلب مساعدة خاص');
   const [expandedInbox, setExpandedInbox] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<{ kind: 'idle' | 'success' | 'error'; text: string }>({
     kind: 'idle',
@@ -187,6 +203,11 @@ export function ProfileScreen({
   const [registerSending, setRegisterSending] = useState(false);
   const [registerSent, setRegisterSent] = useState(false);
   const [faceLockOn, setFaceLockOn] = useState(false);
+
+  const visibleInbox = useMemo(
+    () => filterCurrentOccasionInbox(inbox, { activeOccasionIds }),
+    [inbox, activeOccasionIds],
+  );
 
   const memberTreeRow = useMemo(() => {
     const id = Number(member?.tree_child_id || 0);
@@ -215,6 +236,42 @@ export function ProfileScreen({
   useEffect(() => {
     setLocalPhotoUrl(memberTreeRow?.photoUrl || null);
   }, [memberTreeRow?.photoUrl, member?.tree_child_id]);
+
+  useEffect(() => {
+    let alive = true;
+    // رجال / بلا جنس أنثى: لا يظهر طلب الأرملة/المطلقة أصلاً.
+    if (!memberTreeRow?.id || !isPublicLineageHiddenPerson(memberTreeRow)) {
+      setCanRequestPrivateAid(false);
+      setPrivateAidLabel('طلب مساعدة خاص');
+      return () => {
+        alive = false;
+      };
+    }
+    loadSelfPathFacts(memberTreeRow, childrenRows, savedPhone || member?.phone || '')
+      .then((facts) => {
+        if (!alive) return;
+        if (facts.aidSituation === 'widow') {
+          setCanRequestPrivateAid(true);
+          setPrivateAidLabel('طلب مساعدة — أرملة');
+          return;
+        }
+        if (facts.aidSituation === 'divorced') {
+          setCanRequestPrivateAid(true);
+          setPrivateAidLabel('طلب مساعدة — مطلقة');
+          return;
+        }
+        setCanRequestPrivateAid(false);
+        setPrivateAidLabel('طلب مساعدة خاص');
+      })
+      .catch(() => {
+        if (!alive) return;
+        setCanRequestPrivateAid(false);
+        setPrivateAidLabel('طلب مساعدة خاص');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [memberTreeRow, childrenRows, savedPhone, member?.phone]);
 
   const memberName = useMemo(() => {
     if (memberTreeRow?.name) return tripleNameFromPath(memberTreeRow.name);
@@ -343,9 +400,11 @@ export function ProfileScreen({
       setInbox([]);
       setWomenManagerEnabled(false);
       setFamilyAdminEnabled(false);
+      setFamilyAdminTreeChildId(null);
       setDelegateInboxEnabled(false);
       return;
     }
+    const memberTreeId = Number(member?.tree_child_id || 0);
     fetchOccasionInbox(p)
       .then(setInbox)
       .catch(() => setInbox([]));
@@ -353,12 +412,22 @@ export function ProfileScreen({
       .then((session) => setWomenManagerEnabled(session.enabled))
       .catch(() => setWomenManagerEnabled(false));
     fetchFamilyAdminSession(p)
-      .then((session) => setFamilyAdminEnabled(session.enabled))
-      .catch(() => setFamilyAdminEnabled(false));
+      .then((session) => {
+        const grantId = Number(session.treeChildId || 0);
+        // المنحة يجب أن تطابق بطاقة العضو نفسه — لا توريث عبر person_id.
+        const matched =
+          session.enabled && grantId > 0 && memberTreeId > 0 && grantId === memberTreeId;
+        setFamilyAdminEnabled(matched);
+        setFamilyAdminTreeChildId(matched ? grantId : null);
+      })
+      .catch(() => {
+        setFamilyAdminEnabled(false);
+        setFamilyAdminTreeChildId(null);
+      });
     fetchDelegateInboxSession(p)
       .then((session) => setDelegateInboxEnabled(session.enabled))
       .catch(() => setDelegateInboxEnabled(false));
-  }, [member?.phone, savedPhone]);
+  }, [member?.phone, member?.tree_child_id, savedPhone]);
 
   useEffect(() => {
     const p = canonicalizePhone(member?.phone || savedPhone || '');
@@ -380,6 +449,7 @@ export function ProfileScreen({
     setSavedPhone('');
     setWomenManagerEnabled(false);
     setFamilyAdminEnabled(false);
+    setFamilyAdminTreeChildId(null);
     setDelegateInboxEnabled(false);
     setNational('');
     setUnregisteredPhone('');
@@ -647,10 +717,15 @@ export function ProfileScreen({
     >
       {member ? (
         <SceneSection>
+          {onOpenAidRequest && canRequestPrivateAid ? (
+            <ActionButton label={privateAidLabel} onPress={onOpenAidRequest} />
+          ) : null}
+
           {canOpenCard ? (
             <ActionButton
               label="فتح بطاقتي في الشجرة"
               onPress={() => onOpenMemberCard(member.branch_key, member.tree_child_id)}
+              variant="secondary"
             />
           ) : null}
 
@@ -796,7 +871,10 @@ export function ProfileScreen({
         </SceneSection>
       ) : null}
 
-      {member && familyAdminEnabled ? (
+      {member &&
+      familyAdminEnabled &&
+      familyAdminTreeChildId &&
+      Number(member.tree_child_id || 0) === familyAdminTreeChildId ? (
         <SceneSection title="إدارة العائلة">
           <Text style={styles.note}>
             صلاحية يومية من الإدارة الأصلية: قبول ورفض وتعديل صلاحيات المناديب من نفس مصدر الموقع، بلا رمز الإدارة.
@@ -808,7 +886,7 @@ export function ProfileScreen({
         </SceneSection>
       ) : null}
 
-      {member && delegateInboxEnabled ? (
+      {member && delegateInboxEnabled && isDelegateSession ? (
         <SceneSection title="طلبات فرعي">
           <Text style={styles.note}>
             مندوب معتمد على هذا الجهاز. الطلبات المعلّقة لفرعك فقط، بلا سرّ الموقع وبلا إدارة عائلة.
@@ -822,14 +900,14 @@ export function ProfileScreen({
 
       {member && !womenManagerEnabled ? (
         <SceneSection title="وصلك من العائلة">
-          {inbox.length === 0 ? (
+          {visibleInbox.length === 0 ? (
             <Text style={styles.note}>
               لا تفاعلات خاصة بعد. عندما يشاركك أحد مناسبة تخصك تظهر هنا فقط لك.
             </Text>
           ) : (
-            inbox.map((item) => {
+            visibleInbox.map((item) => {
               const total = Number(item.total || 0);
-              const yours = yourOccasionPhrase(item.occasion_type);
+              const yours = occasionInboxHeadline(item);
               const senderLabel = (raw: string) => {
                 const tokens = String(raw || '')
                   .trim()
@@ -871,6 +949,9 @@ export function ProfileScreen({
                   </View>
                   <View style={styles.inboxMeta}>
                     {!open ? <Text style={styles.inboxPreview}>{preview}</Text> : <View style={{ flex: 1 }} />}
+                    {formatOccasionInboxWhen(item.latest_at) ? (
+                      <Text style={styles.inboxWhen}>{formatOccasionInboxWhen(item.latest_at)}</Text>
+                    ) : null}
                     <Text style={styles.inboxChip}>
                       {msgCount === 1
                         ? 'رسالة واحدة'
@@ -888,11 +969,13 @@ export function ProfileScreen({
                       const textMsg = String(m.message || m.full_text || m.label || '').trim();
                       if (!textMsg) return null;
                       const sender = senderLabel(m.sender_name || '');
+                      const when = formatOccasionInboxWhen(m.created_at || item.latest_at);
                       return (
                         <View key={m.id} style={styles.inboxMsgRow}>
                           <Text style={styles.inboxSender}>{sender}</Text>
                           <Text style={styles.inboxSep}> · </Text>
                           <Text style={styles.inboxMsg}>{textMsg}</Text>
+                          {when ? <Text style={styles.inboxMsgWhen}>{when}</Text> : null}
                         </View>
                       );
                     })
@@ -934,6 +1017,12 @@ function profileStyles(p: ThemePalette) {
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  inboxWhen: {
+    color: p.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
     writingDirection: 'rtl',
   },
   inboxChip: {
@@ -1024,6 +1113,15 @@ function profileStyles(p: ThemePalette) {
     textAlign: 'right',
     writingDirection: 'rtl',
     flexShrink: 1,
+  },
+  inboxMsgWhen: {
+    width: '100%',
+    marginTop: 4,
+    color: p.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'left',
+    writingDirection: 'rtl',
   },
   input: {
     backgroundColor: p.surfaceMuted,
