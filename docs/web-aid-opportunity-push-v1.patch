@@ -1,0 +1,160 @@
+diff --git a/assets/js/admin-aid-requests.js b/assets/js/admin-aid-requests.js
+index bdb8733..9243bec 100644
+--- a/assets/js/admin-aid-requests.js
++++ b/assets/js/admin-aid-requests.js
+@@ -225,10 +225,39 @@
+       if (res.data && res.data.ok === false) {
+         throw new Error(res.data.error || "فشل الحفظ");
+       }
++
++      let pushNote = "";
++      if (status === "published") {
++        try {
++          const pushRes = await sb.functions.invoke("alzidan-push-notify", {
++            body: {
++              mode: "aid_opportunity",
++              request_id: Number(id),
++              // لا يُرسل إشعار «فرصة» لجوال مقدمة الطلب
++              exclude_phone: String(row.member_phone || row.contact_phone || ""),
++            },
++          });
++          if (pushRes.error) {
++            pushNote = " (النشر تم — تعذر إرسال إشعار التطبيق)";
++            console.error("AID_PUSH_NOTIFY_ERROR", pushRes.error, pushRes.data);
++          } else if (pushRes.data && pushRes.data.ok === false) {
++            pushNote = " (النشر تم — الإشعار لم يكتمل)";
++            console.warn("AID_PUSH_NOTIFY", pushRes.data);
++          } else if (pushRes.data && pushRes.data.skipped) {
++            pushNote = " (نُشر — لا أجهزة مسجّلة للإشعار حالياً)";
++          } else {
++            pushNote = " وأُرسل إشعار: فرصة مساعدة.";
++          }
++        } catch (pushErr) {
++          pushNote = " (النشر تم — تعذر استدعاء إشعار التطبيق)";
++          console.error("AID_PUSH_NOTIFY_INVOKE", pushErr);
++        }
++      }
++
+       await loadRows();
+       setStatus(
+         status === "published"
+-          ? "نُشر للعامة بلا اسم. المساعدة عبر الملاحظة المعروضة."
++          ? "نُشر للعامة بلا اسم. المساعدة عبر الملاحظة المعروضة." + pushNote
+           : "تم تحديث الحالة.",
+       );
+     } catch (error) {
+diff --git a/supabase/functions/alzidan-push-notify/index.ts b/supabase/functions/alzidan-push-notify/index.ts
+index 08e6087..3d2d18d 100644
+--- a/supabase/functions/alzidan-push-notify/index.ts
++++ b/supabase/functions/alzidan-push-notify/index.ts
+@@ -1337,6 +1337,99 @@ async function notifyInboxShare(payload: Record<string, unknown>, dryRun: boolea
+   });
+ }
+ 
++/** Anonymous family-aid opportunity — never include beneficiary name/phone/situation. */
++async function notifyAidOpportunity(
++  payload: Record<string, unknown>,
++  dryRun: boolean,
++) {
++  const title = "فرصة مساعدة";
++  const body = "هناك فرصة مساعدة عبر صندوق العائلة.";
++  const requestId = Number(payload.request_id || payload.id || 0) || 0;
++  const exclude = normalizeSaudiPhone(payload.exclude_phone);
++
++  const householdPhones = await fetchHouseholdPhones();
++  const phoneSet = new Set(
++    householdPhones.filter((p) => {
++      if (!exclude) return true;
++      if (p === exclude) return false;
++      if (p.length >= 9 && exclude.length >= 9 && p.slice(-9) === exclude.slice(-9)) {
++        return false;
++      }
++      return true;
++    }),
++  );
++  if (!phoneSet.size) {
++    return json({
++      ok: true,
++      skipped: "no_household_phones",
++      mode: "aid_opportunity",
++      recipients: 0,
++    });
++  }
++
++  const tokenRows = await fetchEnabledTokensWithPhone();
++  const { unique } = matchTokensForPhones(tokenRows, phoneSet);
++  if (!unique.length) {
++    return json({
++      ok: true,
++      skipped: "no_member_push_tokens",
++      mode: "aid_opportunity",
++      recipients: 0,
++      household_phones: phoneSet.size,
++    });
++  }
++
++  const eventKey = buildEventKey(
++    "aid_opportunity",
++    requestId ? String(requestId) : "aid",
++    "published",
++  );
++  const data = {
++    mode: "aid_opportunity",
++    type: "aid_opportunity",
++    notification_type: "aid_opportunity",
++    screen: "aidRequest",
++    request_id: requestId || undefined,
++  };
++
++  let deduped = 0;
++  const messages: Record<string, unknown>[] = [];
++  for (const row of unique) {
++    const token = String(row?.token || "").trim();
++    if (!token) continue;
++    if (!dryRun) {
++      const claim = await claimEventTokenSend(eventKey, token);
++      if (!claim) {
++        deduped += 1;
++        continue;
++      }
++    }
++    const message: Record<string, unknown> = {
++      to: token,
++      sound: "default",
++      title,
++      body,
++      data,
++      priority: "high",
++    };
++    if (row.platform === "android") {
++      message.channelId = "family-events";
++    }
++    messages.push(message);
++  }
++
++  return await deliverMessages(messages, dryRun, {
++    mode: "aid_opportunity",
++    request_id: requestId || null,
++    household_phones: phoneSet.size,
++    matched_tokens: unique.length,
++    recipients_after_dedupe: messages.length,
++    deduped,
++    title,
++    body,
++  });
++}
++
+ Deno.serve(async (req) => {
+   if (req.method === "OPTIONS") {
+     return new Response("ok", { status: 200, headers: CORS_HEADERS });
+@@ -1396,6 +1489,10 @@ Deno.serve(async (req) => {
+       return await notifyInboxShare(payload, dryRun);
+     }
+ 
++    if (mode === "aid_opportunity") {
++      return await notifyAidOpportunity(payload, dryRun);
++    }
++
+     // ---- Family-event broadcast: bound household phones only (not visitors). ----
+     const type = normalizeText(payload.type);
+     const person = normalizeText(payload.person);

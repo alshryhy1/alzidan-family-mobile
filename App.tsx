@@ -93,6 +93,15 @@ function screenFromPushData(data: Record<string, unknown> | null): PublicScreen 
   if (screen === 'familyboard' || mode === 'faza' || mode === 'board_offer' || mode === 'board_request') {
     return 'familyBoard';
   }
+  if (
+    screen === 'aidrequest' ||
+    screen === 'aid' ||
+    mode === 'aid_opportunity' ||
+    mode === 'family_aid' ||
+    mode === 'aid'
+  ) {
+    return 'aidRequest';
+  }
   if (mode === 'status_changed' || mode === 'inbox_share') return 'profile';
   return 'events';
 }
