@@ -15,6 +15,7 @@ create table if not exists public.pulse_presence (
 do $migrate$
 declare
   has_col boolean;
+  session_type text;
 begin
   -- session_id من أسماء شائعة قديمة
   select exists (
@@ -40,6 +41,16 @@ begin
         execute 'alter table public.pulse_presence add column session_id text';
       end if;
     end if;
+  end if;
+
+  -- الجداول القديمة قد تكون session_id = uuid؛ التطبيق يرسل نص جلسة → حوّل إلى text.
+  select c.data_type into session_type
+  from information_schema.columns c
+  where c.table_schema = 'public'
+    and c.table_name = 'pulse_presence'
+    and c.column_name = 'session_id';
+  if session_type = 'uuid' then
+    execute 'alter table public.pulse_presence alter column session_id type text using session_id::text';
   end if;
 
   execute 'alter table public.pulse_presence add column if not exists phone text';
@@ -95,12 +106,12 @@ begin
   end if;
 
   -- لا نملأ last_seen_at = now() للجلسات القديمة (كان يرفع عدّاد المتواجدين خطأً).
-  -- احذف الصفوف بلا وقت معروف حتى يبقى العدّ العام كما كان: نبضات حديثة فقط.
+  -- احذف الصفوف بلا وقت/جلسة صالحة. استخدم ::text حتى لا يفشل عمود uuid القديم.
   execute $q$
     delete from public.pulse_presence
     where last_seen_at is null
        or session_id is null
-       or btrim(coalesce(session_id, '')) = ''
+       or btrim(coalesce(session_id::text, '')) = ''
   $q$;
 
   execute 'alter table public.pulse_presence alter column last_seen_at set default now()';
