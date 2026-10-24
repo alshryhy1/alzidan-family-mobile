@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from './ActionButton';
 import {
@@ -12,6 +12,7 @@ import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import type { TreeChild } from '../types';
 import { leafPersonName } from '../utils/personEncounter';
+import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 import { normalizeEducationDegree, normalizeWorkStatus, normalizeWorkplace } from '../utils/treeStats';
 
 type Props = {
@@ -63,6 +64,8 @@ export function OwnTreeEditPanel({
   const [educationDegree, setEducationDegree] = useState(
     () => normalizeEducationDegree(target.educationDegree),
   );
+  const [marriedOutside, setMarriedOutside] = useState(() => target.marriedOutside === true);
+  const showMarriedOutside = isPublicLineageHiddenPerson(target) || target.marriedOutside === true;
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ kind: 'idle' | 'success' | 'error'; text: string }>({
     kind: 'idle',
@@ -78,6 +81,7 @@ export function OwnTreeEditPanel({
     setWorkStatus(normalizeWorkStatus(target.workStatus));
     setWorkplace(normalizeWorkplace(target.workplace));
     setEducationDegree(normalizeEducationDegree(target.educationDegree));
+    setMarriedOutside(target.marriedOutside === true);
     setStatus({ kind: 'idle', text: '' });
   }, [
     target.id,
@@ -89,6 +93,7 @@ export function OwnTreeEditPanel({
     target.workStatus,
     target.workplace,
     target.educationDegree,
+    target.marriedOutside,
   ]);
 
   async function submit() {
@@ -135,6 +140,7 @@ export function OwnTreeEditPanel({
         workStatus,
         workplace: workplace.trim(),
         educationDegree,
+        marriedOutside: showMarriedOutside ? marriedOutside : null,
       });
       if (!profile?.ok) {
         const code = String(profile?.error || '');
@@ -143,7 +149,7 @@ export function OwnTreeEditPanel({
           kind: 'error',
           text:
             code === 'rpc_missing' || code === 'sql_missing'
-              ? 'الصق من جديد docs/COPY-ME-member-set-person-profile-v1.sql كاملًا في SQL ثم انتظر ثوانٍ.'
+              ? 'الصق docs/COPY-ME-married-outside-v1.sql (أو ملف الملف الشخصي) في Supabase SQL ثم انتظر ثوانٍ.'
               : detail
                 ? `${memberAddPersonMessage(code)} (${detail})`
                 : memberAddPersonMessage(code),
@@ -245,6 +251,21 @@ export function OwnTreeEditPanel({
           );
         })}
       </View>
+      {showMarriedOutside ? (
+        <>
+          <View style={styles.switchRow}>
+            <Switch
+              onValueChange={setMarriedOutside}
+              trackColor={{ false: '#D4C4A8', true: '#C4A35A' }}
+              value={marriedOutside}
+            />
+            <Text style={styles.switchLabel}>متزوجة من خارج العائلة</Text>
+          </View>
+          <Text style={styles.hint}>
+            عند التفعيل: لا تظهر أرملة ولا مطلقة، ولا يُعرض اسم الزوج في بطاقتك.
+          </Text>
+        </>
+      ) : null}
       <ActionButton
         label={busy ? 'جاري الحفظ...' : 'حفظ التعديل'}
         onPress={() => {
@@ -274,6 +295,20 @@ function panelStyles(p: ThemePalette, tone: 'cream' | 'hero') {
     fieldLabel: {
       color: onHero ? p.goldSoft : p.textMuted,
       fontSize: typography.caption,
+      fontWeight: '700' as const,
+      textAlign: 'right' as const,
+      writingDirection: 'rtl' as const,
+    },
+    switchRow: {
+      alignItems: 'center' as const,
+      flexDirection: 'row-reverse' as const,
+      gap: 10,
+      marginTop: 4,
+    },
+    switchLabel: {
+      color: onHero ? p.cream : p.text,
+      flex: 1,
+      fontSize: typography.body,
       fontWeight: '700' as const,
       textAlign: 'right' as const,
       writingDirection: 'rtl' as const,

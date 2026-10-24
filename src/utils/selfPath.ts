@@ -19,6 +19,8 @@ export type SelfPathFacts = {
   spousePartnerName?: string | null;
   /** Viewer's role on the spouse row, not a gender experience. */
   spouseRole?: 'husband' | 'wife' | null;
+  /** Married outside the family — show label, never husband name. */
+  marriedOutside?: boolean;
   siblingNames: string[];
   sisterNames?: string[];
   childNames: string[];
@@ -216,7 +218,13 @@ export function buildSelfPathRings(self: TreeChild, facts: SelfPathFacts): SelfP
       detail: facts.sisterNames.join(' · '),
     });
   }
-  if (facts.spousePartnerName) {
+  if (facts.marriedOutside) {
+    rings.push({
+      key: 'marriageOutside',
+      ring: 'متزوجة من خارج العائلة',
+      detail: 'بدون إظهار اسم الزوج',
+    });
+  } else if (facts.spousePartnerName) {
     rings.push({
       key: 'marriage',
       ring: facts.spouseRole === 'wife' ? 'زوجي' : 'زوجتي',

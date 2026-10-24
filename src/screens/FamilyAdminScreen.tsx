@@ -12,6 +12,7 @@ import {
   FamilyAdminRpcMissingError,
   fetchFamilyAdminDelegates,
   fetchFamilyAdminDevices,
+  fetchFamilyAdminOnlinePhones,
   fetchFamilyAdminRequests,
   isFamilyAdminDelegateRequest,
   isFamilyAdminMemberRequest,
@@ -26,6 +27,7 @@ import {
   type FamilyAdminDelegate,
   type FamilyAdminDelegateRole,
   type FamilyAdminDevice,
+  type FamilyAdminOnlinePhone,
   type FamilyAdminPerson,
   type FamilyAdminRequest,
 } from '../services/familyAdmin';
@@ -45,11 +47,12 @@ type FamilyAdminScreenProps = {
   adminPhone: string;
 };
 
-type TabKey = 'people' | 'phones' | 'requests' | 'delegates' | 'devices';
+type TabKey = 'people' | 'phones' | 'online' | 'requests' | 'delegates' | 'devices';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'people', label: 'أشخاص' },
   { key: 'phones', label: 'جوالات' },
+  { key: 'online', label: 'أرقام الآن' },
   { key: 'requests', label: 'طلبات' },
   { key: 'delegates', label: 'مناديب' },
   { key: 'devices', label: 'جهاز' },
@@ -236,6 +239,14 @@ export function FamilyAdminScreen({ onBack, adminPhone }: FamilyAdminScreenProps
       ) : null}
       {phone && !sqlMissing && tab === 'phones' ? (
         <PhonesTab
+          phone={phone}
+          styles={styles}
+          onSqlMissing={markSqlMissing}
+          onError={setErrorText}
+        />
+      ) : null}
+      {phone && !sqlMissing && tab === 'online' ? (
+        <OnlineTab
           phone={phone}
           styles={styles}
           onSqlMissing={markSqlMissing}
@@ -1009,6 +1020,65 @@ function DelegatesTab({ phone, styles, onSqlMissing, onError }: TabProps) {
             variant={row.isEnabled ? 'secondary' : 'primary'}
             onPress={() => confirmEnabled(row)}
           />
+        </View>
+      ))}
+    </SceneSection>
+  );
+}
+
+function OnlineTab({ phone, styles, onSqlMissing, onError }: TabProps) {
+  const [loading, setLoading] = useState(true);
+  const [online, setOnline] = useState(0);
+  const [items, setItems] = useState<FamilyAdminOnlinePhone[]>([]);
+
+  const load = useCallback(async () => {
+    if (!phone) {
+      setOnline(0);
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    onError('');
+    try {
+      const snap = await fetchFamilyAdminOnlinePhones(phone);
+      setOnline(snap.online);
+      setItems(snap.rows);
+    } catch (error) {
+      if (error instanceof FamilyAdminRpcMissingError) onSqlMissing();
+      else onError(familyAdminActionMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, [onError, onSqlMissing, phone]);
+
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => {
+      void load();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  return (
+    <SceneSection title="أرقام جوالات المتصلين الآن">
+      <Text style={styles.hint}>
+        للإدارة فقط — لا يظهر للعامة. شريط «المتواجدون» في الرئيسية يبقى عدداً فقط كما كان. هنا تظهر أرقام الأعضاء المسجّلين داخل التطبيق خلال آخر ٣ دقائق.
+      </Text>
+      <ActionButton label={loading ? 'جاري التحديث…' : 'تحديث الآن'} onPress={() => void load()} />
+      <Text style={styles.meta}>
+        المتواجدون: {online}
+        {items.length ? ` · بأرقام معروفة: ${items.length}` : ''}
+      </Text>
+      {!loading && items.length === 0 ? (
+        <Text style={styles.meta}>لا جوالات مسجّلة متصلة الآن.</Text>
+      ) : null}
+      {items.map((item) => (
+        <View key={item.phone} style={styles.card}>
+          <Text style={styles.cardName}>{formatPhoneDisplay(item.phone)}</Text>
+          <Text style={styles.cardMeta}>{item.displayName}</Text>
+          {item.branchKey ? <Text style={styles.cardMeta}>فرع {item.branchKey}</Text> : null}
+          <Text style={styles.cardMeta}>{formatWhen(item.lastSeenAt)}</Text>
         </View>
       ))}
     </SceneSection>

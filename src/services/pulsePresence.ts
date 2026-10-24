@@ -54,10 +54,15 @@ function readOnline(data: unknown): number | null {
 }
 
 /** Count from the server. Null if the heartbeat RPC is not live yet. */
-export async function pulseHeartbeat(sessionId: string): Promise<number | null> {
+export async function pulseHeartbeat(
+  sessionId: string,
+  phone?: string | null,
+): Promise<number | null> {
   try {
+    const cleaned = String(phone || '').trim();
     const data = await callPublicRpc<unknown>('pulse_heartbeat_v1', {
       p_session_id: sessionId,
+      ...(cleaned ? { p_phone: cleaned } : {}),
     });
     return readOnline(data);
   } catch (error) {
