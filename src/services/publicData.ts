@@ -1384,13 +1384,21 @@ export async function loadSelfPathFacts(
     spouseRole = null;
   }
 
-  const aidSituation: 'widow' | 'divorced' | null = marriedOutside
-    ? null
-    : isWidow
-      ? 'widow'
-      : isDivorced
-        ? 'divorced'
-        : null;
+  // طلب المساعدة الخاص للنساء فقط — لا أرملة/مطلقة على حساب رجل حتى لو التبست الزوجية.
+  const viewerIsFemale = isPublicLineageHiddenPerson(viewer);
+  if (!viewerIsFemale) {
+    isWidow = false;
+    isDivorced = false;
+  }
+
+  const aidSituation: 'widow' | 'divorced' | null =
+    !viewerIsFemale || marriedOutside
+      ? null
+      : isWidow
+        ? 'widow'
+        : isDivorced
+          ? 'divorced'
+          : null;
 
   return {
     motherName,

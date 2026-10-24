@@ -21,6 +21,7 @@ import {
   isDeviceLockEnabled,
 } from '../services/deviceLock';
 import { saveMemberPhoto, uploadMemberPhoto } from '../services/personPhoto';
+import { loadSelfPathFacts } from '../services/publicData';
 import { clearPushPhone, rememberPushPhone, registerPushToken } from '../services/pushNotifications';
 import { callPublicRpc, classifyPublicRpcError, selectPublicRows } from '../services/supabase';
 import { submitFamilyRequest } from '../services/submitFamilyRequest';
@@ -41,6 +42,7 @@ import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '
 import { fetchWomenManagerSession } from '../services/womenManager';
 import { fetchFamilyAdminSession } from '../services/familyAdmin';
 import { fetchDelegateInboxSession } from '../services/delegateInbox';
+import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 
 type ProfileScreenProps = {
   branches: Branch[];
@@ -175,6 +177,8 @@ export function ProfileScreen({
   const [womenManagerEnabled, setWomenManagerEnabled] = useState(false);
   const [familyAdminEnabled, setFamilyAdminEnabled] = useState(false);
   const [delegateInboxEnabled, setDelegateInboxEnabled] = useState(false);
+  const [canRequestPrivateAid, setCanRequestPrivateAid] = useState(false);
+  const [privateAidLabel, setPrivateAidLabel] = useState('طلب مساعدة خاص');
   const [expandedInbox, setExpandedInbox] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<{ kind: 'idle' | 'success' | 'error'; text: string }>({
     kind: 'idle',
@@ -217,6 +221,42 @@ export function ProfileScreen({
   useEffect(() => {
     setLocalPhotoUrl(memberTreeRow?.photoUrl || null);
   }, [memberTreeRow?.photoUrl, member?.tree_child_id]);
+
+  useEffect(() => {
+    let alive = true;
+    // رجال / بلا جنس أنثى: لا يظهر طلب الأرملة/المطلقة أصلاً.
+    if (!memberTreeRow?.id || !isPublicLineageHiddenPerson(memberTreeRow)) {
+      setCanRequestPrivateAid(false);
+      setPrivateAidLabel('طلب مساعدة خاص');
+      return () => {
+        alive = false;
+      };
+    }
+    loadSelfPathFacts(memberTreeRow, childrenRows, savedPhone || member?.phone || '')
+      .then((facts) => {
+        if (!alive) return;
+        if (facts.aidSituation === 'widow') {
+          setCanRequestPrivateAid(true);
+          setPrivateAidLabel('طلب مساعدة — أرملة');
+          return;
+        }
+        if (facts.aidSituation === 'divorced') {
+          setCanRequestPrivateAid(true);
+          setPrivateAidLabel('طلب مساعدة — مطلقة');
+          return;
+        }
+        setCanRequestPrivateAid(false);
+        setPrivateAidLabel('طلب مساعدة خاص');
+      })
+      .catch(() => {
+        if (!alive) return;
+        setCanRequestPrivateAid(false);
+        setPrivateAidLabel('طلب مساعدة خاص');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [memberTreeRow, childrenRows, savedPhone, member?.phone]);
 
   const memberName = useMemo(() => {
     if (memberTreeRow?.name) return tripleNameFromPath(memberTreeRow.name);
@@ -649,11 +689,8 @@ export function ProfileScreen({
     >
       {member ? (
         <SceneSection>
-          {onOpenAidRequest ? (
-            <ActionButton
-              label="طلب مساعدة خاص (أرملة / مطلقة)"
-              onPress={onOpenAidRequest}
-            />
+          {onOpenAidRequest && canRequestPrivateAid ? (
+            <ActionButton label={privateAidLabel} onPress={onOpenAidRequest} />
           ) : null}
 
           {canOpenCard ? (
