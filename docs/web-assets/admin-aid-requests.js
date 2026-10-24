@@ -114,7 +114,10 @@
               '">اعتماد ونشر</button>'
             : "") +
           (row.status === "published"
-            ? '<button type="button" class="btn btn-outline btn-sm" data-aid-act="closed" data-aid-id="' +
+            ? '<button type="button" class="btn btn-primary btn-sm" data-aid-act="notify" data-aid-id="' +
+              esc(String(row.id)) +
+              '">إشعار حالة إنسانية</button>' +
+              '<button type="button" class="btn btn-outline btn-sm" data-aid-act="closed" data-aid-id="' +
               esc(String(row.id)) +
               '">إغلاق</button>'
             : "") +
@@ -247,7 +250,83 @@
     return String(refRaw || "").trim();
   }
 
+  async function sendAidHumanityPush(sb, id, row) {
+    const pushRes = await sb.functions.invoke("alzidan-push-notify", {
+      body: {
+        mode: "aid_opportunity",
+        request_id: Number(id),
+        publish_nonce: String(Date.now()),
+        exclude_phone: String(row.member_phone || row.contact_phone || ""),
+      },
+    });
+    const pdata = pushRes && pushRes.data ? pushRes.data : null;
+    console.log("AID_PUSH_NOTIFY_RESULT", pushRes && pushRes.error, pdata);
+    if (pushRes.error) {
+      return {
+        ok: false,
+        note:
+          "تعذر إرسال إشعار التطبيق: " +
+          String(pushRes.error.message || pushRes.error || "خطأ"),
+      };
+    }
+    if (pdata && pdata.ok === false) {
+      return {
+        ok: false,
+        note: "الإشعار لم يكتمل: " + String(pdata.error || pdata.skipped || "فشل"),
+      };
+    }
+    if (pdata && pdata.skipped) {
+      return {
+        ok: false,
+        note:
+          "الإشعار تخطّى: " +
+          String(pdata.skipped) +
+          " / أجهزة=" +
+          String(pdata.recipients || pdata.matched_tokens || 0),
+      };
+    }
+    const n = Number(
+      (pdata && (pdata.sent || pdata.recipients_after_dedupe || pdata.matched_tokens)) || 0,
+    );
+    return {
+      ok: true,
+      note:
+        n > 0
+          ? "أُرسل إشعار عام: حالة إنسانية («" + n + "» جهاز)."
+          : "أُرسل إشعار عام: حالة إنسانية.",
+    };
+  }
+
+  async function notifyPublishedOnly(id) {
+    if (!getAdminToken()) {
+      setStatus("سجّل دخول الإدارة أولاً.", true);
+      return;
+    }
+    const sb = getClient();
+    if (!sb) return;
+    const row = rowsCache.find((r) => Number(r.id) === Number(id)) || {};
+    if (String(row.status || "") !== "published") {
+      setStatus("الإشعار فقط للطلبات المنشورة. اعتمد وانشر أولاً.", true);
+      return;
+    }
+    setStatus("جاري إرسال إشعار حالة إنسانية للعيلة…");
+    try {
+      const result = await sendAidHumanityPush(sb, id, row);
+      setStatus(result.note, !result.ok);
+    } catch (pushErr) {
+      setStatus(
+        "تعذر استدعاء إشعار التطبيق: " +
+          String((pushErr && pushErr.message) || pushErr || "خطأ"),
+        true,
+      );
+    }
+  }
+
   async function setStatusAction(id, status) {
+    if (status === "notify") {
+      await notifyPublishedOnly(id);
+      return;
+    }
     if (!getAdminToken()) {
       setStatus("سجّل دخول الإدارة أولاً.", true);
       return;
@@ -308,43 +387,8 @@
       let pushNote = "";
       if (status === "published") {
         try {
-          const pushRes = await sb.functions.invoke("alzidan-push-notify", {
-            body: {
-              mode: "aid_opportunity",
-              request_id: Number(id),
-              publish_nonce: String(Date.now()),
-              exclude_phone: String(row.member_phone || row.contact_phone || ""),
-            },
-          });
-          const pdata = pushRes && pushRes.data ? pushRes.data : null;
-          console.log("AID_PUSH_NOTIFY_RESULT", pushRes && pushRes.error, pdata);
-          if (pushRes.error) {
-            pushNote =
-              " (النشر تم — تعذر إرسال إشعار التطبيق: " +
-              String(pushRes.error.message || pushRes.error || "خطأ") +
-              ")";
-          } else if (pdata && pdata.ok === false) {
-            pushNote =
-              " (النشر تم — الإشعار لم يكتمل: " +
-              String(pdata.error || pdata.skipped || "فشل") +
-              ")";
-          } else if (pdata && pdata.skipped) {
-            pushNote =
-              " (نُشر — الإشعار تخطّى: " +
-              String(pdata.skipped) +
-              " / أجهزة=" +
-              String(pdata.recipients || pdata.matched_tokens || 0) +
-              ")";
-          } else {
-            const n = Number(
-              (pdata && (pdata.sent || pdata.recipients_after_dedupe || pdata.matched_tokens)) ||
-                0,
-            );
-            pushNote =
-              n > 0
-                ? " وأُرسل إشعار عام: حالة إنسانية («" + n + "» جهاز)."
-                : " وأُرسل إشعار عام: حالة إنسانية.";
-          }
+          const result = await sendAidHumanityPush(sb, id, row);
+          pushNote = " " + result.note;
         } catch (pushErr) {
           pushNote =
             " (النشر تم — تعذر استدعاء إشعار التطبيق: " +
