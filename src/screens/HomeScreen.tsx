@@ -289,7 +289,8 @@ export function HomeScreen({
       <DataState error={error} loading={loading} onRetry={onRetry} />
 
       <View style={styles.creamStage}>
-        {!loading && !error ? (
+        {/* النبض يبقى ظاهراً حتى لو فشل تحميل عام — لا نخفي نص المتواجدين/الجو/الشريط */}
+        {!loading ? (
           <PulseLiveBoard
             model={{
               online: pulseOnline,
@@ -301,8 +302,8 @@ export function HomeScreen({
           />
         ) : null}
 
-        {/* إضافة فقط: فرص منشورة بلا لمس ترويسة النبض أو الشريط */}
-        {!loading && !error && publishedAid.length ? (
+        {/* إضافة فقط عند وجود منشور — بلا تغيير شكل النبض */}
+        {!loading && publishedAid.length ? (
           <View style={styles.aidBox}>
             <Pressable
               accessibilityRole="button"
