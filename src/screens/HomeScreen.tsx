@@ -31,6 +31,7 @@ import {
   loadFamilyBoardPosts,
   type FamilyBoardPost,
 } from '../services/familyBoard';
+import { pulseAidNotices } from '../utils/pulseNotices';
 import { resolvePulseSeason } from '../utils/pulseSeason';
 import { sinceVisitSummary, type SinceVisitItem } from '../utils/sinceLastVisit';
 
@@ -102,6 +103,7 @@ export function HomeScreen({
   const [delegates, setDelegates] = useState<PulseBoardNotice[]>([]);
   const [boardPosts, setBoardPosts] = useState<FamilyBoardPost[]>([]);
   const [publishedAid, setPublishedAid] = useState<PublishedAidRequest[]>([]);
+  const [aidStatus, setAidStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [greetings, setGreetings] = useState<RemembranceGreeting[]>([]);
   const [greetNote, setGreetNote] = useState('');
   const [sendingKey, setSendingKey] = useState<string | null>(null);
@@ -236,15 +238,21 @@ export function HomeScreen({
   useEffect(() => {
     let cancelled = false;
     function loadAid() {
+      setAidStatus((prev) => (prev === 'ready' || prev === 'empty' ? prev : 'loading'));
       loadPublishedAidRequests()
         .then((rows) => {
-          if (!cancelled) setPublishedAid(rows.slice(0, 3));
+          if (cancelled) return;
+          const next = rows.slice(0, 3);
+          setPublishedAid(next);
+          setAidStatus(next.length ? 'ready' : 'empty');
         })
         .catch((err) => {
           if (__DEV__) {
             console.warn('[pulse] published aid', err instanceof Error ? err.message : err);
           }
-          if (!cancelled) setPublishedAid([]);
+          if (cancelled) return;
+          setPublishedAid([]);
+          setAidStatus('error');
         });
     }
     loadAid();
@@ -257,10 +265,21 @@ export function HomeScreen({
 
   const refreshHome = () => {
     onRetry();
+    setAidStatus('loading');
     void loadPublishedAidRequests()
-      .then((rows) => setPublishedAid(rows.slice(0, 3)))
-      .catch(() => setPublishedAid([]));
+      .then((rows) => {
+        const next = rows.slice(0, 3);
+        setPublishedAid(next);
+        setAidStatus(next.length ? 'ready' : 'empty');
+      })
+      .catch(() => {
+        setPublishedAid([]);
+        setAidStatus('error');
+      });
   };
+
+  const aidNotices = useMemo(() => pulseAidNotices(publishedAid), [publishedAid]);
+  const pulseNoticesWithAid = useMemo(() => [...aidNotices, ...notices], [aidNotices, notices]);
 
   return (
     <SceneShell
@@ -301,27 +320,34 @@ export function HomeScreen({
           />
         ) : null}
 
-        {!loading && publishedAid.length ? (
-          <View style={styles.aidBox}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={onOpenGiving}
-              style={({ pressed }) => [styles.aidHead, pressed && styles.pressed]}
-            >
-              <Text style={styles.aidTitle}>فرص مساعدة</Text>
-              <Text style={styles.aidGo}>تبرع</Text>
-            </Pressable>
-            <Text style={styles.aidSub}>بلا اسم — نوع الطلب والاحتياج فقط · عثيم أو سوا</Text>
-            {publishedAid.map((row) => (
-              <PublishedAidOpportunityCard
-                key={row.id}
-                compact
-                onOpenGiving={onOpenGiving}
-                row={row}
-              />
-            ))}
-          </View>
-        ) : null}
+        <View style={styles.aidBox}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOpenGiving}
+            style={({ pressed }) => [styles.aidHead, pressed && styles.pressed]}
+          >
+            <Text style={styles.aidTitle}>فرص مساعدة</Text>
+            <Text style={styles.aidGo}>تبرع</Text>
+          </Pressable>
+          <Text style={styles.aidSub}>بلا اسم — نوع الطلب والاحتياج فقط · عثيم أو سوا</Text>
+          {aidStatus === 'loading' && !publishedAid.length ? (
+            <Text style={styles.sinceEmpty}>جاري تحميل الفرص…</Text>
+          ) : null}
+          {aidStatus === 'error' && !publishedAid.length ? (
+            <Text style={styles.sinceEmpty}>تعذر تحميل فرص المساعدة. اسحب للتحديث.</Text>
+          ) : null}
+          {aidStatus === 'empty' ? (
+            <Text style={styles.sinceEmpty}>لا توجد فرص منشورة حالياً.</Text>
+          ) : null}
+          {publishedAid.map((row) => (
+            <PublishedAidOpportunityCard
+              key={row.id}
+              compact
+              onOpenGiving={onOpenGiving}
+              row={row}
+            />
+          ))}
+        </View>
 
         {remembrances.length ? (
           <View style={styles.sinceBox}>
@@ -486,7 +512,7 @@ export function HomeScreen({
               weather,
               season,
             }}
-            notices={notices}
+            notices={pulseNoticesWithAid}
             parts={['affinity', 'tiles', 'notices']}
             tone="stage"
           />
