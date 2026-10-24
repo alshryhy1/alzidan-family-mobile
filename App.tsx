@@ -310,7 +310,7 @@ function AppChrome() {
       let lastOnline: number | null = null;
       const tick = async () => {
         if (AppState.currentState === 'background') return;
-        const online = await pulseHeartbeat(sessionId);
+        const online = await pulseHeartbeat(sessionId, memberPhoneForRequests);
         if (!cancelled) setPulseOnline(online);
         if (online != null && online !== lastOnline) {
           lastOnline = online;
@@ -332,7 +332,7 @@ function AppChrome() {
       if (interval) clearInterval(interval);
       sub?.remove();
     };
-  }, []);
+  }, [memberPhoneForRequests]);
 
   useEffect(() => {
     const receivedSub = Notifications.addNotificationReceivedListener((notification) => {

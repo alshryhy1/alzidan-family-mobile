@@ -55,6 +55,19 @@ export type FamilyAdminDevice = {
   lastSeenAt: string | null;
 };
 
+export type FamilyAdminOnlinePhone = {
+  phone: string;
+  displayName: string;
+  branchKey: string;
+  lastSeenAt: string | null;
+  sessions: number;
+};
+
+export type FamilyAdminOnlineSnapshot = {
+  online: number;
+  rows: FamilyAdminOnlinePhone[];
+};
+
 export class FamilyAdminRpcMissingError extends Error {
   constructor() {
     super('sql_missing');
@@ -450,6 +463,46 @@ export async function bindFamilyAdminRequest(args: {
   assertOk(row);
 }
 
+type OnlineRpc = {
+  ok?: boolean;
+  error?: string;
+  online?: number;
+  rows?: Array<{
+    phone?: string | null;
+    display_name?: string | null;
+    branch_key?: string | null;
+    last_seen_at?: string | null;
+    sessions?: number | null;
+  }>;
+};
+
+export async function fetchFamilyAdminOnlinePhones(
+  adminPhone: string,
+): Promise<FamilyAdminOnlineSnapshot> {
+  const cleaned = String(adminPhone || '').trim();
+  if (!cleaned) return { online: 0, rows: [] };
+  let row: OnlineRpc | undefined;
+  try {
+    row = await callPublicRpc<OnlineRpc>('family_admin_pulse_online_v1', { p_phone: cleaned });
+  } catch (error) {
+    throwIfMissingRpc(error);
+  }
+  assertOk(row);
+  const rows = (row?.rows || [])
+    .map((item) => ({
+      phone: String(item.phone || '').trim(),
+      displayName: String(item.display_name || '').trim() || '—',
+      branchKey: String(item.branch_key || '').trim(),
+      lastSeenAt: item.last_seen_at ? String(item.last_seen_at) : null,
+      sessions: Math.max(0, Number(item.sessions || 0) || 0),
+    }))
+    .filter((item) => item.phone);
+  return {
+    online: Math.max(0, Number(row?.online || 0) || 0),
+    rows,
+  };
+}
+
 export async function fetchFamilyAdminDevices(adminPhone: string): Promise<FamilyAdminDevice[]> {
   const cleaned = String(adminPhone || '').trim();
   if (!cleaned || !canUnbindFamilyAdminDevices(cleaned)) return [];
@@ -529,7 +582,7 @@ export function familyAdminActionMessage(error: unknown): string {
   if (/[\u0600-\u06FF]/.test(detail) && detail.length < 220) return detail.trim();
   switch (code) {
     case 'sql_missing':
-      return 'تعذر فتح إدارة العائلة الآن. راجِع الإدارة إن استمر.';
+      return 'تعذر فتح إدارة العائلة الآن. راجِع الإدارة إن استمر. إن كان قسم المتصلين: نفّذ SQL الحضور أولاً.';
     case 'not_allowed':
       return 'هذه الجلسة ليست إدارة عائلة مفعّلة.';
     case 'unbind_admin_only':
