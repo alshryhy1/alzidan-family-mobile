@@ -1,0 +1,119 @@
+diff --git a/assets/js/admin-aid-requests.js b/assets/js/admin-aid-requests.js
+--- a/assets/js/admin-aid-requests.js
++++ b/assets/js/admin-aid-requests.js
+@@ -44,6 +44,20 @@
+     el.style.color = isError ? "#991b1b" : "";
+   }
+ 
++  function payChannelLabel(channel) {
++    const c = String(channel || "").toLowerCase();
++    if (c === "othaim_card") return "بطاقة العثيم";
++    if (c === "sawaa_electric") return "سوا — كهرباء";
++    if (c === "sawaa_rent") return "سوا — إيجار";
++    if (c === "family_fund") return "صندوق العائلة";
++    return "مساهمة عبر الإدارة";
++  }
++
+   function statusLabel(status) {
+     const s = String(status || "").toLowerCase();
+     if (s === "pending") return "بانتظار";
+@@ -137,8 +151,14 @@
+           "<td>" +
+           esc(row.public_title || "—") +
+           "</td>" +
+           "<td>" +
+-          esc(row.publish_contact_note || "صندوق العائلة / تواصل الإدارة") +
++          esc(payChannelLabel(row.pay_channel)) +
++          (row.pay_ref
++            ? '<div class="hint" dir="ltr">' + esc(row.pay_ref) + "</div>"
++            : "") +
++          '<div class="hint">' +
++          esc(row.publish_contact_note || "بلا اسم — نوع الطلب والاحتياج فقط") +
++          "</div>" +
+           "</td>" +
+           "<td>" +
+           actions +
+@@ -173,7 +193,7 @@
+       }
+       rowsCache = Array.isArray(data.rows) ? data.rows : [];
+       renderTable(rowsCache);
+-      setStatus("النشر للعامة بلا اسم. المساعدة عبر صندوق العائلة — لا تنشر حساباً باسم المستفيدة.");
++      setStatus("النشر بلا اسم: نوع الطلب + الاحتياج. المساهمة ببطاقة العثيم أو سداد فاتورة سوا.");
+     } catch (error) {
+       console.error(error);
+       const msg = error && error.message ? String(error.message) : "خطأ";
+@@ -204,29 +224,58 @@
+       status === "published"
+         ? "طلب مساعدة معتمد — " + String(row.situation_label || "للعائلة")
+         : null;
+     const note =
+       status === "published"
+         ? window.prompt(
+-            "ملاحظة التواصل للعامة (صندوق العائلة / واتساب الإدارة):",
++            "ملاحظة للعامة (اختياري):",
+             String(
+               row.publish_contact_note ||
+-                "للتقديم: تواصل مع إدارة العائلة. التحويل عبر صندوق العائلة — وليس باسم المستفيدة.",
++                "ساهم عبر القناة أدناه — بلا تحويل باسم المستفيدة.",
+             ),
+           )
+         : null;
+     if (status === "published" && note === null) return;
+ 
++    let payChannel = null;
++    let payRef = null;
++    if (status === "published") {
++      const channelRaw = window.prompt(
++        "قناة المساهمة: 1=عثيم  2=سوا كهرباء  3=سوا إيجار  4=صندوق العائلة",
++        row.pay_channel === "sawaa_electric"
++          ? "2"
++          : row.pay_channel === "sawaa_rent"
++            ? "3"
++            : row.pay_channel === "family_fund"
++              ? "4"
++              : "1",
++      );
++      if (channelRaw === null) return;
++      const ch = String(channelRaw || "").trim();
++      if (ch === "1" || /othaim|عثيم/i.test(ch)) payChannel = "othaim_card";
++      else if (ch === "2" || /كهرب/i.test(ch)) payChannel = "sawaa_electric";
++      else if (ch === "3" || /ايجار|إيجار|rent/i.test(ch)) payChannel = "sawaa_rent";
++      else if (ch === "4" || /صندوق|fund/i.test(ch)) payChannel = "family_fund";
++      else payChannel = "othaim_card";
++
++      const refPrompt =
++        payChannel === "othaim_card"
++          ? "رقم بطاقة العثيم للمساهمة:"
++          : payChannel === "family_fund"
++            ? "مرجع صندوق العائلة (اختياري):"
++            : "رقم/مرجع فاتورة سوا:";
++      const refRaw = window.prompt(refPrompt, String(row.pay_ref || ""));
++      if (refRaw === null) return;
++      payRef = String(refRaw || "").trim();
++    }
++
+     setStatus("جاري الحفظ…");
+     try {
+       const res = await sb.rpc("admin_aid_request_set_status_v1", {
+         p_token: getAdminToken(),
+         p_id: Number(id),
+         p_status: status,
+         p_admin_note: null,
+         p_public_title: defaultTitle,
+         p_public_body: status === "published" ? String(row.need_text || "") : null,
+         p_publish_contact_note: status === "published" ? String(note || "").trim() : null,
++        p_pay_channel: payChannel,
++        p_pay_ref: payRef,
+       });
+       if (res.error) throw res.error;
+       if (res.data && res.data.ok === false) {
+@@ -234,8 +283,8 @@
+       await loadRows();
+       setStatus(
+         status === "published"
+-          ? "نُشر للعامة بلا اسم. المساعدة عبر الملاحظة المعروضة."
++          ? "نُشر بلا اسم. المساهمة عبر " + payChannelLabel(payChannel) + (payRef ? " · " + payRef : "")
+           : "تم تحديث الحالة.",
+       );
+     } catch (error) {
+       console.error(error);

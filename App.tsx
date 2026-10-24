@@ -275,6 +275,7 @@ function AppChrome() {
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
   const [aidRequestPane, setAidRequestPane] = useState<'help' | 'request' | 'mine'>('help');
   const [aidRequestBack, setAidRequestBack] = useState<PublicScreen>('profile');
+  const [givingPane, setGivingPane] = useState<'choose' | 'support' | 'aid'>('choose');
 
   const openAidRequest = (
     pane: 'help' | 'request' | 'mine' = 'help',
@@ -283,6 +284,11 @@ function AppChrome() {
     setAidRequestPane(pane);
     setAidRequestBack(back);
     setScreen('aidRequest');
+  };
+
+  const openGiving = (pane: 'choose' | 'support' | 'aid' = 'choose') => {
+    setGivingPane(pane);
+    setScreen('giving');
   };
 
   useEffect(() => {
@@ -957,7 +963,7 @@ function AppChrome() {
             onOpenMemberCard={(branchKey, treeChildId) =>
               openPersonEncounter(branchKey, treeChildId, 'profile')
             }
-            onOpenGiving={() => setScreen('giving')}
+            onOpenGiving={() => openGiving('choose')}
             onOpenAidRequest={() => openAidRequest('request', 'profile')}
             onOpenWomenAdmin={() => setScreen('womenAdmin')}
             onOpenFamilyAdmin={() => setScreen('familyAdmin')}
@@ -983,8 +989,13 @@ function AppChrome() {
       case 'giving':
         return (
           <GivingScreen
-            onBack={() => setScreen('profile')}
-            onOpenAidRequest={() => openAidRequest('help', 'giving')}
+            initialPane={givingPane}
+            onBack={() => {
+              setGivingPane('choose');
+              setScreen('profile');
+            }}
+            onOpenAidRequest={() => openAidRequest('mine', 'giving')}
+            onOpenAidSubmit={() => openAidRequest('request', 'giving')}
           />
         );
       case 'aidRequest':
@@ -995,6 +1006,7 @@ function AppChrome() {
             childrenRows={treeChildren}
             initialPane={aidRequestPane}
             onBack={() => setScreen(aidRequestBack)}
+            onOpenGiving={() => openGiving('aid')}
           />
         );
       case 'familyBoard':
@@ -1070,6 +1082,7 @@ function AppChrome() {
             onOpenPerson={(branchKey, treeChildId) => openPersonEncounter(branchKey, treeChildId, 'home')}
             onOpenEvent={(eventId) => goToScreen('events', { eventId })}
             onOpenFamilyBoard={() => goToScreen('familyBoard')}
+            onOpenGiving={() => openGiving('aid')}
             onOpenMyCard={
               memberTreeChildId != null && (memberBranchKey || encounterViewer?.branchKey)
                 ? () =>

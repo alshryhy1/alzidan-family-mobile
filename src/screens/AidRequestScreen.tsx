@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 import { ActionButton } from '../components/ActionButton';
+import { PublishedAidOpportunityCard } from '../components/PublishedAidOpportunityCard';
 import { SceneSection, SceneShell } from '../components/scene';
 import {
   AID_SITUATIONS,
@@ -29,6 +30,8 @@ type AidRequestScreenProps = {
   childrenRows?: TreeChild[];
   initialPane?: Pane;
   onBack: () => void;
+  /** الانتقال لتبرع لعرض فرص المساهمة (عثيم / سوا). */
+  onOpenGiving?: () => void;
 };
 
 export function AidRequestScreen({
@@ -37,6 +40,7 @@ export function AidRequestScreen({
   childrenRows = [],
   initialPane = 'help',
   onBack,
+  onOpenGiving,
 }: AidRequestScreenProps) {
   const p = useThemePalette();
   const styles = useThemedStyles(aidStyles);
@@ -131,7 +135,9 @@ export function AidRequestScreen({
         hideName,
       });
       setNeedText('');
-      setStatus('وصل طلبك للإدارة بسرية. بعد الاعتماد يُنشر بلا اسم للمساعدة عبر صندوق العائلة.');
+      setStatus(
+        'وصل طلبك للإدارة بسرية. بعد الاعتماد يُنشر بلا اسم — المساهمة ببطاقة العثيم أو سداد فاتورة سوا.',
+      );
       setPane('mine');
       await refresh();
     } catch (err) {
@@ -144,7 +150,7 @@ export function AidRequestScreen({
   return (
     <SceneShell
       english="AID"
-      eyebrow="سرية · صندوق العائلة"
+      eyebrow="سرية · من التبرعات"
       heroLead={
         <Pressable accessibilityRole="button" onPress={onBack}>
           <Text style={styles.back}>رجوع</Text>
@@ -153,7 +159,7 @@ export function AidRequestScreen({
       onRefresh={() => void refresh()}
       subtitle={
         pane === 'help'
-          ? 'طلبات معتمدة بلا اسم. المساعدة عبر إدارة العائلة وليس بتحويل باسم المستفيدة.'
+          ? 'بلا اسم ولا جوال. نوع الطلب والاحتياج فقط — ساهم ببطاقة العثيم أو سداد فاتورة سوا.'
           : pane === 'request'
             ? 'طلبك يصل للإدارة فقط. عند النشر يُخفى اسمك افتراضياً.'
             : 'متابعة حالة طلباتك.'
@@ -186,21 +192,16 @@ export function AidRequestScreen({
       {pane === 'help' ? (
         <SceneSection>
           <Text style={styles.note}>
-            إن أردت المساعدة: تواصل مع الإدارة حسب الملاحظة تحت كل طلب. لا تطلب اسم المستفيدة للتحويل.
+            لا يظهر اسم ولا جوال. ساهم عبر رقم بطاقة العثيم أو سداد فاتورة سوا (كهرباء / إيجار) حسب كل طلب.
           </Text>
           {!published.length ? (
             <Text style={styles.empty}>لا توجد فرص مساعدة منشورة حالياً.</Text>
           ) : (
-            published.map((row) => (
-              <View key={row.id} style={styles.card}>
-                <Text style={styles.cardKicker}>{row.situationLabel}</Text>
-                <Text style={styles.cardTitle}>{row.title}</Text>
-                <Text style={styles.cardBody}>{row.body}</Text>
-                {row.branchKey ? <Text style={styles.meta}>الفرع: {row.branchKey}</Text> : null}
-                <Text style={styles.contact}>{row.contactNote}</Text>
-              </View>
-            ))
+            published.map((row) => <PublishedAidOpportunityCard key={row.id} row={row} />)
           )}
+          {onOpenGiving ? (
+            <ActionButton label="المساهمة من تبرع" onPress={onOpenGiving} variant="secondary" />
+          ) : null}
         </SceneSection>
       ) : null}
 
@@ -244,7 +245,7 @@ export function AidRequestScreen({
                 <Text style={styles.switchLabel}>إخفاء اسمي عند النشر</Text>
               </View>
               <Text style={styles.hint}>
-                حتى لو أُلغي الإخفاء، التحويل البنكي للعامة يكون عبر صندوق العائلة لا باسمك.
+                عند النشر يظهر نوع الطلب والاحتياج فقط. المساهمة عبر بطاقة العثيم أو سداد فاتورة سوا — بلا اسمك.
               </Text>
 
               <ActionButton

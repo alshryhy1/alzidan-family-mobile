@@ -1,0 +1,44 @@
+/**
+ * فرص المساعدة داخل تبرع + نبض بلا هوية + قنوات عثيم/سوا.
+ */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const read = (rel) => readFileSync(join(root, rel), 'utf8');
+
+const giving = read('src/screens/GivingScreen.tsx');
+const home = read('src/screens/HomeScreen.tsx');
+const aid = read('src/screens/AidRequestScreen.tsx');
+const card = read('src/components/PublishedAidOpportunityCard.tsx');
+const svc = read('src/services/aidRequest.ts');
+const app = read('App.tsx');
+const sql = read('docs/COPY-ME-family-aid-pay-channels-v1.sql');
+
+const checks = [
+  ['giving has aid pane', giving.includes("pane === 'aid'")],
+  ['giving loads published aid', giving.includes('loadPublishedAidRequests')],
+  ['giving shows opportunity card', giving.includes('PublishedAidOpportunityCard')],
+  ['giving opens aid submit', giving.includes('onOpenAidSubmit')],
+  ['app wires onOpenAidSubmit', app.includes('onOpenAidSubmit={() => openAidRequest')],
+  ['home loads published aid', home.includes('loadPublishedAidRequests')],
+  ['home shows aid box', home.includes('فرص مساعدة')],
+  ['home opens giving', home.includes('onOpenGiving')],
+  ['app home opens giving', app.includes('onOpenGiving={() => setScreen')],
+  ['aid screen uses opportunity card', aid.includes('PublishedAidOpportunityCard')],
+  ['card supports compact pulse', card.includes('compact')],
+  ['svc has othaim channel', svc.includes("'othaim_card'")],
+  ['svc has sawaa electric', svc.includes("'sawaa_electric'")],
+  ['svc has sawaa rent', svc.includes("'sawaa_rent'")],
+  ['sql adds pay_channel', sql.includes('add column if not exists pay_channel')],
+  ['sql adds pay_ref', sql.includes('add column if not exists pay_ref')],
+  ['sql public omits identity', sql.includes('null::text as display_name')],
+];
+
+const failed = checks.filter(([, ok]) => !ok);
+if (failed.length) {
+  console.error('verify-aid-pulse-giving failed:\n' + failed.map(([n]) => ` - ${n}`).join('\n'));
+  process.exit(1);
+}
+console.log(`verify-aid-pulse-giving: ${checks.length} checks ok`);

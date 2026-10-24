@@ -3,6 +3,8 @@ import { canonicalizePhone } from '../utils/phone';
 
 export type AidSituation = 'widow' | 'divorced' | 'other';
 
+export type AidPayChannel = 'othaim_card' | 'sawaa_electric' | 'sawaa_rent' | 'family_fund';
+
 export type AidRequestStatus = 'pending' | 'published' | 'closed' | 'declined';
 
 export type MyAidRequest = {
@@ -27,6 +29,9 @@ export type PublishedAidRequest = {
   title: string;
   body: string;
   contactNote: string;
+  payChannel: AidPayChannel | null;
+  payChannelLabel: string;
+  payRef: string | null;
   branchKey: string | null;
   publishedAt: string | null;
   createdAt: string;
@@ -37,6 +42,27 @@ export const AID_SITUATIONS: { id: AidSituation; label: string; hint: string }[]
   { id: 'divorced', label: 'مطلقة', hint: 'طلب خاص — لا يُعرض اسمك للعامة' },
   { id: 'other', label: 'أخرى', hint: 'حالة أخرى تحتاج مساعدة' },
 ];
+
+export function aidPayChannelLabel(channel?: string | null) {
+  const c = String(channel || '')
+    .trim()
+    .toLowerCase();
+  if (c === 'othaim_card') return 'ساهم عبر رقم بطاقة العثيم';
+  if (c === 'sawaa_electric') return 'ساهم بسداد فاتورة سوا — كهرباء';
+  if (c === 'sawaa_rent') return 'ساهم بسداد فاتورة سوا — إيجار';
+  if (c === 'family_fund') return 'ساهم عبر صندوق العائلة / الإدارة';
+  return 'ساهم عبر إدارة العائلة وصندوق العائلة';
+}
+
+function normalizePayChannel(value: unknown): AidPayChannel | null {
+  const c = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (c === 'othaim_card' || c === 'sawaa_electric' || c === 'sawaa_rent' || c === 'family_fund') {
+    return c;
+  }
+  return null;
+}
 
 export function aidStatusLabel(status: string) {
   const s = String(status || '').toLowerCase();
@@ -65,16 +91,20 @@ function mapMine(row: Record<string, unknown>): MyAidRequest {
 }
 
 function mapPublished(row: Record<string, unknown>): PublishedAidRequest {
+  const payChannel = normalizePayChannel(row.pay_channel);
   return {
     id: Number(row.id || 0),
     situation: (String(row.situation || 'other') as AidSituation) || 'other',
     situationLabel: String(row.situation_label || ''),
-    title: String(row.title || 'طلب مساعدة معتمد'),
+    title: String(row.title || row.situation_label || 'فرصة مساعدة'),
     body: String(row.body || ''),
     contactNote: String(
       row.contact_note ||
-        'للتقديم: تواصل مع إدارة العائلة. التحويل عبر صندوق العائلة — وليس باسم المستفيدة.',
+        'ساهم عبر القناة أدناه — بلا تحويل باسم المستفيدة.',
     ),
+    payChannel,
+    payChannelLabel: String(row.pay_channel_label || '') || aidPayChannelLabel(payChannel),
+    payRef: row.pay_ref != null ? String(row.pay_ref).trim() || null : null,
     branchKey: row.branch_key != null ? String(row.branch_key) : null,
     publishedAt: row.published_at != null ? String(row.published_at) : null,
     createdAt: String(row.created_at || ''),
