@@ -100,11 +100,12 @@ function screenFromPushData(data: Record<string, unknown> | null): PublicScreen 
   if (
     screen === 'aidrequest' ||
     screen === 'aid' ||
+    screen === 'giving' ||
     mode === 'aid_opportunity' ||
     mode === 'family_aid' ||
     mode === 'aid'
   ) {
-    return 'aidRequest';
+    return 'giving';
   }
   if (mode === 'status_changed' || mode === 'inbox_share') return 'profile';
   return 'events';
@@ -383,7 +384,10 @@ function AppChrome() {
         typeLabel: formatted.typeLabel,
       });
 
-      setScreen(screenFromPushData(response.notification.request.content.data as Record<string, unknown>));
+      const data = response.notification.request.content.data as Record<string, unknown>;
+      const next = screenFromPushData(data);
+      if (next === 'giving') setGivingPane('aid');
+      setScreen(next);
     });
 
     return () => {

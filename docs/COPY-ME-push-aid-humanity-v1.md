@@ -11,15 +11,22 @@
 
 ## مطلوب مرة واحدة: نشر دالة الإشعار
 
-من جهازك (فيها تسجيل Supabase):
+بدون هذا النشر، الاعتماد ينجح لكن الإشعار العام لا يُرسل.
 
 ```bash
 cd /Users/ahshryhy/Projects/alzidan-family
 git pull origin main
-npx supabase functions deploy alzidan-push-notify --project-ref wbskjfdqpugnwvrykqcn --no-verify-jwt
-```
 
-بدون هذا النشر، الاعتماد ينجح لكن الإشعار العام لا يُرسل.
+curl -fsSL -o /tmp/web-aid-humanity-push-v1.patch \
+  "https://raw.githubusercontent.com/alshryhy1/alzidan-family-mobile/cursor/appstore-ship-e8cc/docs/web-aid-humanity-push-v1.patch"
+git apply /tmp/web-aid-humanity-push-v1.patch || true
+
+curl -fsSL -o assets/js/admin-aid-requests.js \
+  "https://raw.githubusercontent.com/alshryhy1/alzidan-family-mobile/cursor/appstore-ship-e8cc/docs/web-assets/admin-aid-requests.js"
+
+npx supabase functions deploy alzidan-push-notify --project-ref wbskjfdqpugnwvrykqcn --no-verify-jwt
+git add -A && git commit -m "feat(web): إشعار عام حالة إنسانية للعيلة" && git push origin main
+```
 
 ## بعد النشر
 
