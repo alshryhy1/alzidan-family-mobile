@@ -42,9 +42,8 @@ export function AidRequestScreen({
   const phone = canonicalizePhone(memberPhone || '');
   const [pane, setPane] = useState<Pane>(initialPane === 'request' && phone ? 'request' : initialPane);
   const [situation, setSituation] = useState<AidSituation>('other');
-  const [situationLocked, setSituationLocked] = useState(false);
   const [situationLoading, setSituationLoading] = useState(false);
-  const [marriedOutside, setMarriedOutside] = useState(false);
+  const [canSubmitPrivateAid, setCanSubmitPrivateAid] = useState(false);
   const [needText, setNeedText] = useState('');
   const [hideName, setHideName] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -76,8 +75,7 @@ export function AidRequestScreen({
   useEffect(() => {
     let alive = true;
     if (!viewerPerson?.id) {
-      setSituationLocked(false);
-      setMarriedOutside(false);
+      setCanSubmitPrivateAid(false);
       setSituationLoading(false);
       return () => {
         alive = false;
@@ -87,24 +85,17 @@ export function AidRequestScreen({
     loadSelfPathFacts(viewerPerson, childrenRows, phone)
       .then((facts) => {
         if (!alive) return;
-        setMarriedOutside(Boolean(facts.marriedOutside));
-        if (facts.marriedOutside) {
-          setSituation('other');
-          setSituationLocked(true);
-          return;
-        }
         if (facts.aidSituation === 'widow' || facts.aidSituation === 'divorced') {
           setSituation(facts.aidSituation);
-          setSituationLocked(true);
-        } else {
-          setSituation('other');
-          setSituationLocked(false);
+          setCanSubmitPrivateAid(true);
+          return;
         }
+        setSituation('other');
+        setCanSubmitPrivateAid(false);
       })
       .catch(() => {
         if (!alive) return;
-        setSituationLocked(false);
-        setMarriedOutside(false);
+        setCanSubmitPrivateAid(false);
       })
       .finally(() => {
         if (alive) setSituationLoading(false);
@@ -114,9 +105,19 @@ export function AidRequestScreen({
     };
   }, [viewerPerson, childrenRows, phone]);
 
+  useEffect(() => {
+    if (pane === 'request' && !canSubmitPrivateAid && !situationLoading) {
+      setPane('help');
+    }
+  }, [pane, canSubmitPrivateAid, situationLoading]);
+
   const send = async () => {
     if (!phone) {
       setStatus('سجّل الدخول من ملفي برقم عضو مسجّل أولاً.');
+      return;
+    }
+    if (!canSubmitPrivateAid || (situation !== 'widow' && situation !== 'divorced')) {
+      setStatus('طلب المساعدة الخاص متاح فقط لمن حالتها أرملة أو مطلقة في الشجرة.');
       return;
     }
     setBusy(true);
@@ -163,7 +164,9 @@ export function AidRequestScreen({
         {(
           [
             { id: 'help' as const, label: 'فرص مساعدة' },
-            { id: 'request' as const, label: 'أقدّم طلباً' },
+            ...(canSubmitPrivateAid
+              ? [{ id: 'request' as const, label: 'أقدّم طلباً' }]
+              : []),
             { id: 'mine' as const, label: 'طلباتي' },
           ] as const
         ).map((tab) => (
@@ -204,49 +207,21 @@ export function AidRequestScreen({
         <SceneSection>
           {!phone ? (
             <Text style={styles.note}>من ملفي → اربط جهازك برقم عضو مسجّل ثم عد إلى هنا.</Text>
+          ) : situationLoading ? (
+            <Text style={styles.hint}>جاري قراءة حالتك من ملف الزواج…</Text>
+          ) : !canSubmitPrivateAid ? (
+            <Text style={styles.note}>
+              طلب المساعدة الخاص متاح فقط لمن حالتها أرملة أو مطلقة في الشجرة.
+            </Text>
           ) : (
             <>
               <Text style={styles.fieldLabel}>الحالة</Text>
-              {situationLoading ? (
-                <Text style={styles.hint}>جاري قراءة حالتك من ملف الزواج…</Text>
-              ) : situationLocked ? (
-                <>
-                  <View style={[styles.chip, styles.chipActive, styles.lockedChip]}>
-                    <Text style={[styles.chipText, styles.chipTextActive]}>
-                      {marriedOutside
-                        ? 'متزوجة من خارج العائلة'
-                        : AID_SITUATIONS.find((s) => s.id === situation)?.label || situation}
-                    </Text>
-                  </View>
-                  <Text style={styles.hint}>
-                    {marriedOutside
-                      ? 'من ملفك — لا تُعرض أرملة/مطلقة ولا اسم الزوج. الطلب يُرسل كحالة أخرى.'
-                      : 'من ملفك في الشجرة — لا حاجة للاختيار.'}
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <View style={styles.chips}>
-                    {AID_SITUATIONS.map((item) => {
-                      const on = situation === item.id;
-                      return (
-                        <Pressable
-                          key={item.id}
-                          onPress={() => setSituation(item.id)}
-                          style={[styles.chip, on && styles.chipActive]}
-                        >
-                          <Text style={[styles.chipText, on && styles.chipTextActive]}>
-                            {item.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <Text style={styles.hint}>
-                    {AID_SITUATIONS.find((s) => s.id === situation)?.hint}
-                  </Text>
-                </>
-              )}
+              <View style={[styles.chip, styles.chipActive, styles.lockedChip]}>
+                <Text style={[styles.chipText, styles.chipTextActive]}>
+                  {AID_SITUATIONS.find((s) => s.id === situation)?.label || situation}
+                </Text>
+              </View>
+              <Text style={styles.hint}>من ملفك في الشجرة — لا حاجة للاختيار.</Text>
 
               <Text style={styles.fieldLabel}>الاحتياج</Text>
               <TextInput
