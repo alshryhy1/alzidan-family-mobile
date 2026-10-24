@@ -94,10 +94,13 @@ begin
     $q$;
   end if;
 
+  -- لا نملأ last_seen_at = now() للجلسات القديمة (كان يرفع عدّاد المتواجدين خطأً).
+  -- احذف الصفوف بلا وقت معروف حتى يبقى العدّ العام كما كان: نبضات حديثة فقط.
   execute $q$
-    update public.pulse_presence
-    set last_seen_at = now()
+    delete from public.pulse_presence
     where last_seen_at is null
+       or session_id is null
+       or btrim(coalesce(session_id, '')) = ''
   $q$;
 
   execute 'alter table public.pulse_presence alter column last_seen_at set default now()';
@@ -106,6 +109,12 @@ begin
   exception when others then
     null;
   end;
+
+  -- تنظيف فوري بعد الترحيل: أبقِ آخر يوم فقط حتى لا تبدو جلسات قديمة «متصلة».
+  execute $q$
+    delete from public.pulse_presence
+    where last_seen_at < now() - interval '1 day'
+  $q$;
 
   -- مفتاح/تفرد session_id لـ on conflict
   begin

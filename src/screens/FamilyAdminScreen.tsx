@@ -52,7 +52,7 @@ type TabKey = 'people' | 'phones' | 'online' | 'requests' | 'delegates' | 'devic
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'people', label: 'أشخاص' },
   { key: 'phones', label: 'جوالات' },
-  { key: 'online', label: 'متصلون' },
+  { key: 'online', label: 'أرقام الآن' },
   { key: 'requests', label: 'طلبات' },
   { key: 'delegates', label: 'مناديب' },
   { key: 'devices', label: 'جهاز' },
@@ -1063,7 +1063,7 @@ function OnlineTab({ phone, styles, onSqlMissing, onError }: TabProps) {
   return (
     <SceneSection title="أرقام جوالات المتصلين الآن">
       <Text style={styles.hint}>
-        للإداري فقط. يظهر جوال العضو المسجّل وهو داخل التطبيق خلال آخر ٣ دقائق. الزوار بلا تسجيل لا يظهر رقمهم.
+        للإدارة فقط — لا يظهر للعامة. شريط «المتواجدون» في الرئيسية يبقى عدداً فقط كما كان. هنا تظهر أرقام الأعضاء المسجّلين داخل التطبيق خلال آخر ٣ دقائق.
       </Text>
       <ActionButton label={loading ? 'جاري التحديث…' : 'تحديث الآن'} onPress={() => void load()} />
       <Text style={styles.meta}>
