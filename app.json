@@ -59,7 +59,15 @@
           "faceIDPermission": "يُستخدم قفل الجهاز لفتح حسابك على هذا الآيفون. لا تُرسل صورة الوجه خارج جهازك."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
