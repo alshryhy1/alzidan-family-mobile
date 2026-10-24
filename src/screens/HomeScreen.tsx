@@ -470,7 +470,7 @@ export function HomeScreen({
           </Pressable>
         </View>
 
-        {!loading && !error ? (
+        {!loading ? (
           <PulseLiveBoard
             affinity={
               affinityStats

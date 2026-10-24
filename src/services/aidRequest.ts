@@ -54,6 +54,38 @@ export function aidPayChannelLabel(channel?: string | null) {
   return 'ساهم عبر إدارة العائلة وصندوق العائلة';
 }
 
+/** عنوان خانة الرقم حسب قناة المساهمة. */
+export function aidPayRefFieldLabel(channel?: string | null) {
+  const c = String(channel || '')
+    .trim()
+    .toLowerCase();
+  if (c === 'othaim_card') return 'رقم بطاقة العثيم';
+  if (c === 'sawaa_electric') return 'رقم / مرجع فاتورة سوا — كهرباء';
+  if (c === 'sawaa_rent') return 'رقم / مرجع فاتورة سوا — إيجار';
+  if (c === 'family_fund') return 'مرجع صندوق العائلة';
+  return 'رقم المساهمة';
+}
+
+/** خطوات المساهمة الظاهرة تحت الخانة. */
+export function aidPayHowTo(channel?: string | null) {
+  const c = String(channel || '')
+    .trim()
+    .toLowerCase();
+  if (c === 'othaim_card') {
+    return 'انسخ رقم البطاقة ثم اشحن/أضف رصيد بطاقة العثيم بهذا الرقم — بلا تحويل باسم المستفيدة.';
+  }
+  if (c === 'sawaa_electric') {
+    return 'انسخ مرجع الفاتورة وادفع عبر سوا (كهرباء) بهذا الرقم — بلا اسم المستفيدة.';
+  }
+  if (c === 'sawaa_rent') {
+    return 'انسخ مرجع الفاتورة وادفع عبر سوا (إيجار) بهذا الرقم — بلا اسم المستفيدة.';
+  }
+  if (c === 'family_fund') {
+    return 'المساهمة عبر صندوق العائلة / الإدارة حسب المرجع أعلاه.';
+  }
+  return 'ساهم عبر القناة الظاهرة دون طلب اسم المستفيدة.';
+}
+
 function normalizePayChannel(value: unknown): AidPayChannel | null {
   const c = String(value || '')
     .trim()
