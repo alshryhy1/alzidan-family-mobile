@@ -18,6 +18,7 @@ const run = read('docs/RUN-PULSE-ONLINE-PHONES.md');
 
 const checks = [
   ['sql has presence table', sql.includes('create table if not exists public.pulse_presence')],
+  ['sql migrates last_seen_at', sql.includes('add column if not exists last_seen_at')],
   ['sql heartbeat accepts phone', sql.includes('p_phone text default null')],
   ['sql family admin list', sql.includes('family_admin_pulse_online_v1')],
   ['sql web admin list', sql.includes('admin_pulse_online_v1')],
