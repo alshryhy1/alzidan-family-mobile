@@ -42,6 +42,7 @@ import { fetchOccasionInbox, yourOccasionPhrase, type OccasionInboxItem } from '
 import { fetchWomenManagerSession } from '../services/womenManager';
 import { fetchFamilyAdminSession } from '../services/familyAdmin';
 import { fetchDelegateInboxSession } from '../services/delegateInbox';
+import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 
 type ProfileScreenProps = {
   branches: Branch[];
@@ -223,7 +224,8 @@ export function ProfileScreen({
 
   useEffect(() => {
     let alive = true;
-    if (!memberTreeRow?.id) {
+    // رجال / بلا جنس أنثى: لا يظهر طلب الأرملة/المطلقة أصلاً.
+    if (!memberTreeRow?.id || !isPublicLineageHiddenPerson(memberTreeRow)) {
       setCanRequestPrivateAid(false);
       setPrivateAidLabel('طلب مساعدة خاص');
       return () => {

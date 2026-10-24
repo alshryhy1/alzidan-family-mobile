@@ -19,6 +19,7 @@ import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import type { TreeChild } from '../types';
 import { canonicalizePhone } from '../utils/phone';
+import { isPublicLineageHiddenPerson } from '../utils/personVisibility';
 
 type Pane = 'help' | 'request' | 'mine';
 
@@ -74,7 +75,7 @@ export function AidRequestScreen({
 
   useEffect(() => {
     let alive = true;
-    if (!viewerPerson?.id) {
+    if (!viewerPerson?.id || !isPublicLineageHiddenPerson(viewerPerson)) {
       setCanSubmitPrivateAid(false);
       setSituationLoading(false);
       return () => {
