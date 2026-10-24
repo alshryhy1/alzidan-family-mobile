@@ -104,6 +104,7 @@ export function HomeScreen({
   const [boardPosts, setBoardPosts] = useState<FamilyBoardPost[]>([]);
   const [publishedAid, setPublishedAid] = useState<PublishedAidRequest[]>([]);
   const [aidStatus, setAidStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
+  const [aidError, setAidError] = useState('');
   const [greetings, setGreetings] = useState<RemembranceGreeting[]>([]);
   const [greetNote, setGreetNote] = useState('');
   const [sendingKey, setSendingKey] = useState<string | null>(null);
@@ -244,6 +245,7 @@ export function HomeScreen({
           if (cancelled) return;
           const next = rows.slice(0, 3);
           setPublishedAid(next);
+          setAidError('');
           setAidStatus(next.length ? 'ready' : 'empty');
         })
         .catch((err) => {
@@ -252,6 +254,7 @@ export function HomeScreen({
           }
           if (cancelled) return;
           setPublishedAid([]);
+          setAidError(err instanceof Error ? err.message : 'تعذر تحميل فرص المساعدة.');
           setAidStatus('error');
         });
     }
@@ -266,14 +269,17 @@ export function HomeScreen({
   const refreshHome = () => {
     onRetry();
     setAidStatus('loading');
+    setAidError('');
     void loadPublishedAidRequests()
       .then((rows) => {
         const next = rows.slice(0, 3);
         setPublishedAid(next);
+        setAidError('');
         setAidStatus(next.length ? 'ready' : 'empty');
       })
-      .catch(() => {
+      .catch((err) => {
         setPublishedAid([]);
+        setAidError(err instanceof Error ? err.message : 'تعذر تحميل فرص المساعدة.');
         setAidStatus('error');
       });
   };
@@ -360,7 +366,9 @@ export function HomeScreen({
             <Text style={styles.sinceEmpty}>جاري تحميل الفرص…</Text>
           ) : null}
           {aidStatus === 'error' && !publishedAid.length ? (
-            <Text style={styles.sinceEmpty}>تعذر تحميل فرص المساعدة. اسحب للتحديث.</Text>
+            <Text style={styles.sinceEmpty}>
+              {aidError || 'تعذر تحميل فرص المساعدة. اسحب للتحديث.'}
+            </Text>
           ) : null}
           {aidStatus === 'empty' ? (
             <Text style={styles.sinceEmpty}>لا توجد فرص منشورة حالياً.</Text>

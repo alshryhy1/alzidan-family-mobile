@@ -172,7 +172,9 @@ export async function loadMyAidRequests(phone: string) {
 }
 
 export async function loadPublishedAidRequests() {
-  if (!isSupabaseConfigured()) return [] as PublishedAidRequest[];
+  if (!isSupabaseConfigured()) {
+    throw new Error('تعذر الاتصال الآن. تحقق من ملف .env ثم أعد تشغيل Expo.');
+  }
   try {
     const res = await callPublicRpc<{ ok?: boolean; rows?: Record<string, unknown>[] | string }>(
       'public_aid_requests_published_v1',
@@ -189,10 +191,9 @@ export async function loadPublishedAidRequests() {
     const rows = Array.isArray(raw) ? raw : [];
     return rows.map(mapPublished).filter((r) => r.id > 0);
   } catch (err) {
-    if (classifyPublicRpcError(err) === 'rpc_missing') return [];
-    if (__DEV__) {
-      console.warn('[aid] published list', err instanceof Error ? err.message : err);
+    if (classifyPublicRpcError(err) === 'rpc_missing') {
+      throw new Error('أمر فرص المساعدة غير مفعّل في قاعدة البيانات.');
     }
-    return [];
+    throw err instanceof Error ? err : new Error('تعذر تحميل فرص المساعدة.');
   }
 }

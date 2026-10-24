@@ -31,20 +31,37 @@ if ! grep -q "فرص مساعدة" src/screens/HomeScreen.tsx; then
 fi
 echo "OK: HomeScreen فيه فرص مساعدة في ترويسة النبض"
 
-if [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
-  if [[ -n "${EXPO_PUBLIC_SUPABASE_URL:-}" && -n "${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" ]]; then
-    echo "== فحص RPC من الجهاز =="
-    COUNT="$(curl -sS -X POST "${EXPO_PUBLIC_SUPABASE_URL}/rest/v1/rpc/public_aid_requests_published_v1" \
-      -H "apikey: ${EXPO_PUBLIC_SUPABASE_ANON_KEY}" \
-      -H "Authorization: Bearer ${EXPO_PUBLIC_SUPABASE_ANON_KEY}" \
-      -H "Content-Type: application/json" \
-      -d '{}' | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('rows') or []) if isinstance(d,dict) else 0)")"
-    echo "published_via_anon=$COUNT"
-  fi
+ENV_FILE=""
+if [[ -f .env ]]; then ENV_FILE=".env"; fi
+if [[ -f .env.local ]]; then ENV_FILE=".env.local"; fi
+if [[ -z "$ENV_FILE" ]]; then
+  echo "فشل: لا يوجد .env ولا .env.local"
+  echo "انسخ مفاتيح المشروع:"
+  echo "  cp /مسار/نسخة-قديمة/.env .env"
+  echo "أو أنشئ .env من .env.example وضع EXPO_PUBLIC_SUPABASE_URL و EXPO_PUBLIC_SUPABASE_ANON_KEY"
+  exit 1
+fi
+
+echo "== ملف البيئة: $ENV_FILE =="
+set -a
+# shellcheck disable=SC1091
+source "$ENV_FILE"
+set +a
+if [[ -z "${EXPO_PUBLIC_SUPABASE_URL:-}" || -z "${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" ]]; then
+  echo "فشل: المفاتيح ناقصة داخل $ENV_FILE"
+  exit 1
+fi
+echo "OK: supabase url=${EXPO_PUBLIC_SUPABASE_URL:0:32}..."
+
+echo "== فحص RPC من الجهاز =="
+COUNT="$(curl -sS -X POST "${EXPO_PUBLIC_SUPABASE_URL}/rest/v1/rpc/public_aid_requests_published_v1" \
+  -H "apikey: ${EXPO_PUBLIC_SUPABASE_ANON_KEY}" \
+  -H "Authorization: Bearer ${EXPO_PUBLIC_SUPABASE_ANON_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{}' | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('rows') or []) if isinstance(d,dict) else 0)")"
+echo "published_via_anon=$COUNT"
+if [[ "$COUNT" -lt 1 ]]; then
+  echo "تحذير: anon ما رجّع صفوفاً — راجع SQL العامة أو المفاتيح"
 fi
 
 echo "== تشغيل Expo بمسح الكاش =="
