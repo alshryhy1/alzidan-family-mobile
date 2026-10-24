@@ -107,6 +107,8 @@ export function PersonEncounterScreen({
   const [ownDaughters, setOwnDaughters] = useState<{ id: number; name: string }[]>([]);
   const [ownSons, setOwnSons] = useState<TreeChild[]>([]);
   const [isWidow, setIsWidow] = useState(false);
+  const [isDivorced, setIsDivorced] = useState(false);
+  const [aidSituation, setAidSituation] = useState<'widow' | 'divorced' | null>(null);
   const [marriedOutside, setMarriedOutside] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -220,6 +222,8 @@ export function PersonEncounterScreen({
       setOwnDaughters([]);
       setOwnSons([]);
       setIsWidow(false);
+      setIsDivorced(false);
+      setAidSituation(null);
       setMarriedOutside(false);
       setSelfPathLoading(false);
       return () => {
@@ -282,6 +286,14 @@ export function PersonEncounterScreen({
         );
         setOwnSons(factSons);
         setIsWidow(Boolean(facts.isWidow));
+        setIsDivorced(Boolean(facts.isDivorced));
+        // لا زر مساعدة خاص إلا لأنثى حالتها أرملة/مطلقة من الشجرة.
+        setAidSituation(
+          isPublicLineageHiddenPerson(person) &&
+            (facts.aidSituation === 'widow' || facts.aidSituation === 'divorced')
+            ? facts.aidSituation
+            : null,
+        );
         setMarriedOutside(Boolean(facts.marriedOutside));
         setSelfPathRings(
           buildSelfPathRings(person, {
@@ -374,6 +386,8 @@ export function PersonEncounterScreen({
             <Text style={styles.heroSub}>متزوجة من خارج العائلة</Text>
           ) : mode === 'self' && isWidow ? (
             <Text style={styles.heroSub}>أرملة · مكانك في العائلة</Text>
+          ) : mode === 'self' && isDivorced ? (
+            <Text style={styles.heroSub}>مطلقة · مكانك في العائلة</Text>
           ) : mode === 'self' ? (
             <Text style={styles.heroSub}>مكانك في العائلة</Text>
           ) : (
@@ -465,18 +479,16 @@ export function PersonEncounterScreen({
             ))}
           </View>
 
-          {mode === 'self' && onOpenAidRequest ? (
+          {mode === 'self' && onOpenAidRequest && aidSituation ? (
             <View style={styles.section}>
               <Pressable
                 onPress={onOpenAidRequest}
                 style={({ pressed }) => [styles.aidButton, pressed && { opacity: 0.8 }]}
               >
                 <Text style={styles.aidButtonTitle}>
-                  {marriedOutside
-                    ? 'طلب مساعدة خاص'
-                    : isWidow
-                      ? 'طلب مساعدة — أرملة'
-                      : 'طلب مساعدة خاص'}
+                  {aidSituation === 'widow'
+                    ? 'طلب مساعدة — أرملة'
+                    : 'طلب مساعدة — مطلقة'}
                 </Text>
                 <Text style={styles.aidButtonHint}>
                   سري للإدارة · عند النشر بلا اسم · التحويل عبر صندوق العائلة

@@ -149,7 +149,7 @@ export function GivingScreen({ onBack, onOpenAidRequest }: GivingScreenProps) {
                 <Text style={styles.tileText}>
                   طلبات معتمدة بلا اسم. المساعدة عبر إدارة العائلة وصندوق العائلة.
                 </Text>
-                <Text style={styles.cta}>عرض الفرص / تقديم طلب</Text>
+                <Text style={styles.cta}>عرض الفرص المنشورة</Text>
               </Pressable>
             ) : null}
           </View>

@@ -273,6 +273,17 @@ function AppChrome() {
   const [specialCardTickerItems, setSpecialCardTickerItems] = useState<string[]>([]);
   const [pulseOnline, setPulseOnline] = useState<number | null>(null);
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
+  const [aidRequestPane, setAidRequestPane] = useState<'help' | 'request' | 'mine'>('help');
+  const [aidRequestBack, setAidRequestBack] = useState<PublicScreen>('profile');
+
+  const openAidRequest = (
+    pane: 'help' | 'request' | 'mine' = 'help',
+    back: PublicScreen = 'profile',
+  ) => {
+    setAidRequestPane(pane);
+    setAidRequestBack(back);
+    setScreen('aidRequest');
+  };
 
   useEffect(() => {
     if (!__DEV__) return;
@@ -912,7 +923,7 @@ function AppChrome() {
               void reloadPublished();
             }}
             onOpenAidRequest={
-              encounterMode === 'self' ? () => setScreen('aidRequest') : undefined
+              encounterMode === 'self' ? () => openAidRequest('request', 'person') : undefined
             }
             onClose={closePersonEncounter}
           />
@@ -947,7 +958,7 @@ function AppChrome() {
               openPersonEncounter(branchKey, treeChildId, 'profile')
             }
             onOpenGiving={() => setScreen('giving')}
-            onOpenAidRequest={() => setScreen('aidRequest')}
+            onOpenAidRequest={() => openAidRequest('request', 'profile')}
             onOpenWomenAdmin={() => setScreen('womenAdmin')}
             onOpenFamilyAdmin={() => setScreen('familyAdmin')}
             onOpenDelegateInbox={() => setScreen('delegateInbox')}
@@ -973,7 +984,7 @@ function AppChrome() {
         return (
           <GivingScreen
             onBack={() => setScreen('profile')}
-            onOpenAidRequest={() => setScreen('aidRequest')}
+            onOpenAidRequest={() => openAidRequest('help', 'giving')}
           />
         );
       case 'aidRequest':
@@ -982,7 +993,8 @@ function AppChrome() {
             memberPhone={memberPhoneForRequests}
             viewerPerson={memberViewerPerson}
             childrenRows={treeChildren}
-            onBack={() => setScreen('profile')}
+            initialPane={aidRequestPane}
+            onBack={() => setScreen(aidRequestBack)}
           />
         );
       case 'familyBoard':
