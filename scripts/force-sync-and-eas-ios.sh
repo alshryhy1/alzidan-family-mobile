@@ -19,12 +19,20 @@ grep -q "IPHONEOS_DEPLOYMENT_TARGET" ios/Podfile
 grep -q '"postinstall": "patch-package"' package.json
 node -p "require('./package.json').dependencies.expo"
 
-echo "==> npm install (must apply expo-modules-jsi patch)"
+echo "==> npm install (fresh expo-modules-jsi so the patch applies)"
+# A previous install already patched this folder. patch-package only applies
+# onto the published files, so a dirty copy makes the new patch fail.
+rm -rf node_modules/expo-modules-jsi
 npm install
 
 echo "==> verify patched Swift source and xcframework script"
-grep -q "setterCallback" node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
-grep -q "exit code 0 but produced no further output" node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
+SWIFT="node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift"
+XCFW="node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh"
+if ! grep -q "setterCallback" "$SWIFT" || ! grep -q "exit code 0 but produced no further output" "$XCFW"; then
+  echo "الباتش لم يُطبَّق على expo-modules-jsi. لا ترفع البناء."
+  exit 1
+fi
+echo "PATCH_OK"
 
 echo "==> expo config"
 npx expo config --type public >/dev/null
