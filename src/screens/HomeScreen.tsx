@@ -240,7 +240,12 @@ export function HomeScreen({
         .then((rows) => {
           if (!cancelled) setPublishedAid(rows.slice(0, 3));
         })
-        .catch(() => undefined);
+        .catch((err) => {
+          if (__DEV__) {
+            console.warn('[pulse] published aid', err instanceof Error ? err.message : err);
+          }
+          if (!cancelled) setPublishedAid([]);
+        });
     }
     loadAid();
     const id = setInterval(loadAid, 90 * 1000);
@@ -249,6 +254,13 @@ export function HomeScreen({
       clearInterval(id);
     };
   }, [loading]);
+
+  const refreshHome = () => {
+    onRetry();
+    void loadPublishedAidRequests()
+      .then((rows) => setPublishedAid(rows.slice(0, 3)))
+      .catch(() => setPublishedAid([]));
+  };
 
   return (
     <SceneShell
@@ -269,7 +281,7 @@ export function HomeScreen({
           </Text>
         </View>
       }
-      onRefresh={onRetry}
+      onRefresh={refreshHome}
       refreshing={loading}
       title="أهلاً بك بين أهلك"
       variant="pulse"
@@ -289,7 +301,7 @@ export function HomeScreen({
           />
         ) : null}
 
-        {!loading && !error && publishedAid.length ? (
+        {!loading && publishedAid.length ? (
           <View style={styles.aidBox}>
             <Pressable
               accessibilityRole="button"

@@ -25,7 +25,7 @@ const checks = [
   ['home loads published aid', home.includes('loadPublishedAidRequests')],
   ['home shows aid box', home.includes('فرص مساعدة')],
   ['home opens giving', home.includes('onOpenGiving')],
-  ['app home opens giving', app.includes('onOpenGiving={() => setScreen')],
+  ['app home opens giving', app.includes('onOpenGiving={() => openGiving') || app.includes('onOpenGiving={() => setScreen')],
   ['aid screen uses opportunity card', aid.includes('PublishedAidOpportunityCard')],
   ['card supports compact pulse', card.includes('compact')],
   ['svc has othaim channel', svc.includes("'othaim_card'")],

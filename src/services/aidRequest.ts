@@ -174,14 +174,25 @@ export async function loadMyAidRequests(phone: string) {
 export async function loadPublishedAidRequests() {
   if (!isSupabaseConfigured()) return [] as PublishedAidRequest[];
   try {
-    const res = await callPublicRpc<{ ok?: boolean; rows?: Record<string, unknown>[] }>(
+    const res = await callPublicRpc<{ ok?: boolean; rows?: Record<string, unknown>[] | string }>(
       'public_aid_requests_published_v1',
       {},
     );
-    const rows = Array.isArray(res?.rows) ? res.rows : [];
+    let raw = res?.rows;
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw) as Record<string, unknown>[];
+      } catch {
+        raw = [];
+      }
+    }
+    const rows = Array.isArray(raw) ? raw : [];
     return rows.map(mapPublished).filter((r) => r.id > 0);
   } catch (err) {
     if (classifyPublicRpcError(err) === 'rpc_missing') return [];
-    throw err;
+    if (__DEV__) {
+      console.warn('[aid] published list', err instanceof Error ? err.message : err);
+    }
+    return [];
   }
 }
