@@ -19,3 +19,53 @@ index 70232d7..8ce47b2 100644
      let hostObject = expo.HostObject.makeObject(pointee, consume callbacks)
  
      return JavaScriptObject(self, hostObject)
+diff --git a/node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh b/node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
+index 7c2587a..574304c 100755
+--- a/node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
++++ b/node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
+@@ -199,6 +199,9 @@ build_slice() {
+     env_args+=(DEVELOPER_DIR="$DEVELOPER_DIR")
+   fi
+ 
++  # Xcode 27 + `-quiet` prints this bogus line for a successful SwiftCompile.
++  # The host build phase treats any `error:` line as failure even when xcodebuild exits 0.
++  # Drop `-quiet` and strip that exact line. pipefail keeps a real compiler failure.
+   (cd "$PACKAGE_DIR" && env -i "${env_args[@]}" \
+     xcodebuild \
+     build \
+@@ -207,7 +210,6 @@ build_slice() {
+     -destination "generic/platform=${destination}" \
+     -derivedDataPath "$DERIVED_DATA_PATH" \
+     -configuration "$CONFIGURATION" \
+-    -quiet \
+     -disableAutomaticPackageResolution \
+     -skipPackagePluginValidation \
+     -skipMacroValidation \
+@@ -217,7 +219,7 @@ build_slice() {
+     DEBUG_INFORMATION_FORMAT=dwarf-with-dsym \
+     COMPILER_INDEX_STORE_ENABLE=NO \
+     SWIFT_COMPILATION_MODE=wholemodule \
+-  )
++  ) 2>&1 | sed -E '/^[[:space:]]*error: the following command failed with exit code 0 but produced no further output[[:space:]]*$/d'
+ 
+   local product_path="${BUILD_PRODUCTS_PATH}/${build_dir_name}"
+   local framework_src="${product_path}/PackageFrameworks/${PACKAGE_NAME}.framework"
+@@ -274,7 +276,8 @@ build_slice() {
+ 
+   # Strip declarations from public .swiftinterface that external consumers can't resolve:
+   # - C++ type extensions (__ObjC) — entire blocks including their closing braces
+-  #   e.g. "extension __ObjC.expo.CppError : Swift.Error { ... }"
++  #   e.g. "extension __ObjC.expo.CppError : Swift.Error { ... }", or with the module
++  #   selectors Swift 6.4 prints: "extension __ObjC::expo.__ObjC::CppError : Swift::Error { ... }"
+   # - Package-internal conformances (_ConstraintThatIsNotPartOfTheAPIOfThisLibrary)
+   #   e.g. "extension Swift.Optional : where Wrapped : _Constraint... {}"
+   # - @usableFromInline attributes preceding the _Constraint protocol definition
+@@ -287,7 +290,7 @@ build_slice() {
+   # filename, failing with "can't read …: No such file or directory".
+   while IFS= read -r swiftinterface; do
+     local stripped_swiftinterface="${swiftinterface}.stripped"
+-    sed '/^extension __ObjC\./,/^}/d;/^@usableFromInline$/{N;/_ConstraintThatIsNotPartOfTheAPIOfThisLibrary/d;};/_ConstraintThatIsNotPartOfTheAPIOfThisLibrary/d' "$swiftinterface" > "$stripped_swiftinterface"
++    sed -E '/^extension __ObjC(\.|::)/,/^}/d;/^@usableFromInline$/{N;/_ConstraintThatIsNotPartOfTheAPIOfThisLibrary/d;};/_ConstraintThatIsNotPartOfTheAPIOfThisLibrary/d' "$swiftinterface" > "$stripped_swiftinterface"
+     mv "$stripped_swiftinterface" "$swiftinterface"
+   done < <(find "${modules_dir}/${PACKAGE_NAME}.swiftmodule" -name '*.swiftinterface')
+ 

@@ -22,8 +22,9 @@ node -p "require('./package.json').dependencies.expo"
 echo "==> npm install (must apply expo-modules-jsi patch)"
 npm install
 
-echo "==> verify patched Swift source"
+echo "==> verify patched Swift source and xcframework script"
 grep -q "setterCallback" node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
+grep -q "exit code 0 but produced no further output" node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
 
 echo "==> expo config"
 npx expo config --type public >/dev/null
