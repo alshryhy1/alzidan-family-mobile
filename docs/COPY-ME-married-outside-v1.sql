@@ -1,0 +1,188 @@
+-- COPY-ME: married_outside on tree_children + member profile RPC
+-- Paste in Supabase SQL Editor. Safe to re-run.
+--
+-- متزوجة من خارج العائلة: لا تُعرض أرملة/مطلقة ولا اسم الزوج في مسار الذات.
+
+alter table public.tree_children
+  add column if not exists married_outside boolean;
+
+comment on column public.tree_children.married_outside is
+  'Family woman married to a husband outside the family tree; hide spouse name and widow/divorced labels on self path.';
+
+drop function if exists public.member_set_person_profile_v1(text, bigint, text, text, text, text, text);
+drop function if exists public.member_set_person_profile_v1(text, bigint, text, text, text, text, text, boolean);
+
+create or replace function public.member_set_person_profile_v1(
+  p_phone text,
+  p_target_id bigint,
+  p_city text default null,
+  p_area text default null,
+  p_work_status text default null,
+  p_workplace text default null,
+  p_education_degree text default null,
+  p_married_outside boolean default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_phone text;
+  v_digits text;
+  v_owner public.tree_children%rowtype;
+  v_target public.tree_children%rowtype;
+  v_mp public.member_profiles%rowtype;
+  v_owner_path text;
+  v_old_parent text;
+  v_allowed boolean := false;
+  v_city text;
+  v_area text;
+  v_work text;
+  v_workplace text;
+  v_degree text;
+  v_touch_city boolean := false;
+  v_touch_area boolean := false;
+  v_touch_work boolean := false;
+  v_touch_workplace boolean := false;
+  v_touch_degree boolean := false;
+  v_touch_married_outside boolean := false;
+begin
+  if to_regprocedure('public.member_phone_registered_v1(text)') is null then
+    return jsonb_build_object('ok', false, 'error', 'sql_missing');
+  end if;
+
+  v_phone := public.member_phone_registered_v1(p_phone);
+  if v_phone is null then
+    return jsonb_build_object('ok', false, 'error', 'not_registered');
+  end if;
+
+  if p_target_id is null or p_target_id < 1 then
+    return jsonb_build_object('ok', false, 'error', 'bad_input');
+  end if;
+
+  v_touch_city := p_city is not null;
+  v_touch_area := p_area is not null;
+  v_touch_work := p_work_status is not null;
+  v_touch_workplace := p_workplace is not null;
+  v_touch_degree := p_education_degree is not null;
+  v_touch_married_outside := p_married_outside is not null;
+
+  if not (
+    v_touch_city or v_touch_area or v_touch_work or v_touch_workplace
+    or v_touch_degree or v_touch_married_outside
+  ) then
+    return jsonb_build_object('ok', false, 'error', 'bad_input');
+  end if;
+
+  v_city := nullif(btrim(coalesce(p_city, '')), '');
+  v_area := nullif(btrim(coalesce(p_area, '')), '');
+  v_workplace := public.tree_child_normalize_workplace(p_workplace);
+
+  if v_touch_work then
+    if nullif(btrim(coalesce(p_work_status, '')), '') is null then
+      v_work := null;
+    else
+      v_work := public.tree_child_normalize_work_status(p_work_status);
+      if v_work is null then
+        return jsonb_build_object('ok', false, 'error', 'work_status_invalid');
+      end if;
+    end if;
+  end if;
+
+  if v_touch_degree then
+    if nullif(btrim(coalesce(p_education_degree, '')), '') is null then
+      v_degree := null;
+    else
+      v_degree := public.tree_child_normalize_education_degree(p_education_degree);
+      if v_degree is null then
+        return jsonb_build_object('ok', false, 'error', 'education_degree_invalid');
+      end if;
+    end if;
+  end if;
+
+  v_digits := nullif(right(regexp_replace(coalesce(v_phone, ''), '[^0-9]', '', 'g'), 9), '');
+  if to_regclass('public.member_profiles') is not null and v_digits is not null then
+    select mp.*
+      into v_mp
+    from public.member_profiles mp
+    where right(regexp_replace(coalesce(mp.phone, ''), '[^0-9]', '', 'g'), 9) = v_digits
+      and coalesce(nullif(btrim(coalesce(mp.status, '')), ''), 'active') is distinct from 'pending_family'
+    order by mp.updated_at desc nulls last, mp.id desc
+    limit 1;
+  end if;
+
+  if coalesce(v_mp.tree_child_id, 0) > 0 then
+    select * into v_owner from public.tree_children where id = v_mp.tree_child_id limit 1;
+  elsif v_mp.person_id is not null then
+    select * into v_owner from public.tree_children where person_id = v_mp.person_id order by id limit 1;
+  end if;
+  if not found or v_owner.id is null then
+    return jsonb_build_object('ok', false, 'error', 'not_placed');
+  end if;
+
+  select * into v_target from public.tree_children where id = p_target_id limit 1;
+  if not found or v_target.id is null then
+    return jsonb_build_object('ok', false, 'error', 'person_not_found');
+  end if;
+
+  v_owner_path := nullif(btrim(coalesce(v_owner.child_name, v_owner.name, '')), '');
+  v_old_parent := nullif(btrim(coalesce(v_target.parent_name, v_target.parent, '')), '');
+  v_allowed := v_target.id = v_owner.id
+    or (
+      v_target.branch_key is not distinct from v_owner.branch_key
+      and (
+        (v_owner.person_id is not null and v_target.parent_person_id is not distinct from v_owner.person_id)
+        or (v_owner_path is not null and v_old_parent is not distinct from v_owner_path)
+      )
+    );
+  if not v_allowed then
+    return jsonb_build_object('ok', false, 'error', 'not_own_child');
+  end if;
+
+  update public.tree_children c
+  set
+    city = case when v_touch_city then v_city else c.city end,
+    area = case when v_touch_area then v_area else c.area end,
+    work_status = case when v_touch_work then v_work else c.work_status end,
+    workplace = case when v_touch_workplace then v_workplace else c.workplace end,
+    education_degree = case when v_touch_degree then v_degree else c.education_degree end,
+    married_outside = case
+      when v_touch_married_outside then coalesce(p_married_outside, false)
+      else c.married_outside
+    end
+  where c.id = v_target.id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'tree_child_id', v_target.id,
+    'married_outside', (
+      select coalesce(c.married_outside, false)
+      from public.tree_children c
+      where c.id = v_target.id
+    )
+  );
+exception when others then
+  return jsonb_build_object(
+    'ok', false,
+    'error', 'update_failed',
+    'detail', left(sqlerrm, 180)
+  );
+end;
+$fn$;
+
+revoke all on function public.member_set_person_profile_v1(text, bigint, text, text, text, text, text, boolean) from public;
+grant execute on function public.member_set_person_profile_v1(text, bigint, text, text, text, text, text, boolean) to anon, authenticated;
+
+notify pgrst, 'reload schema';
+
+select
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tree_children' and column_name = 'married_outside'
+  ) as has_married_outside,
+  (
+    to_regprocedure(
+      'public.member_set_person_profile_v1(text, bigint, text, text, text, text, text, boolean)'
+    ) is not null
+  ) as has_member_set_person_profile_v1;

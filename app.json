@@ -2,14 +2,15 @@
   "expo": {
     "name": "عائلة مطلق الزيدان",
     "slug": "alzidan-family-mobile",
-    "version": "2.0.3",
+    "version": "2.0.5",
     "scheme": "com.alzidan.family2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.alzidan.family2",
-      "buildNumber": "62",
+      "buildNumber": "70",
+      "deploymentTarget": "16.4",
       "infoPlist": {
         "NSFaceIDUsageDescription": "يُستخدم قفل الجهاز لفتح حسابك على هذا الآيفون. لا تُرسل صورة الوجه خارج جهازك.",
         "NSPhotoLibraryUsageDescription": "لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.",

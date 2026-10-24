@@ -24,13 +24,13 @@ import { PersonEncounterScreen } from './src/screens/PersonEncounterScreen';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { GivingScreen } from './src/screens/GivingScreen';
+import { AidRequestScreen } from './src/screens/AidRequestScreen';
 import { FamilyBoardScreen } from './src/screens/FamilyBoardScreen';
 import { WomenAdminScreen } from './src/screens/WomenAdminScreen';
 import { FamilyAdminScreen } from './src/screens/FamilyAdminScreen';
 import { DelegateInboxScreen } from './src/screens/DelegateInboxScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
-import { isPublicLineageHiddenPerson } from './src/utils/personVisibility';
 import { fetchOccasionInbox, type OccasionInboxItem } from './src/services/occasionInteractions';
 import { loadLastSeen, markSurfaceSeen, type LastSeenMap } from './src/services/lastSeen';
 import { buildSinceLastVisit, countNewEvents, countNewInbox } from './src/utils/sinceLastVisit';
@@ -92,6 +92,15 @@ function screenFromPushData(data: Record<string, unknown> | null): PublicScreen 
   if (screen === 'familyadmin' || screen === 'admin' || mode === 'admin_new_request') return 'familyAdmin';
   if (screen === 'familyboard' || mode === 'faza' || mode === 'board_offer' || mode === 'board_request') {
     return 'familyBoard';
+  }
+  if (
+    screen === 'aidrequest' ||
+    screen === 'aid' ||
+    mode === 'aid_opportunity' ||
+    mode === 'family_aid' ||
+    mode === 'aid'
+  ) {
+    return 'aidRequest';
   }
   if (mode === 'status_changed' || mode === 'inbox_share') return 'profile';
   return 'events';
@@ -474,7 +483,9 @@ function AppChrome() {
       const id = Number(row.id);
       if (!id) return;
       const prev = byId.get(id);
-      if (!prev && !isPublicLineageHiddenPerson(row)) return;
+      // Female lineage RPC returns the full branch (sons + daughters). Always
+      // merge — skipping non-hidden rows dropped widow sons when public cache
+      // lagged or parent_name differed.
       byId.set(id, {
         ...(prev || row),
         ...row,
@@ -900,6 +911,9 @@ function AppChrome() {
             onAdded={() => {
               void reloadPublished();
             }}
+            onOpenAidRequest={
+              encounterMode === 'self' ? () => setScreen('aidRequest') : undefined
+            }
             onClose={closePersonEncounter}
           />
         );
@@ -933,6 +947,7 @@ function AppChrome() {
               openPersonEncounter(branchKey, treeChildId, 'profile')
             }
             onOpenGiving={() => setScreen('giving')}
+            onOpenAidRequest={() => setScreen('aidRequest')}
             onOpenWomenAdmin={() => setScreen('womenAdmin')}
             onOpenFamilyAdmin={() => setScreen('familyAdmin')}
             onOpenDelegateInbox={() => setScreen('delegateInbox')}
@@ -955,7 +970,21 @@ function AppChrome() {
           />
         );
       case 'giving':
-        return <GivingScreen onBack={() => setScreen('profile')} />;
+        return (
+          <GivingScreen
+            onBack={() => setScreen('profile')}
+            onOpenAidRequest={() => setScreen('aidRequest')}
+          />
+        );
+      case 'aidRequest':
+        return (
+          <AidRequestScreen
+            memberPhone={memberPhoneForRequests}
+            viewerPerson={memberViewerPerson}
+            childrenRows={treeChildren}
+            onBack={() => setScreen('profile')}
+          />
+        );
       case 'familyBoard':
         return (
           <FamilyBoardScreen

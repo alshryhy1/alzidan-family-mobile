@@ -37,7 +37,6 @@ import {
 } from '../utils/personEncounter';
 import {
   buildSelfPathRings,
-  childrenOfPersonInGraph,
   siblingsInGraph,
   type SelfPathRing,
 } from '../utils/selfPath';
@@ -54,6 +53,7 @@ type Props = {
   memberPhone?: string | null;
   includePubliclyHiddenPeople?: boolean;
   onAdded?: () => void;
+  onOpenAidRequest?: () => void;
   onClose: () => void;
 };
 
@@ -91,6 +91,7 @@ export function PersonEncounterScreen({
   memberPhone,
   includePubliclyHiddenPeople = false,
   onAdded,
+  onOpenAidRequest,
   onClose,
 }: Props) {
   const p = useThemePalette();
@@ -104,6 +105,9 @@ export function PersonEncounterScreen({
   const [selfPathRings, setSelfPathRings] = useState<SelfPathRing[]>([]);
   const [selfPathLoading, setSelfPathLoading] = useState(false);
   const [ownDaughters, setOwnDaughters] = useState<{ id: number; name: string }[]>([]);
+  const [ownSons, setOwnSons] = useState<TreeChild[]>([]);
+  const [isWidow, setIsWidow] = useState(false);
+  const [marriedOutside, setMarriedOutside] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editChildId, setEditChildId] = useState<number | null>(null);
@@ -119,12 +123,7 @@ export function PersonEncounterScreen({
           includePubliclyHidden: includePubliclyHiddenPeople,
         })
       : [];
-  const sons =
-    mode === 'self'
-      ? childrenOfPersonInGraph(person, childrenRows).filter(
-          (row) => includePubliclyHiddenPeople || !isPublicLineageHiddenPerson(row),
-        )
-      : directSons;
+  const sons = mode === 'self' ? ownSons : directSons;
   const activePhone = String(memberPhone || sessionPhone || '').trim();
   const treeOwner = viewer || (mode === 'self' ? person : null);
   const canEditOpened = Boolean(
@@ -219,6 +218,9 @@ export function PersonEncounterScreen({
     if (mode !== 'self') {
       setSelfPathRings([]);
       setOwnDaughters([]);
+      setOwnSons([]);
+      setIsWidow(false);
+      setMarriedOutside(false);
       setSelfPathLoading(false);
       return () => {
         alive = false;
@@ -245,24 +247,53 @@ export function PersonEncounterScreen({
           (name) => name && name !== selfLeaf,
         );
         const sisterSet = new Set(sisterNames);
-        const treeSonNames = childrenOfPersonInGraph(person, childrenRows)
-          .filter((row) => includePubliclyHiddenPeople || !isPublicLineageHiddenPerson(row))
-          .map((row) => leafPersonName(row.name))
-          .filter(Boolean);
         const daughterNames = (facts.daughters || [])
           .map((row) => row.name)
           .filter((name) => name && name !== selfLeaf);
         setOwnDaughters(
           (facts.daughters || []).filter((row) => row.name && row.name !== selfLeaf && row.id > 0),
         );
+        // Sons of a mother/widow live under the husband path — use self-path facts,
+        // not childrenOfPersonInGraph(mother).
+        const factSons = (facts.sons || [])
+          .map((row) => {
+            const fromTree = childrenRows.find((item) => Number(item.id) === Number(row.id));
+            if (fromTree) return fromTree;
+            if (!row.id) return null;
+            return {
+              id: row.id,
+              branchKey: person.branchKey,
+              parentName: person.name,
+              name: person.name ? `${person.name}/${row.name}` : row.name,
+              birthOrder: null,
+              birthDateGregorian: null,
+              birthDateHijri: null,
+              birthYear: null,
+              city: null,
+              area: null,
+              isDeceased: null,
+              gender: 'son',
+              photoUrl: null,
+            } as TreeChild;
+          })
+          .filter((row): row is TreeChild => Boolean(row));
+        const sonNameFallback = (facts.childNames || []).filter(
+          (name) => name && name !== selfLeaf,
+        );
+        setOwnSons(factSons);
+        setIsWidow(Boolean(facts.isWidow));
+        setMarriedOutside(Boolean(facts.marriedOutside));
         setSelfPathRings(
           buildSelfPathRings(person, {
             motherName: facts.motherName,
             spousePartnerName: facts.spousePartnerName,
             spouseRole: facts.spouseRole,
+            marriedOutside: Boolean(facts.marriedOutside),
             siblingNames: siblingNames.filter((name) => !sisterSet.has(name)),
             sisterNames,
-            childNames: treeSonNames,
+            childNames: factSons.length
+              ? factSons.map((row) => leafPersonName(row.name)).filter(Boolean)
+              : sonNameFallback,
             daughterNames,
             externalOffspringNames: facts.externalOffspringNames,
             branchLabel: branch,
@@ -339,6 +370,10 @@ export function PersonEncounterScreen({
             </View>
           ) : mode === 'visitor' ? (
             <Text style={styles.heroSub}>من عائلة الزيدان</Text>
+          ) : mode === 'self' && marriedOutside ? (
+            <Text style={styles.heroSub}>متزوجة من خارج العائلة</Text>
+          ) : mode === 'self' && isWidow ? (
+            <Text style={styles.heroSub}>أرملة · مكانك في العائلة</Text>
           ) : mode === 'self' ? (
             <Text style={styles.heroSub}>مكانك في العائلة</Text>
           ) : (
@@ -429,6 +464,26 @@ export function PersonEncounterScreen({
               </Text>
             ))}
           </View>
+
+          {mode === 'self' && onOpenAidRequest ? (
+            <View style={styles.section}>
+              <Pressable
+                onPress={onOpenAidRequest}
+                style={({ pressed }) => [styles.aidButton, pressed && { opacity: 0.8 }]}
+              >
+                <Text style={styles.aidButtonTitle}>
+                  {marriedOutside
+                    ? 'طلب مساعدة خاص'
+                    : isWidow
+                      ? 'طلب مساعدة — أرملة'
+                      : 'طلب مساعدة خاص'}
+                </Text>
+                <Text style={styles.aidButtonHint}>
+                  سري للإدارة · عند النشر بلا اسم · التحويل عبر صندوق العائلة
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {mode === 'self' ? (
             <View style={styles.section}>
@@ -911,6 +966,29 @@ function encounterStyles(p: ThemePalette) {
     fontSize: typography.title,
     fontWeight: '900',
     textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+  aidButton: {
+    backgroundColor: '#FFF8EC',
+    borderColor: 'rgba(196,163,90,0.45)',
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  aidButtonTitle: {
+    color: p.greenDeep,
+    fontSize: 16,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aidButtonHint: {
+    color: p.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 6,
+    textAlign: 'right',
     writingDirection: 'rtl',
   },
   ornamentRow: {

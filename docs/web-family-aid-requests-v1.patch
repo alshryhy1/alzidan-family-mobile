@@ -1,0 +1,782 @@
+diff --git a/assets/js/admin-aid-requests.js b/assets/js/admin-aid-requests.js
+new file mode 100644
+index 0000000..bdb8733
+--- /dev/null
++++ b/assets/js/admin-aid-requests.js
+@@ -0,0 +1,278 @@
++(() => {
++  "use strict";
++
++  let rowsCache = [];
++  let loading = false;
++  let bound = false;
++
++  function getAdminToken() {
++    if (window.AlzidanAuth && typeof window.AlzidanAuth.getAdminToken === "function") {
++      return String(window.AlzidanAuth.getAdminToken() || "").trim();
++    }
++    return "";
++  }
++
++  function getClient() {
++    if (window.AlzidanAdminCore && typeof window.AlzidanAdminCore.getClient === "function") {
++      return window.AlzidanAdminCore.getClient();
++    }
++    if (window.__alzidanConfig && typeof window.__alzidanConfig.getClient === "function") {
++      return window.__alzidanConfig.getClient();
++    }
++    return window.__alzidanSupabaseClient || null;
++  }
++
++  function esc(value) {
++    return String(value == null ? "" : value)
++      .replace(/&/g, "&amp;")
++      .replace(/</g, "&lt;")
++      .replace(/>/g, "&gt;")
++      .replace(/"/g, "&quot;");
++  }
++
++  function setStatus(text, isError) {
++    const el = document.getElementById("admin-aid-status");
++    if (!el) return;
++    el.textContent = text || "";
++    el.style.color = isError ? "#991b1b" : "";
++  }
++
++  function statusLabel(status) {
++    const s = String(status || "").toLowerCase();
++    if (s === "pending") return "بانتظار";
++    if (s === "published") return "منشور";
++    if (s === "closed") return "مغلق";
++    if (s === "declined") return "مرفوض";
++    return status || "—";
++  }
++
++  function whatsAppUrl(phone) {
++    let d = String(phone || "").replace(/\D/g, "");
++    if (!d) return "";
++    if (d.length === 9 && d.startsWith("5")) d = "966" + d;
++    if (d.startsWith("0") && d.length === 10) d = "966" + d.slice(1);
++    return "https://wa.me/" + d;
++  }
++
++  function renderTable(rows) {
++    const body = document.getElementById("admin-aid-body");
++    const countEl = document.getElementById("admin-aid-count");
++    if (!body) return;
++    const filter = String((document.getElementById("admin-aid-filter") || {}).value || "all");
++    const list = (rows || []).filter((r) => {
++      if (filter === "all") return true;
++      return String(r.status || "") === filter;
++    });
++    if (countEl) {
++      countEl.textContent =
++        "الكل: " +
++        String((rows || []).length) +
++        " · المعروض: " +
++        String(list.length) +
++        " · بانتظار: " +
++        String((rows || []).filter((r) => r.status === "pending").length);
++    }
++    if (!list.length) {
++      body.innerHTML = '<tr><td colspan="7" class="hint">لا طلبات مطابقة.</td></tr>';
++      return;
++    }
++    body.innerHTML = list
++      .map((row) => {
++        const phone = String(row.contact_phone || row.member_phone || "").trim();
++        const wa = whatsAppUrl(phone);
++        const nameCell = row.hide_name
++          ? esc(row.member_name || "—") + ' <span class="hint">(مخفي عند النشر)</span>'
++          : esc(row.member_name || "—");
++        const phoneCell = phone
++          ? esc(phone) +
++            (wa
++              ? ' <a class="btn btn-outline btn-sm" href="' +
++                esc(wa) +
++                '" target="_blank" rel="noopener">واتساب</a>'
++              : "")
++          : "—";
++        const actions =
++          '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
++          (row.status !== "published"
++            ? '<button type="button" class="btn btn-primary btn-sm" data-aid-act="published" data-aid-id="' +
++              esc(String(row.id)) +
++              '">اعتماد ونشر</button>'
++            : "") +
++          (row.status === "published"
++            ? '<button type="button" class="btn btn-outline btn-sm" data-aid-act="closed" data-aid-id="' +
++              esc(String(row.id)) +
++              '">إغلاق</button>'
++            : "") +
++          (row.status === "pending"
++            ? '<button type="button" class="btn btn-outline btn-sm" data-aid-act="declined" data-aid-id="' +
++              esc(String(row.id)) +
++              '">رفض</button>'
++            : "") +
++          "</div>";
++        return (
++          "<tr>" +
++          "<td>#" +
++          esc(String(row.id)) +
++          "<div class=\"hint\">" +
++          esc(statusLabel(row.status)) +
++          "</div></td>" +
++          "<td>" +
++          nameCell +
++          "<div class=\"hint\">" +
++          esc(row.situation_label || row.situation || "") +
++          (row.branch_key ? " · " + esc(row.branch_key) : "") +
++          "</div></td>" +
++          '<td dir="ltr">' +
++          phoneCell +
++          "</td>" +
++          "<td>" +
++          esc(row.need_text || "") +
++          "</td>" +
++          "<td>" +
++          esc(row.public_title || "—") +
++          "</td>" +
++          "<td>" +
++          esc(row.publish_contact_note || "صندوق العائلة / تواصل الإدارة") +
++          "</td>" +
++          "<td>" +
++          actions +
++          "</td>" +
++          "</tr>"
++        );
++      })
++      .join("");
++  }
++
++  async function loadRows() {
++    if (loading) return;
++    if (!getAdminToken()) {
++      setStatus("سجّل دخول الإدارة أولاً.", true);
++      rowsCache = [];
++      renderTable([]);
++      return;
++    }
++    const sb = getClient();
++    if (!sb) {
++      setStatus("تعذر الاتصال بقاعدة البيانات.", true);
++      return;
++    }
++    loading = true;
++    setStatus("جاري التحميل…");
++    try {
++      const res = await sb.rpc("admin_aid_requests_list_v1", { p_token: getAdminToken() });
++      if (res.error) throw res.error;
++      const data = res.data || {};
++      if (data.ok === false) {
++        throw new Error(data.error === "not_allowed" ? "غير مصرح" : data.error || "خطأ");
++      }
++      rowsCache = Array.isArray(data.rows) ? data.rows : [];
++      renderTable(rowsCache);
++      setStatus("النشر للعامة بلا اسم. المساعدة عبر صندوق العائلة — لا تنشر حساباً باسم المستفيدة.");
++    } catch (error) {
++      console.error(error);
++      const msg = error && error.message ? String(error.message) : "خطأ";
++      if (/could not find the function|schema cache|PGRST202/i.test(msg)) {
++        setStatus(
++          "نفّذ SQL: supabase/sql/COPY-ME-family-aid-requests-v1.sql ثم حدّث الصفحة.",
++          true,
++        );
++      } else {
++        setStatus("تعذر التحميل: " + msg, true);
++      }
++      rowsCache = [];
++      renderTable([]);
++    } finally {
++      loading = false;
++    }
++  }
++
++  async function setStatusAction(id, status) {
++    if (!getAdminToken()) {
++      setStatus("سجّل دخول الإدارة أولاً.", true);
++      return;
++    }
++    const sb = getClient();
++    if (!sb) return;
++    const row = rowsCache.find((r) => Number(r.id) === Number(id)) || {};
++    const defaultTitle =
++      status === "published"
++        ? "طلب مساعدة معتمد — " + String(row.situation_label || "للعائلة")
++        : null;
++    const note =
++      status === "published"
++        ? window.prompt(
++            "ملاحظة التواصل للعامة (صندوق العائلة / واتساب الإدارة):",
++            String(
++              row.publish_contact_note ||
++                "للتقديم: تواصل مع إدارة العائلة. التحويل عبر صندوق العائلة — وليس باسم المستفيدة.",
++            ),
++          )
++        : null;
++    if (status === "published" && note === null) return;
++
++    setStatus("جاري الحفظ…");
++    try {
++      const res = await sb.rpc("admin_aid_request_set_status_v1", {
++        p_token: getAdminToken(),
++        p_id: Number(id),
++        p_status: status,
++        p_admin_note: null,
++        p_public_title: defaultTitle,
++        p_public_body: status === "published" ? String(row.need_text || "") : null,
++        p_publish_contact_note: status === "published" ? String(note || "").trim() : null,
++      });
++      if (res.error) throw res.error;
++      if (res.data && res.data.ok === false) {
++        throw new Error(res.data.error || "فشل الحفظ");
++      }
++      await loadRows();
++      setStatus(
++        status === "published"
++          ? "نُشر للعامة بلا اسم. المساعدة عبر الملاحظة المعروضة."
++          : "تم تحديث الحالة.",
++      );
++    } catch (error) {
++      console.error(error);
++      setStatus("تعذر التحديث: " + (error && error.message ? error.message : "خطأ"), true);
++    }
++  }
++
++  function bind() {
++    if (bound) return;
++    bound = true;
++    const reload = document.getElementById("admin-aid-reload");
++    if (reload) reload.addEventListener("click", () => loadRows().catch(() => {}));
++    const filter = document.getElementById("admin-aid-filter");
++    if (filter) filter.addEventListener("change", () => renderTable(rowsCache));
++    const body = document.getElementById("admin-aid-body");
++    if (body) {
++      body.addEventListener("click", (ev) => {
++        const btn = ev.target && ev.target.closest ? ev.target.closest("[data-aid-act]") : null;
++        if (!btn) return;
++        const id = btn.getAttribute("data-aid-id");
++        const act = btn.getAttribute("data-aid-act");
++        if (!id || !act) return;
++        setStatusAction(id, act).catch(() => {});
++      });
++    }
++    document.addEventListener("alzidan:admin-module", (ev) => {
++      const id = ev && ev.detail ? String(ev.detail.id || "") : "";
++      if (id === "giving" && getAdminToken()) {
++        loadRows().catch(() => {});
++      }
++    });
++  }
++
++  function init() {
++    if (!document.getElementById("admin-aid-requests-section")) return;
++    bind();
++  }
++
++  if (document.readyState === "loading") {
++    document.addEventListener("DOMContentLoaded", init);
++  } else {
++    init();
++  }
++
++  window.AlzidanAdminAidRequests = { load: loadRows };
++})();
+diff --git a/assets/js/admin-shell.js b/assets/js/admin-shell.js
+index 0fa6f89..11ca07b 100644
+--- a/assets/js/admin-shell.js
++++ b/assets/js/admin-shell.js
+@@ -100,9 +100,9 @@
+     {
+       id: "giving",
+       title: "صدقة ودعم",
+-      desc: "صدقة جارية · دعم الموقع · قائمة الأرامل للمساعدات",
++      desc: "صدقة جارية · دعم الموقع · أرامل · طلبات مساعدة سرية",
+       icon: "♡",
+-      sections: ["admin-giving-section", "admin-widows-section"],
++      sections: ["admin-giving-section", "admin-widows-section", "admin-aid-requests-section"],
+       group: "content",
+     },
+     {
+diff --git a/pages/admin.html b/pages/admin.html
+index fef6512..2b5c78d 100644
+--- a/pages/admin.html
++++ b/pages/admin.html
+@@ -313,6 +313,51 @@
+     <div id="admin-widows-status" class="hint" style="margin-top:10px;"></div>
+   </div>
+ </section>
++
++<section id="admin-aid-requests-section" class="section admin-only-section" data-admin-module="giving">
++  <div class="section-header">
++    <div>
++      <div class="section-title">طلبات المساعدة — نشر سري</div>
++      <div class="hint">من التطبيق: طلب خاص (أرملة/مطلقة/أخرى). اعتمد وانشر بلا اسم. المساعدة عبر صندوق العائلة — لا تنشر حساب المستفيدة.</div>
++    </div>
++  </div>
++  <div class="card">
++    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; align-items:end;">
++      <button id="admin-aid-reload" class="btn btn-primary btn-sm" type="button">تحميل الطلبات</button>
++      <div class="field" style="min-width:160px; margin:0;">
++        <label for="admin-aid-filter">الحالة</label>
++        <select id="admin-aid-filter">
++          <option value="all">الكل</option>
++          <option value="pending">بانتظار</option>
++          <option value="published">منشور</option>
++          <option value="closed">مغلق</option>
++          <option value="declined">مرفوض</option>
++        </select>
++      </div>
++    </div>
++    <div id="admin-aid-count" class="hint" style="margin-bottom:10px; font-weight:800;">—</div>
++    <div class="table-wrap" aria-label="جدول طلبات المساعدة">
++      <table>
++        <thead>
++          <tr>
++            <th>سجل</th>
++            <th>مقدّمة الطلب</th>
++            <th>التواصل</th>
++            <th>الاحتياج</th>
++            <th>عنوان النشر</th>
++            <th>ملاحظة العامة</th>
++            <th>إجراء</th>
++          </tr>
++        </thead>
++        <tbody id="admin-aid-body">
++          <tr><td colspan="7" class="hint">اضغط «تحميل الطلبات» بعد تسجيل الدخول.</td></tr>
++        </tbody>
++      </table>
++    </div>
++    <div id="admin-aid-status" class="hint" style="margin-top:10px;"></div>
++  </div>
++</section>
++
+ <section id="polls-manager" class="section admin-only-section" data-admin-module="polls">
+   <div class="section-header">
+     <div>
+@@ -712,5 +757,5 @@
+   </div>
+ </section>
+ <footer>شجرة عائلة الزيدان — صفحة إدارة</footer></div><dialog id="tree-card-edit-dialog"><form id="tree-card-edit-form" class="edit-dialog-body" method="post" action="#"><div class="section-title" style="font-size: 19px; margin-bottom: 6px;">تصحيح بطاقة الشجرة</div><div class="hint" style="margin-bottom: 14px;">القسم الأول للمراجعة فقط. القسم الثاني لتصحيح الإدارة — الأب المختار من الشجرة هو المرجع عند الحفظ.</div><section class="tce-section tce-original-section"><div class="tce-section-title">1) الطلب الأصلي (للمراجعة فقط)</div><div id="edit-card-original-review" class="tce-original-review"></div></section><section class="tce-section tce-correction-section"><div class="tce-section-title">2) تصحيح الإدارة</div><div class="grid"><div class="field"><label for="edit-card-branch">الفرع</label><select id="edit-card-branch" name="branch" required><option value="زيدان">زيدان</option><option value="مزيد">مزيد</option><option value="زايد">زايد</option><option value="لاحم">لاحم</option><option value="ملحم">ملحم</option></select></div><div class="field"><label for="edit-card-person-name">اسم الشخص المضاف</label><input id="edit-card-person-name" name="personName" type="text" required autocomplete="off" /></div><div class="field" style="grid-column: 1 / -1;"><label>الأب</label><div id="edit-card-father-current" class="tce-father-current hint">الأب الحالي: —</div><div class="tce-father-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;"><button type="button" class="btn btn-outline btn-sm" id="edit-card-father-change">تغيير الأب</button><button type="button" class="btn btn-outline btn-sm" id="edit-card-father-clear" style="display:none;">مسح الاختيار</button></div><div class="fm-search-wrap" id="edit-card-father-search-wrap" style="display:none;"><input id="edit-card-father-search" name="fatherSearch" type="search" placeholder="ابحث عن الأب بالاسم…" autocomplete="off" /><div id="edit-card-father-results" class="fm-search-results" role="listbox"></div></div><input type="hidden" id="edit-card-father-path" name="fatherPath" value="" /><input type="hidden" id="edit-card-father-person-id" name="fatherPersonId" value="" /><input type="hidden" id="edit-card-father-label" name="fatherLabel" value="" /></div><div class="field"><label for="edit-card-gf1">الجد 1</label><input id="edit-card-gf1" name="grandfather1" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf2">الجد 2</label><input id="edit-card-gf2" name="grandfather2" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf3">الجد 3</label><input id="edit-card-gf3" name="grandfather3" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf4">الجد 4</label><input id="edit-card-gf4" name="grandfather4" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-dob">تاريخ الميلاد</label><input id="edit-card-dob" name="birthDate" type="date" /></div><div class="field"><label for="edit-card-city">المدينة</label><input id="edit-card-city" name="city" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-area">الحي/القرية</label><input id="edit-card-area" name="area" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-submitter-name">اسم المرسل</label><input id="edit-card-submitter-name" name="submitterName" required /></div><div class="field"><label for="edit-card-submitter-phone">رقم الجوال</label><input id="edit-card-submitter-phone" name="submitterPhone" type="tel" required /></div><div class="field"><label for="edit-card-submitter-email">البريد الإلكتروني</label><input id="edit-card-submitter-email" name="submitterEmail" type="email" /></div></div></section><div id="tree-card-edit-error" class="alert alert-error" style="margin-top: 14px;"></div><div class="edit-dialog-actions"><button class="btn btn-primary" type="submit">حفظ التصحيح</button><button id="tree-card-edit-cancel" class="btn btn-outline" type="button">إلغاء</button></div></form></dialog><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4"></script><script src="../assets/js/config.js?v=20260829td1"></script><script src="../assets/js/modules/core.js?v=20260827mpr3"></script><script src="../assets/js/admin-auth.js?v=20260810p3"></script><script src="../assets/js/modules/canonical-person.js?v=20260807p3"></script><script src="../assets/js/modules/family-management/family-person-core.js?v=20261003srch1"></script><script src="../assets/js/modules/family-management/family-spouses-section.js?v=20261024dec1"></script><script src="../assets/js/modules/phone-intl.js?v=20260814phone3"></script><script src="../assets/js/modules/family-management/family-children-section.js?v=20261019work1"></script><script src="../assets/js/modules/family-management/family-add-sheet.js?v=20261024dec1"></script><script src="../assets/js/modules/family-management/family-management-panel.js?v=20261019work1"></script><script src="../assets/js/modules/family-management/index.js?v=202608100033"></script><script src="../assets/js/admin-family-mgmt.js?v=20261024dec1"></script><script src="../assets/js/modules/events/event-types.js?v=20260828news1"></script><script src="../assets/js/modules/events/event-media.js?v=20260810novid2"></script><script src="../assets/js/modules/events/event-parser.js?v=20260828news1"></script><script src="../assets/js/modules/events/event-visibility.js?v=20260828birth1"></script><script src="../assets/js/modules/events/event-builder.js?v=20260828phone1"></script><script src="../assets/js/modules/events/index.js?v=2026071117"></script><script src="../assets/js/modules/date-engine.js?v=20260808de"></script>
+-<script src="../assets/js/modules/admin-polls.js?v=20260808de"></script><script src="../assets/js/admin-polls.js?v=20260808de"></script><script src="../assets/js/modules/integrity-tree003-v2.js?v=20261003batch3"></script><script src="../assets/js/modules/tree-engine.js?v=20260809uuid1"></script><script src="../assets/js/modules/integrity-request-journey.js?v=20260809hc9"></script><script src="../assets/js/modules/integrity-tree-structure-audit.js?v=20261003batch5"></script><script src="../assets/js/modules/integrity-repair-pipeline.js?v=20261003batch2"></script><script src="../assets/js/admin.js?v=20261003batch3"></script><script src="../assets/js/tree-lineage.js?v=2026071319"></script><script src="../assets/js/admin-batch-tree.js?v=20261003batch1"></script><script src="../assets/js/modules/import-export.js"></script><script src="../assets/js/admin-import.js"></script><script src="../assets/js/delegate-audit.js"></script><script src="../assets/js/admin-requests-stats.js?v=20260810p3"></script><script src="../assets/js/modules/tree-card-contract.js?v=20260815tc1"></script><script src="../assets/js/modules/tree-correction-legacy-recovery.js?v=20260815rc4"></script><script src="../assets/js/modules/tree-correction-contract.js?v=20260827mpr3"></script><script src="../assets/js/modules/tree-correction-reorder.js?v=20260819ord4"></script><script src="../assets/js/modules/tree-correction-person.js?v=20260820ident1"></script><script src="../assets/js/modules/member-phone-register.js?v=20260827mpr3"></script><script src="../assets/js/modules/request-actions.js?v=20260828phone1"></script><script src="../assets/js/admin-request-actions.js?v=20260810novid2"></script><script src="../assets/js/modules/safe-request-notify.js?v=20260829wm1"></script><script src="../assets/js/modules/user-facing-request-messages.js?v=20260827mpr3"></script><script src="../assets/js/modules/requests.js?v=20260828news1"></script><script src="../assets/js/admin-requests.js?v=20260816bp1"></script><script src="../assets/js/admin-bulk-name-audit.js?v=20260809hc5"></script><script src="../assets/js/modules/views.js?v=20260826pulse1"></script><script src="../assets/js/admin-views.js"></script><script src="../assets/js/modules/marriage-stats.js?v=20260810p3"></script><script src="../assets/js/admin-marriage-stats.js"></script><script src="../assets/js/memory/source-label.js?v=2026071216"></script><script src="../assets/js/modules/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/modules/spouses-core.js?v=20260818kin9"></script><script src="../assets/js/admin-ui.js?v=1782729862"></script><script src="../assets/js/modules/admin-delegates-v2.js?v=20260820audit1"></script><script src="../assets/js/modules/admin-sql-presets.js?v=20261019work1"></script><script src="../assets/js/admin-device-trust.js?v=20260829td4"></script><script src="../assets/js/admin-family-admin-grant.js?v=20260830del1"></script><script src="../assets/js/modules/admin-sql-workspace.js?v=20260829wm5"></script><script src="../assets/js/modules/admin-workflow-panel.js?v=20260814notify1"></script><script src="../assets/js/admin-shell.js?v=20261024wid1"></script><script src="../assets/js/admin-widows.js?v=20261024dec1"></script><script src="../assets/js/admin-quality.js"></script>
++<script src="../assets/js/modules/admin-polls.js?v=20260808de"></script><script src="../assets/js/admin-polls.js?v=20260808de"></script><script src="../assets/js/modules/integrity-tree003-v2.js?v=20261003batch3"></script><script src="../assets/js/modules/tree-engine.js?v=20260809uuid1"></script><script src="../assets/js/modules/integrity-request-journey.js?v=20260809hc9"></script><script src="../assets/js/modules/integrity-tree-structure-audit.js?v=20261003batch5"></script><script src="../assets/js/modules/integrity-repair-pipeline.js?v=20261003batch2"></script><script src="../assets/js/admin.js?v=20261003batch3"></script><script src="../assets/js/tree-lineage.js?v=2026071319"></script><script src="../assets/js/admin-batch-tree.js?v=20261003batch1"></script><script src="../assets/js/modules/import-export.js"></script><script src="../assets/js/admin-import.js"></script><script src="../assets/js/delegate-audit.js"></script><script src="../assets/js/admin-requests-stats.js?v=20260810p3"></script><script src="../assets/js/modules/tree-card-contract.js?v=20260815tc1"></script><script src="../assets/js/modules/tree-correction-legacy-recovery.js?v=20260815rc4"></script><script src="../assets/js/modules/tree-correction-contract.js?v=20260827mpr3"></script><script src="../assets/js/modules/tree-correction-reorder.js?v=20260819ord4"></script><script src="../assets/js/modules/tree-correction-person.js?v=20260820ident1"></script><script src="../assets/js/modules/member-phone-register.js?v=20260827mpr3"></script><script src="../assets/js/modules/request-actions.js?v=20260828phone1"></script><script src="../assets/js/admin-request-actions.js?v=20260810novid2"></script><script src="../assets/js/modules/safe-request-notify.js?v=20260829wm1"></script><script src="../assets/js/modules/user-facing-request-messages.js?v=20260827mpr3"></script><script src="../assets/js/modules/requests.js?v=20260828news1"></script><script src="../assets/js/admin-requests.js?v=20260816bp1"></script><script src="../assets/js/admin-bulk-name-audit.js?v=20260809hc5"></script><script src="../assets/js/modules/views.js?v=20260826pulse1"></script><script src="../assets/js/admin-views.js"></script><script src="../assets/js/modules/marriage-stats.js?v=20260810p3"></script><script src="../assets/js/admin-marriage-stats.js"></script><script src="../assets/js/memory/source-label.js?v=2026071216"></script><script src="../assets/js/modules/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/modules/spouses-core.js?v=20260818kin9"></script><script src="../assets/js/admin-ui.js?v=1782729862"></script><script src="../assets/js/modules/admin-delegates-v2.js?v=20260820audit1"></script><script src="../assets/js/modules/admin-sql-presets.js?v=20261019work1"></script><script src="../assets/js/admin-device-trust.js?v=20260829td4"></script><script src="../assets/js/admin-family-admin-grant.js?v=20260830del1"></script><script src="../assets/js/modules/admin-sql-workspace.js?v=20260829wm5"></script><script src="../assets/js/modules/admin-workflow-panel.js?v=20260814notify1"></script><script src="../assets/js/admin-shell.js?v=20261024aid1"></script><script src="../assets/js/admin-widows.js?v=20261024dec1"></script><script src="../assets/js/admin-aid-requests.js?v=20261024aid1"></script><script src="../assets/js/admin-quality.js"></script>
+ </body></html>
+diff --git a/supabase/sql/COPY-ME-family-aid-requests-v1.sql b/supabase/sql/COPY-ME-family-aid-requests-v1.sql
+new file mode 100644
+index 0000000..3fca2c4
+--- /dev/null
++++ b/supabase/sql/COPY-ME-family-aid-requests-v1.sql
+@@ -0,0 +1,413 @@
++-- COPY-ME: Preset id: maint.family_aid_requests_v1
++-- طلبات مساعدة خاصة (أرملة / مطلقة / أخرى).
++-- الإرسال من التطبيق للجوال المسجّل فقط.
++-- النشر العام بلا اسم؛ التحويل عبر صندوق/إدارة العائلة.
++-- Safe to re-run.
++
++create table if not exists public.family_aid_requests (
++  id bigint generated always as identity primary key,
++  member_phone text not null,
++  tree_child_id bigint null,
++  branch_key text null,
++  situation text not null,
++  need_text text not null,
++  hide_name boolean not null default true,
++  contact_phone text null,
++  status text not null default 'pending',
++  public_title text null,
++  public_body text null,
++  publish_contact_note text null,
++  admin_note text null,
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now(),
++  published_at timestamptz null,
++  closed_at timestamptz null,
++  constraint family_aid_requests_situation_chk
++    check (situation in ('widow', 'divorced', 'other')),
++  constraint family_aid_requests_status_chk
++    check (status in ('pending', 'published', 'closed', 'declined'))
++);
++
++create index if not exists family_aid_requests_status_idx
++  on public.family_aid_requests (status, created_at desc);
++
++create index if not exists family_aid_requests_phone_idx
++  on public.family_aid_requests (member_phone, created_at desc);
++
++alter table public.family_aid_requests enable row level security;
++
++drop policy if exists family_aid_requests_deny_all on public.family_aid_requests;
++-- No direct anon access; all reads/writes go through security definer RPCs.
++
++create or replace function public.family_aid_normalize_situation_v1(p text)
++returns text
++language sql
++immutable
++as $fn$
++  select case
++    when g in ('widow', 'أرملة', 'ارملة', 'أرمل') then 'widow'
++    when g in ('divorced', 'مطلقة', 'مطلقه', 'مطلق') then 'divorced'
++    when g in ('other', 'أخرى', 'اخرى', 'غير') then 'other'
++    else null
++  end
++  from (select lower(btrim(coalesce(p, ''))) as g) s;
++$fn$;
++
++grant execute on function public.family_aid_normalize_situation_v1(text) to anon, authenticated;
++
++create or replace function public.family_aid_situation_label_v1(p text)
++returns text
++language sql
++immutable
++as $fn$
++  select case public.family_aid_normalize_situation_v1(p)
++    when 'widow' then 'أرملة'
++    when 'divorced' then 'مطلقة'
++    when 'other' then 'أخرى'
++    else 'مساعدة'
++  end;
++$fn$;
++
++grant execute on function public.family_aid_situation_label_v1(text) to anon, authenticated;
++
++create or replace function public.member_aid_request_submit_v1(
++  p_phone text,
++  p_situation text,
++  p_need_text text,
++  p_hide_name boolean default true,
++  p_contact_phone text default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $fn$
++declare
++  v_phone text;
++  v_digits text;
++  v_situation text;
++  v_need text;
++  v_contact text;
++  v_mp public.member_profiles%rowtype;
++  v_id bigint;
++begin
++  if to_regprocedure('public.member_phone_registered_v1(text)') is null then
++    return jsonb_build_object('ok', false, 'error', 'sql_missing');
++  end if;
++
++  v_phone := public.member_phone_registered_v1(p_phone);
++  if v_phone is null then
++    return jsonb_build_object('ok', false, 'error', 'not_registered');
++  end if;
++
++  v_situation := public.family_aid_normalize_situation_v1(p_situation);
++  if v_situation is null then
++    return jsonb_build_object('ok', false, 'error', 'bad_situation');
++  end if;
++
++  v_need := nullif(btrim(coalesce(p_need_text, '')), '');
++  if v_need is null or char_length(v_need) < 8 then
++    return jsonb_build_object('ok', false, 'error', 'need_too_short');
++  end if;
++  if char_length(v_need) > 800 then
++    v_need := left(v_need, 800);
++  end if;
++
++  v_contact := nullif(btrim(coalesce(p_contact_phone, '')), '');
++  if v_contact is null then
++    v_contact := v_phone;
++  end if;
++
++  v_digits := nullif(right(regexp_replace(coalesce(v_phone, ''), '[^0-9]', '', 'g'), 9), '');
++  if to_regclass('public.member_profiles') is not null and v_digits is not null then
++    select mp.* into v_mp
++    from public.member_profiles mp
++    where right(regexp_replace(coalesce(mp.phone, ''), '[^0-9]', '', 'g'), 9) = v_digits
++      and coalesce(nullif(btrim(coalesce(mp.status, '')), ''), 'active') is distinct from 'pending_family'
++    order by mp.updated_at desc nulls last, mp.id desc
++    limit 1;
++  end if;
++
++  insert into public.family_aid_requests (
++    member_phone,
++    tree_child_id,
++    branch_key,
++    situation,
++    need_text,
++    hide_name,
++    contact_phone,
++    status
++  ) values (
++    v_phone,
++    nullif(v_mp.tree_child_id, 0),
++    nullif(btrim(coalesce(v_mp.branch_key, '')), ''),
++    v_situation,
++    v_need,
++    coalesce(p_hide_name, true),
++    v_contact,
++    'pending'
++  )
++  returning id into v_id;
++
++  return jsonb_build_object('ok', true, 'id', v_id, 'status', 'pending');
++exception when others then
++  return jsonb_build_object('ok', false, 'error', 'insert_failed', 'detail', left(sqlerrm, 160));
++end;
++$fn$;
++
++revoke all on function public.member_aid_request_submit_v1(text, text, text, boolean, text) from public;
++grant execute on function public.member_aid_request_submit_v1(text, text, text, boolean, text) to anon, authenticated;
++
++create or replace function public.member_aid_requests_mine_v1(p_phone text)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $fn$
++declare
++  v_phone text;
++  v_digits text;
++begin
++  if to_regprocedure('public.member_phone_registered_v1(text)') is null then
++    return jsonb_build_object('ok', false, 'error', 'sql_missing', 'rows', '[]'::jsonb);
++  end if;
++  v_phone := public.member_phone_registered_v1(p_phone);
++  if v_phone is null then
++    return jsonb_build_object('ok', false, 'error', 'not_registered', 'rows', '[]'::jsonb);
++  end if;
++  v_digits := nullif(right(regexp_replace(coalesce(v_phone, ''), '[^0-9]', '', 'g'), 9), '');
++
++  return jsonb_build_object(
++    'ok', true,
++    'rows', coalesce((
++      select jsonb_agg(to_jsonb(x) order by x.created_at desc)
++      from (
++        select
++          r.id,
++          r.situation,
++          public.family_aid_situation_label_v1(r.situation) as situation_label,
++          r.need_text,
++          r.hide_name,
++          r.status,
++          r.public_title,
++          r.public_body,
++          r.publish_contact_note,
++          r.created_at,
++          r.updated_at,
++          r.published_at,
++          r.closed_at
++        from public.family_aid_requests r
++        where right(regexp_replace(coalesce(r.member_phone, ''), '[^0-9]', '', 'g'), 9) = v_digits
++        order by r.created_at desc
++        limit 50
++      ) x
++    ), '[]'::jsonb)
++  );
++end;
++$fn$;
++
++revoke all on function public.member_aid_requests_mine_v1(text) from public;
++grant execute on function public.member_aid_requests_mine_v1(text) to anon, authenticated;
++
++create or replace function public.public_aid_requests_published_v1()
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $fn$
++begin
++  return jsonb_build_object(
++    'ok', true,
++    'rows', coalesce((
++      select jsonb_agg(to_jsonb(x) order by x.published_at desc nulls last, x.id desc)
++      from (
++        select
++          r.id,
++          r.situation,
++          public.family_aid_situation_label_v1(r.situation) as situation_label,
++          coalesce(nullif(btrim(r.public_title), ''), 'طلب مساعدة معتمد') as title,
++          coalesce(nullif(btrim(r.public_body), ''), r.need_text) as body,
++          coalesce(
++            nullif(btrim(r.publish_contact_note), ''),
++            'للتقديم: تواصل مع إدارة العائلة. التحويل عبر صندوق العائلة — وليس باسم المستفيدة.'
++          ) as contact_note,
++          case when coalesce(r.hide_name, true) then null else null end as display_name,
++          nullif(btrim(coalesce(r.branch_key, '')), '') as branch_key,
++          r.published_at,
++          r.created_at
++        from public.family_aid_requests r
++        where r.status = 'published'
++        order by r.published_at desc nulls last, r.id desc
++        limit 100
++      ) x
++    ), '[]'::jsonb)
++  );
++end;
++$fn$;
++
++revoke all on function public.public_aid_requests_published_v1() from public;
++grant execute on function public.public_aid_requests_published_v1() to anon, authenticated;
++
++create or replace function public.admin_aid_requests_list_v1(p_token text)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $fn$
++begin
++  if to_regprocedure('public.admin_token_ok_v1(text)') is null
++     or not public.admin_token_ok_v1(p_token) then
++    return jsonb_build_object('ok', false, 'error', 'not_allowed', 'rows', '[]'::jsonb);
++  end if;
++
++  return jsonb_build_object(
++    'ok', true,
++    'rows', coalesce((
++      select jsonb_agg(to_jsonb(x) order by
++        case x.status when 'pending' then 0 when 'published' then 1 else 2 end,
++        x.created_at desc)
++      from (
++        select
++          r.id,
++          r.member_phone,
++          r.contact_phone,
++          r.tree_child_id,
++          r.branch_key,
++          r.situation,
++          public.family_aid_situation_label_v1(r.situation) as situation_label,
++          r.need_text,
++          r.hide_name,
++          r.status,
++          r.public_title,
++          r.public_body,
++          r.publish_contact_note,
++          r.admin_note,
++          r.created_at,
++          r.updated_at,
++          r.published_at,
++          r.closed_at,
++          coalesce(
++            nullif(btrim(c.child_name), ''),
++            nullif(btrim(to_jsonb(c)->>'name'), ''),
++            nullif(btrim(mp.display_name), ''),
++            '—'
++          ) as member_name
++        from public.family_aid_requests r
++        left join public.tree_children c on c.id = r.tree_child_id
++        left join lateral (
++          select m.display_name
++          from public.member_profiles m
++          where right(regexp_replace(coalesce(m.phone, ''), '[^0-9]', '', 'g'), 9)
++              = right(regexp_replace(coalesce(r.member_phone, ''), '[^0-9]', '', 'g'), 9)
++          order by m.updated_at desc nulls last
++          limit 1
++        ) mp on true
++        order by r.created_at desc
++        limit 300
++      ) x
++    ), '[]'::jsonb)
++  );
++end;
++$fn$;
++
++revoke all on function public.admin_aid_requests_list_v1(text) from public;
++grant execute on function public.admin_aid_requests_list_v1(text) to anon, authenticated;
++
++create or replace function public.admin_aid_request_set_status_v1(
++  p_token text,
++  p_id bigint,
++  p_status text,
++  p_admin_note text default null,
++  p_public_title text default null,
++  p_public_body text default null,
++  p_publish_contact_note text default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $fn$
++declare
++  v_status text;
++  v_row public.family_aid_requests%rowtype;
++begin
++  if to_regprocedure('public.admin_token_ok_v1(text)') is null
++     or not public.admin_token_ok_v1(p_token) then
++    return jsonb_build_object('ok', false, 'error', 'not_allowed');
++  end if;
++
++  if p_id is null or p_id < 1 then
++    return jsonb_build_object('ok', false, 'error', 'bad_id');
++  end if;
++
++  v_status := lower(btrim(coalesce(p_status, '')));
++  if v_status not in ('pending', 'published', 'closed', 'declined') then
++    return jsonb_build_object('ok', false, 'error', 'bad_status');
++  end if;
++
++  select * into v_row from public.family_aid_requests where id = p_id limit 1;
++  if not found then
++    return jsonb_build_object('ok', false, 'error', 'not_found');
++  end if;
++
++  update public.family_aid_requests r
++  set
++    status = v_status,
++    admin_note = case
++      when p_admin_note is null then r.admin_note
++      else nullif(btrim(p_admin_note), '')
++    end,
++    public_title = case
++      when v_status = 'published' then coalesce(
++        nullif(btrim(coalesce(p_public_title, '')), ''),
++        nullif(btrim(r.public_title), ''),
++        'طلب مساعدة معتمد'
++      )
++      else r.public_title
++    end,
++    public_body = case
++      when v_status = 'published' then coalesce(
++        nullif(btrim(coalesce(p_public_body, '')), ''),
++        nullif(btrim(r.public_body), ''),
++        r.need_text
++      )
++      else r.public_body
++    end,
++    publish_contact_note = case
++      when v_status = 'published' then coalesce(
++        nullif(btrim(coalesce(p_publish_contact_note, '')), ''),
++        nullif(btrim(r.publish_contact_note), ''),
++        'للتقديم: تواصل مع إدارة العائلة. التحويل عبر صندوق العائلة — وليس باسم المستفيدة.'
++      )
++      else r.publish_contact_note
++    end,
++    published_at = case
++      when v_status = 'published' then coalesce(r.published_at, now())
++      else r.published_at
++    end,
++    closed_at = case
++      when v_status in ('closed', 'declined') then now()
++      else r.closed_at
++    end,
++    updated_at = now()
++  where r.id = p_id;
++
++  return jsonb_build_object('ok', true, 'id', p_id, 'status', v_status);
++exception when others then
++  return jsonb_build_object('ok', false, 'error', 'update_failed', 'detail', left(sqlerrm, 160));
++end;
++$fn$;
++
++revoke all on function public.admin_aid_request_set_status_v1(text, bigint, text, text, text, text, text) from public;
++grant execute on function public.admin_aid_request_set_status_v1(text, bigint, text, text, text, text, text) to anon, authenticated;
++
++notify pgrst, 'reload schema';
++
++select
++  (to_regclass('public.family_aid_requests') is not null) as has_table,
++  (to_regprocedure('public.member_aid_request_submit_v1(text,text,text,boolean,text)') is not null) as has_submit,
++  (to_regprocedure('public.public_aid_requests_published_v1()') is not null) as has_public,
++  (to_regprocedure('public.admin_aid_requests_list_v1(text)') is not null) as has_admin_list;

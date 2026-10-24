@@ -50,6 +50,7 @@ type ProfileScreenProps = {
   onMemberSessionChange?: (phone: string | null) => void;
   onPhotoSaved?: () => void;
   onOpenGiving?: () => void;
+  onOpenAidRequest?: () => void;
   onOpenWomenAdmin?: () => void;
   onOpenFamilyAdmin?: () => void;
   onOpenDelegateInbox?: () => void;
@@ -157,6 +158,7 @@ export function ProfileScreen({
   onMemberSessionChange,
   onPhotoSaved,
   onOpenGiving,
+  onOpenAidRequest,
   onOpenWomenAdmin,
   onOpenFamilyAdmin,
   onOpenDelegateInbox,
@@ -647,10 +649,18 @@ export function ProfileScreen({
     >
       {member ? (
         <SceneSection>
+          {onOpenAidRequest ? (
+            <ActionButton
+              label="طلب مساعدة خاص (أرملة / مطلقة)"
+              onPress={onOpenAidRequest}
+            />
+          ) : null}
+
           {canOpenCard ? (
             <ActionButton
               label="فتح بطاقتي في الشجرة"
               onPress={() => onOpenMemberCard(member.branch_key, member.tree_child_id)}
+              variant="secondary"
             />
           ) : null}
 
