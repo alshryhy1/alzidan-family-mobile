@@ -281,6 +281,15 @@ export function HomeScreen({
   const aidNotices = useMemo(() => pulseAidNotices(publishedAid), [publishedAid]);
   const pulseNoticesWithAid = useMemo(() => [...aidNotices, ...notices], [aidNotices, notices]);
 
+  const aidHeroLine =
+    publishedAid.length > 0
+      ? `فرص مساعدة: ${publishedAid.length} · بلا اسم · من تبرع`
+      : aidStatus === 'loading'
+        ? 'جاري تحميل فرص المساعدة…'
+        : aidStatus === 'error'
+          ? 'تعذر تحميل فرص المساعدة — اسحب للتحديث'
+          : 'فرص مساعدة — افتح تبرع عند النشر';
+
   return (
     <SceneShell
       english="FAMILY PULSE"
@@ -300,8 +309,25 @@ export function HomeScreen({
           </Text>
         </View>
       }
+      heroExtra={
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenGiving}
+          style={({ pressed }) => [styles.aidHeroBand, pressed && styles.pressed]}
+        >
+          <Text style={styles.aidHeroTitle}>فرص مساعدة</Text>
+          <Text style={styles.aidHeroLine}>{aidHeroLine}</Text>
+          {publishedAid.slice(0, 2).map((row) => (
+            <Text key={row.id} numberOfLines={2} style={styles.aidHeroNeed}>
+              {(row.situationLabel || 'مساعدة') + ' · ' + (row.body || row.title || '')}
+            </Text>
+          ))}
+          <Text style={styles.aidHeroCta}>للتفاصيل والمساهمة من تبرع</Text>
+        </Pressable>
+      }
       onRefresh={refreshHome}
       refreshing={loading}
+      subtitle={aidHeroLine}
       title="أهلاً بك بين أهلك"
       variant="pulse"
     >
@@ -650,6 +676,47 @@ function homeStyles(p: ThemePalette) {
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
+  },
+  aidHeroBand: {
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(255,253,248,0.14)',
+    borderColor: 'rgba(232,213,168,0.45)',
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  aidHeroTitle: {
+    color: 'rgba(232,213,168,0.98)',
+    fontSize: 16,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aidHeroLine: {
+    color: 'rgba(255,253,248,0.88)',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aidHeroNeed: {
+    color: 'rgba(255,253,248,0.92)',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 22,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aidHeroCta: {
+    color: 'rgba(232,213,168,0.95)',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 2,
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   aidHead: {
     alignItems: 'center',
