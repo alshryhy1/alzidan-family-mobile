@@ -64,29 +64,38 @@ diff --git a/assets/js/admin-aid-requests.js b/assets/js/admin-aid-requests.js
 +    let payRef = null;
 +    if (status === "published") {
 +      const channelRaw = window.prompt(
-+        "قناة المساهمة: 1=عثيم  2=سوا كهرباء  3=سوا إيجار  4=صندوق العائلة",
++        "قناة المساهمة: 1=عثيم  2=كهرباء  3=إيجار  4=ماء  5=صندوق العائلة",
 +        row.pay_channel === "sawaa_electric"
 +          ? "2"
 +          : row.pay_channel === "sawaa_rent"
 +            ? "3"
-+            : row.pay_channel === "family_fund"
++            : row.pay_channel === "sawaa_water"
 +              ? "4"
-+              : "1",
++              : row.pay_channel === "family_fund"
++                ? "5"
++                : row.pay_channel === "othaim_card"
++                  ? "1"
++                  : "2",
 +      );
 +      if (channelRaw === null) return;
 +      const ch = String(channelRaw || "").trim();
 +      if (ch === "1" || /othaim|عثيم/i.test(ch)) payChannel = "othaim_card";
 +      else if (ch === "2" || /كهرب/i.test(ch)) payChannel = "sawaa_electric";
 +      else if (ch === "3" || /ايجار|إيجار|rent/i.test(ch)) payChannel = "sawaa_rent";
-+      else if (ch === "4" || /صندوق|fund/i.test(ch)) payChannel = "family_fund";
-+      else payChannel = "othaim_card";
++      else if (ch === "4" || /ماء|مياه|water/i.test(ch)) payChannel = "sawaa_water";
++      else if (ch === "5" || /صندوق|fund/i.test(ch)) payChannel = "family_fund";
++      else payChannel = String(row.pay_channel || "sawaa_electric");
 +
 +      const refPrompt =
 +        payChannel === "othaim_card"
 +          ? "رقم بطاقة العثيم للمساهمة:"
-+          : payChannel === "family_fund"
-+            ? "مرجع صندوق العائلة (اختياري):"
-+            : "رقم/مرجع فاتورة سوا:";
++          : payChannel === "sawaa_electric"
++            ? "رقم فاتورة الكهرباء:"
++            : payChannel === "sawaa_rent"
++              ? "رقم عقد الإيجار:"
++              : payChannel === "sawaa_water"
++                ? "رقم فاتورة الماء:"
++                : "مرجع صندوق العائلة (اختياري):";
 +      const refRaw = window.prompt(refPrompt, String(row.pay_ref || ""));
 +      if (refRaw === null) return;
 +      payRef = String(refRaw || "").trim();

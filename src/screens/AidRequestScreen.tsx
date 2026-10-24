@@ -5,11 +5,14 @@ import { ActionButton } from '../components/ActionButton';
 import { PublishedAidOpportunityCard } from '../components/PublishedAidOpportunityCard';
 import { SceneSection, SceneShell } from '../components/scene';
 import {
+  AID_NEED_KINDS,
   AID_SITUATIONS,
+  aidPayRefFieldLabel,
   aidStatusLabel,
   loadMyAidRequests,
   loadPublishedAidRequests,
   submitAidRequest,
+  type AidNeedKind,
   type AidSituation,
   type MyAidRequest,
   type PublishedAidRequest,
@@ -49,10 +52,13 @@ export function AidRequestScreen({
   const [situation, setSituation] = useState<AidSituation>('other');
   const [situationLoading, setSituationLoading] = useState(false);
   const [canSubmitPrivateAid, setCanSubmitPrivateAid] = useState(false);
-  const [needText, setNeedText] = useState('');
+  const [needKind, setNeedKind] = useState<AidNeedKind>('sawaa_electric');
+  const [payRef, setPayRef] = useState('');
+  const [needNote, setNeedNote] = useState('');
   const [hideName, setHideName] = useState(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+  const selectedNeed = AID_NEED_KINDS.find((k) => k.id === needKind) || AID_NEED_KINDS[0];
   const [error, setError] = useState('');
   const [published, setPublished] = useState<PublishedAidRequest[]>([]);
   const [mine, setMine] = useState<MyAidRequest[]>([]);
@@ -125,18 +131,25 @@ export function AidRequestScreen({
       setStatus('طلب المساعدة الخاص متاح فقط لمن حالتها أرملة أو مطلقة في الشجرة.');
       return;
     }
+    if (String(payRef || '').trim().length < 4) {
+      setStatus('أدخلي رقم الفاتورة أو العقد أو البطاقة في الخانة.');
+      return;
+    }
     setBusy(true);
     setStatus('');
     try {
       await submitAidRequest({
         phone,
         situation,
-        needText,
+        needKind,
+        payRef,
+        needNote,
         hideName,
       });
-      setNeedText('');
+      setPayRef('');
+      setNeedNote('');
       setStatus(
-        'وصل طلبك للإدارة بسرية. بعد الاعتماد يُنشر بلا اسم — المساهمة ببطاقة العثيم أو سداد فاتورة سوا.',
+        'وصل طلبك للإدارة بسرية. بعد الاعتماد تُنشر خانة المساعدة (الرقم) بلا اسمك.',
       );
       setPane('mine');
       await refresh();
@@ -161,7 +174,7 @@ export function AidRequestScreen({
         pane === 'help'
           ? 'بلا اسم ولا جوال. نوع الطلب والاحتياج فقط — ساهم ببطاقة العثيم أو سداد فاتورة سوا.'
           : pane === 'request'
-            ? 'طلبك يصل للإدارة فقط. عند النشر يُخفى اسمك افتراضياً.'
+            ? 'اختاري النوع وأدخلي الرقم: فاتورة كهرباء / عقد إيجار / ماء / بطاقة العثيم.'
             : 'متابعة حالة طلباتك.'
       }
       title={pane === 'help' ? 'فرص مساعدة' : pane === 'request' ? 'طلب مساعدة' : 'طلباتي'}
@@ -225,15 +238,43 @@ export function AidRequestScreen({
               </View>
               <Text style={styles.hint}>من ملفك في الشجرة — لا حاجة للاختيار.</Text>
 
-              <Text style={styles.fieldLabel}>الاحتياج</Text>
+              <Text style={styles.fieldLabel}>نوع الطلب</Text>
+              <View style={styles.chips}>
+                {AID_NEED_KINDS.map((kind) => {
+                  const active = needKind === kind.id;
+                  return (
+                    <Pressable
+                      key={kind.id}
+                      onPress={() => setNeedKind(kind.id)}
+                      style={[styles.chip, active && styles.chipActive]}
+                    >
+                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{kind.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.fieldLabel}>{selectedNeed.fieldLabel}</Text>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setPayRef}
+                placeholder={selectedNeed.placeholder}
+                placeholderTextColor={p.textMuted}
+                style={styles.refInput}
+                textAlign="left"
+                value={payRef}
+              />
+
+              <Text style={styles.fieldLabel}>ملاحظة للإدارة (اختياري)</Text>
               <TextInput
                 multiline
-                onChangeText={setNeedText}
-                placeholder="مثال: مساعدة إيجار لشهرين…"
+                onChangeText={setNeedNote}
+                placeholder="مثال: متأخر شهرين…"
                 placeholderTextColor={p.textMuted}
                 style={styles.input}
                 textAlign="right"
-                value={needText}
+                value={needNote}
               />
 
               <View style={styles.switchRow}>
@@ -245,7 +286,7 @@ export function AidRequestScreen({
                 <Text style={styles.switchLabel}>إخفاء اسمي عند النشر</Text>
               </View>
               <Text style={styles.hint}>
-                عند النشر يظهر نوع الطلب والاحتياج فقط. المساهمة عبر بطاقة العثيم أو سداد فاتورة سوا — بلا اسمك.
+                عند النشر يظهر نوع الطلب + خانة الرقم للمساهمة فقط — بلا اسمك ولا جوالك.
               </Text>
 
               <ActionButton
@@ -272,6 +313,12 @@ export function AidRequestScreen({
                   {row.situationLabel} · {aidStatusLabel(row.status)}
                 </Text>
                 <Text style={styles.cardBody}>{row.needText}</Text>
+                {row.payChannelLabel || row.payRef ? (
+                  <Text style={styles.meta}>
+                    {(row.payChannelLabel || aidPayRefFieldLabel(row.payChannel)) +
+                      (row.payRef ? `: ${row.payRef}` : '')}
+                  </Text>
+                ) : null}
                 <Text style={styles.meta}>
                   {row.hideName ? 'الاسم مخفي عند النشر' : 'قد يظهر الاسم عند النشر'}
                 </Text>
@@ -383,11 +430,25 @@ function aidStyles(p: ThemePalette) {
       borderRadius: 14,
       borderWidth: 1,
       color: p.text,
-      minHeight: 110,
+      minHeight: 90,
       padding: 14,
       textAlignVertical: 'top' as const,
       writingDirection: 'rtl' as const,
       marginBottom: 12,
+    },
+    refInput: {
+      backgroundColor: p.surface || '#FFFDF8',
+      borderColor: 'rgba(196,163,90,0.45)',
+      borderRadius: 14,
+      borderWidth: 1,
+      color: p.text,
+      fontSize: 17,
+      fontWeight: '800' as const,
+      letterSpacing: 0.4,
+      marginBottom: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      writingDirection: 'ltr' as const,
     },
     switchRow: {
       alignItems: 'center' as const,

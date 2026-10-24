@@ -93,9 +93,13 @@ export function PublishedAidOpportunityCard({ row, compact = false, onOpenGiving
             <Text style={styles.actionBtnText}>
               {channel === 'othaim_card'
                 ? 'نسخ / إرسال رقم بطاقة العثيم'
-                : channel === 'sawaa_electric' || channel === 'sawaa_rent'
-                  ? 'نسخ / إرسال مرجع فاتورة سوا'
-                  : 'نسخ / إرسال مرجع المساهمة'}
+                : channel === 'sawaa_electric'
+                  ? 'نسخ / إرسال رقم فاتورة الكهرباء'
+                  : channel === 'sawaa_rent'
+                    ? 'نسخ / إرسال رقم عقد الإيجار'
+                    : channel === 'sawaa_water'
+                      ? 'نسخ / إرسال رقم فاتورة الماء'
+                      : 'نسخ / إرسال مرجع المساهمة'}
             </Text>
           </Pressable>
         ) : null}
