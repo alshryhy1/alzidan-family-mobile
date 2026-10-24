@@ -5,7 +5,13 @@ export type FamilyAdminSession = {
   enabled: boolean;
   treeChildId: number | null;
   personId: string | null;
+  reason?: string | null;
 };
+
+/** لا نفتح الإدارة إلا بـ true الصريح من السيرفر. */
+export function isFamilyAdminEnabledFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === 'true';
+}
 
 export type FamilyAdminPerson = {
   id: number;
@@ -77,7 +83,8 @@ export class FamilyAdminRpcMissingError extends Error {
 
 type SessionRpc = {
   ok?: boolean;
-  enabled?: boolean;
+  enabled?: boolean | string | number | null;
+  reason?: string | null;
   tree_child_id?: number | null;
   person_id?: string | null;
 };
@@ -200,16 +207,23 @@ function assertOk(row: ActionRpc | undefined) {
 
 export async function fetchFamilyAdminSession(phone: string): Promise<FamilyAdminSession> {
   const cleaned = String(phone || '').trim();
-  if (!cleaned) return { enabled: false, treeChildId: null, personId: null };
+  if (!cleaned) return { enabled: false, treeChildId: null, personId: null, reason: 'bad_phone' };
   try {
     const row = await callPublicRpc<SessionRpc>('family_admin_session_v1', { p_phone: cleaned });
+    const treeChildId = row?.tree_child_id != null ? Number(row.tree_child_id) : null;
+    const enabled =
+      Boolean(row) &&
+      row?.ok !== false &&
+      isFamilyAdminEnabledFlag(row?.enabled) &&
+      Number(treeChildId || 0) > 0;
     return {
-      enabled: Boolean(row && row.ok !== false && row.enabled),
-      treeChildId: row?.tree_child_id != null ? Number(row.tree_child_id) : null,
+      enabled,
+      treeChildId: Number(treeChildId || 0) > 0 ? treeChildId : null,
       personId: row?.person_id ? String(row.person_id) : null,
+      reason: row?.reason ? String(row.reason) : null,
     };
   } catch {
-    return { enabled: false, treeChildId: null, personId: null };
+    return { enabled: false, treeChildId: null, personId: null, reason: 'rpc_failed' };
   }
 }
 

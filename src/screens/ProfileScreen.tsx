@@ -185,6 +185,7 @@ export function ProfileScreen({
   const [inbox, setInbox] = useState<OccasionInboxItem[]>([]);
   const [womenManagerEnabled, setWomenManagerEnabled] = useState(false);
   const [familyAdminEnabled, setFamilyAdminEnabled] = useState(false);
+  const [familyAdminTreeChildId, setFamilyAdminTreeChildId] = useState<number | null>(null);
   const [delegateInboxEnabled, setDelegateInboxEnabled] = useState(false);
   const [canRequestPrivateAid, setCanRequestPrivateAid] = useState(false);
   const [privateAidLabel, setPrivateAidLabel] = useState('طلب مساعدة خاص');
@@ -399,9 +400,11 @@ export function ProfileScreen({
       setInbox([]);
       setWomenManagerEnabled(false);
       setFamilyAdminEnabled(false);
+      setFamilyAdminTreeChildId(null);
       setDelegateInboxEnabled(false);
       return;
     }
+    const memberTreeId = Number(member?.tree_child_id || 0);
     fetchOccasionInbox(p)
       .then(setInbox)
       .catch(() => setInbox([]));
@@ -409,12 +412,22 @@ export function ProfileScreen({
       .then((session) => setWomenManagerEnabled(session.enabled))
       .catch(() => setWomenManagerEnabled(false));
     fetchFamilyAdminSession(p)
-      .then((session) => setFamilyAdminEnabled(session.enabled))
-      .catch(() => setFamilyAdminEnabled(false));
+      .then((session) => {
+        const grantId = Number(session.treeChildId || 0);
+        // المنحة يجب أن تطابق بطاقة العضو نفسه — لا توريث عبر person_id.
+        const matched =
+          session.enabled && grantId > 0 && memberTreeId > 0 && grantId === memberTreeId;
+        setFamilyAdminEnabled(matched);
+        setFamilyAdminTreeChildId(matched ? grantId : null);
+      })
+      .catch(() => {
+        setFamilyAdminEnabled(false);
+        setFamilyAdminTreeChildId(null);
+      });
     fetchDelegateInboxSession(p)
       .then((session) => setDelegateInboxEnabled(session.enabled))
       .catch(() => setDelegateInboxEnabled(false));
-  }, [member?.phone, savedPhone]);
+  }, [member?.phone, member?.tree_child_id, savedPhone]);
 
   useEffect(() => {
     const p = canonicalizePhone(member?.phone || savedPhone || '');
@@ -436,6 +449,7 @@ export function ProfileScreen({
     setSavedPhone('');
     setWomenManagerEnabled(false);
     setFamilyAdminEnabled(false);
+    setFamilyAdminTreeChildId(null);
     setDelegateInboxEnabled(false);
     setNational('');
     setUnregisteredPhone('');
@@ -857,7 +871,10 @@ export function ProfileScreen({
         </SceneSection>
       ) : null}
 
-      {member && familyAdminEnabled ? (
+      {member &&
+      familyAdminEnabled &&
+      familyAdminTreeChildId &&
+      Number(member.tree_child_id || 0) === familyAdminTreeChildId ? (
         <SceneSection title="إدارة العائلة">
           <Text style={styles.note}>
             صلاحية يومية من الإدارة الأصلية: قبول ورفض وتعديل صلاحيات المناديب من نفس مصدر الموقع، بلا رمز الإدارة.
@@ -869,7 +886,7 @@ export function ProfileScreen({
         </SceneSection>
       ) : null}
 
-      {member && delegateInboxEnabled ? (
+      {member && delegateInboxEnabled && isDelegateSession ? (
         <SceneSection title="طلبات فرعي">
           <Text style={styles.note}>
             مندوب معتمد على هذا الجهاز. الطلبات المعلّقة لفرعك فقط، بلا سرّ الموقع وبلا إدارة عائلة.
