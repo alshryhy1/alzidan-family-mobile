@@ -9,9 +9,9 @@
 | الفرع | `cursor/appstore-ship-e8cc` |
 | PR | https://github.com/alshryhy1/alzidan-family-mobile/pull/28 |
 | version | **2.0.5** |
-| buildNumber في git | **77** (التالي عبر EAS = **78**) |
-| آخر بناء على Connect | **77** |
-| المطلوب للمتجر الآن | بناء ورفع **78** ثم Submit for Review |
+| buildNumber في git | **78** |
+| آخر بناء على Connect | **78** |
+| المطلوب للمتجر الآن | مرفوع **78** — Submit for Review ثم Submit for Review |
 
 ### إصلاحات داخل الفرع
 1. مساعدة سرية + قنوات عثيم/سوا  

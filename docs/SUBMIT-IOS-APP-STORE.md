@@ -2,8 +2,8 @@
 
 **فرع الرفع الوحيد:** `cursor/appstore-ship-e8cc`  
 **الإصدار:** `2.0.5`  
-**buildNumber في الفرع الآن:** `77` (آخر مرفوع)  
-**البناء التالي:** مع `autoIncrement` يصير **78**
+**buildNumber في الفرع الآن:** `78` (آخر مرفوع)  
+**البناء التالي:** مع `autoIncrement` يصير **79**
 
 لا تستخدم فروع أخرى للستور.
 
@@ -34,7 +34,7 @@ npx eas-cli submit --platform ios --profile production --latest --non-interactiv
 المتوقع في اللوج: `Bumping expo.ios.buildNumber from 77 to 78`  
 ثم في App Store Connect: **2.0.5 (78)**
 
-بعد الرفع في Connect: اختر البناء **78** → Submit for Review.
+بعد الرفع في Connect: اختر البناء **78** (مرفوع) → Submit for Review.
 
 ## ملاحظات ما الجديد
 
