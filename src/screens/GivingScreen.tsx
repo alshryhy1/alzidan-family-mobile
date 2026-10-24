@@ -48,7 +48,12 @@ export function GivingScreen({
     try {
       const [next, aidRows] = await Promise.all([
         fetchGivingSettings(),
-        loadPublishedAidRequests().catch(() => [] as PublishedAidRequest[]),
+        loadPublishedAidRequests().catch((err) => {
+          if (__DEV__) {
+            console.warn('[giving] published aid', err instanceof Error ? err.message : err);
+          }
+          return [] as PublishedAidRequest[];
+        }),
       ]);
       setSettings(next);
       setAmount(next.supportAmounts[0] ?? 10);
