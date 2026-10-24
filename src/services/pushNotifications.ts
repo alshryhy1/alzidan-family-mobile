@@ -204,6 +204,15 @@ export function formatFormalNotificationText(input: {
     };
   }
 
+  if (type === 'aid_opportunity' || type === 'family_aid' || type === 'aid') {
+    return {
+      typeLabel: 'حالة إنسانية',
+      subject: 'حالة إنسانية',
+      body: fallbackBody || 'توجد حالة إنسانية في العائلة — للمساهمة من التبرع.',
+      title: fallbackTitle || 'حالة إنسانية',
+    };
+  }
+
   if (
     type === 'branch_delegate_new_request' ||
     type === 'admin_new_request' ||
