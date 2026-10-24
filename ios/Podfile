@@ -64,12 +64,18 @@ target 'aaelhalzydan' do
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
 
-    # Official Expo fix: disable signing for every Pods resource bundle target.
+    # Xcode 26+ hard-fails Pods still on iOS 9/13 (resource bundles especially).
+    # Force every Pod target + project-level setting — do not rely on comparison alone.
+    min_ios = podfile_properties['ios.deploymentTarget'] || '16.4'
+    installer.pods_project.build_configurations.each do |build_configuration|
+      build_configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios
+    end
     installer.pods_project.targets.each do |target|
-      next unless target.respond_to?(:product_type) && target.product_type == 'com.apple.product-type.bundle'
-
       target.build_configurations.each do |build_configuration|
-        build_configuration.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+        build_configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios
+        if target.respond_to?(:product_type) && target.product_type == 'com.apple.product-type.bundle'
+          build_configuration.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+        end
       end
     end
   end

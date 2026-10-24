@@ -1,5 +1,9 @@
 import { callPublicRpc } from './supabase';
-import { eventFamilyOf, normalizeMobileEventType } from '../utils/eventRequestMessage';
+import {
+  eventFamilyOf,
+  isFinjalEventType,
+  normalizeMobileEventType,
+} from '../utils/eventRequestMessage';
 
 export type OccasionInteractionType = {
   id?: number;
@@ -189,4 +193,108 @@ export async function fetchOccasionInbox(phone: string) {
     { p_phone: phone },
   );
   return Array.isArray(data?.items) ? data.items : [];
+}
+
+/** أقصى بقاء لردود الفنجال/الدعوة بعد آخر تفاعل إن تعذّر معرفة المجلس. */
+export const FINJAL_INBOX_KEEP_MS = 36 * 60 * 60 * 1000;
+/** بقية المناسبات: أسبوع من آخر تفاعل إن لم تعد ظاهرة على المجلس. */
+export const OCCASION_INBOX_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** دعوة / فنجال / حفل — تُخفى فور انتهاء المناسبة من المجلس. */
+export function isInviteInboxType(type?: string | null) {
+  const t = normalizeMobileEventType(type);
+  return isFinjalEventType(t) || RSVP_TYPES.has(t) || CEREMONY_TYPES.has(t);
+}
+
+export function occasionInboxTimestampMs(item: OccasionInboxItem): number {
+  const latest = Date.parse(String(item.latest_at || ''));
+  if (Number.isFinite(latest) && latest > 0) return latest;
+  const messages = Array.isArray(item.messages) ? item.messages : [];
+  let max = 0;
+  for (const message of messages) {
+    const at = Date.parse(String(message.created_at || ''));
+    if (Number.isFinite(at) && at > max) max = at;
+  }
+  return max;
+}
+
+export type FilterOccasionInboxOptions = {
+  /**
+   * معرفات المناسبات الظاهرة الآن على المجلس.
+   * - `null` / `undefined`: المجلس لم يُحمَّل بعد — نرجع لعمر الرد فقط.
+   * - مصفوفة (حتى فارغة): المجلس معروف — الدعوات خارجها تُخفى فورًا.
+   */
+  activeOccasionIds?: Iterable<string | number> | null;
+  now?: Date;
+};
+
+/**
+ * يخفي مشاركات الدعوة/الفنجال المنتهية من «وصلك من العائلة»
+ * حتى لا تبقى ردود قديمة مختلطة مع دعوة جديدة.
+ */
+export function isCurrentOccasionInboxItem(
+  item: OccasionInboxItem,
+  opts: FilterOccasionInboxOptions = {},
+) {
+  const nowMs = (opts.now ?? new Date()).getTime();
+  const id = String(item.occasion_id ?? '').trim();
+  const boardKnown = opts.activeOccasionIds != null;
+  const active = boardKnown
+    ? new Set(
+        [...opts.activeOccasionIds!].map((value) => String(value).trim()).filter(Boolean),
+      )
+    : null;
+
+  if (boardKnown && id && active!.has(id)) return true;
+
+  const at = occasionInboxTimestampMs(item);
+  const age = at > 0 ? nowMs - at : Number.POSITIVE_INFINITY;
+
+  if (isInviteInboxType(item.occasion_type)) {
+    // بعد تحميل المجلس: أي دعوة/فنجال ليست ظاهرة الآن تُخفى فورًا
+    // (حتى لو الرد خلال ساعات) حتى لا تبقى مشاركات منتهية مثل «أعتذر عن الحضور».
+    if (boardKnown) return false;
+    return age <= FINJAL_INBOX_KEEP_MS;
+  }
+
+  return age <= OCCASION_INBOX_KEEP_MS;
+}
+
+export function filterCurrentOccasionInbox(
+  items: OccasionInboxItem[] | null | undefined,
+  opts: FilterOccasionInboxOptions = {},
+) {
+  if (!Array.isArray(items) || !items.length) return [];
+  return items.filter((item) => isCurrentOccasionInboxItem(item, opts));
+}
+
+/** تسمية الدعوة في صندوق الوارد حتى لا تُخلط جلسة قديمة بجديدة. */
+export function occasionInboxHeadline(item: OccasionInboxItem) {
+  const person = String(item.occasion_person || '').trim();
+  const yours = yourOccasionPhrase(item.occasion_type);
+  if (!person) return yours;
+  if (yours === 'دعوتك') return `دعوة ${person}`;
+  return `${yours} · ${person}`;
+}
+
+/** وقت الرد بالعربية حتى لا تبدو رسالة سابقة وكأنها اليوم. */
+export function formatOccasionInboxWhen(raw?: string | null, now: Date = new Date()) {
+  const at = Date.parse(String(raw || ''));
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const diffMs = now.getTime() - at;
+  if (diffMs < 0) return 'الآن';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'الآن';
+  if (mins < 60) return `قبل ${mins} د`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours === 1 ? 'قبل ساعة' : `قبل ${hours} س`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'أمس';
+  if (days < 14) return `قبل ${days} يوم`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 8) return weeks === 1 ? 'قبل أسبوع' : `قبل ${weeks} أسابيع`;
+  const d = new Date(at);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }

@@ -1,0 +1,765 @@
+From 9b5227b383796249f7363cb42df0b7d54b55f27e Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Sat, 24 Oct 2026 11:12:12 +0000
+Subject: [PATCH] =?UTF-8?q?feat(web):=20=D8=AE=D8=A7=D9=86=D8=A7=D8=AA=20?=
+ =?UTF-8?q?=D9=85=D8=B3=D8=A7=D9=87=D9=85=D8=A9=20=D8=B9=D8=AB=D9=8A=D9=85?=
+ =?UTF-8?q?/=D9=83=D9=87=D8=B1=D8=A8=D8=A7=D8=A1/=D8=A5=D9=8A=D8=AC=D8=A7?=
+ =?UTF-8?q?=D8=B1/=D9=85=D8=A7=D8=A1=20=D8=B9=D9=86=D8=AF=20=D9=86=D8=B4?=
+ =?UTF-8?q?=D8=B1=20=D8=B7=D9=84=D8=A8=20=D8=A7=D9=84=D9=85=D8=B3=D8=A7?=
+ =?UTF-8?q?=D8=B9=D8=AF=D8=A9?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+عرض القناة والرقم في الإدارة، وتمريرها لـ RPC عند الاعتماد، مع ملفات SQL للقنوات وأنواع الطلب.
+---
+ assets/js/admin-aid-requests.js               | 110 ++++++-
+ pages/admin.html                              |   6 +-
+ .../sql/COPY-ME-family-aid-need-kinds-v1.sql  | 232 +++++++++++++++
+ .../COPY-ME-family-aid-pay-channels-v1.sql    | 271 ++++++++++++++++++
+ 4 files changed, 606 insertions(+), 13 deletions(-)
+ create mode 100644 supabase/sql/COPY-ME-family-aid-need-kinds-v1.sql
+ create mode 100644 supabase/sql/COPY-ME-family-aid-pay-channels-v1.sql
+
+diff --git a/assets/js/admin-aid-requests.js b/assets/js/admin-aid-requests.js
+index 9243bec..5007b10 100644
+--- a/assets/js/admin-aid-requests.js
++++ b/assets/js/admin-aid-requests.js
+@@ -46,6 +46,16 @@
+     return status || "—";
+   }
+ 
++  function payChannelLabel(channel) {
++    const c = String(channel || "").toLowerCase();
++    if (c === "othaim_card") return "بطاقة العثيم";
++    if (c === "sawaa_electric") return "فاتورة كهرباء";
++    if (c === "sawaa_rent") return "عقد إيجار";
++    if (c === "sawaa_water") return "فاتورة ماء";
++    if (c === "family_fund") return "صندوق العائلة";
++    return "—";
++  }
++
+   function whatsAppUrl(phone) {
+     let d = String(phone || "").replace(/\D/g, "");
+     if (!d) return "";
+@@ -91,6 +101,11 @@
+                 '" target="_blank" rel="noopener">واتساب</a>'
+               : "")
+           : "—";
++        const payCell =
++          esc(payChannelLabel(row.pay_channel || row.pay_channel_label)) +
++          (row.pay_ref
++            ? '<div class="hint" dir="ltr">' + esc(row.pay_ref) + "</div>"
++            : '<div class="hint" style="color:#991b1b">بلا رقم مساهمة</div>');
+         const actions =
+           '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+           (row.status !== "published"
+@@ -132,7 +147,7 @@
+           esc(row.public_title || "—") +
+           "</td>" +
+           "<td>" +
+-          esc(row.publish_contact_note || "صندوق العائلة / تواصل الإدارة") +
++          payCell +
+           "</td>" +
+           "<td>" +
+           actions +
+@@ -167,13 +182,15 @@
+       }
+       rowsCache = Array.isArray(data.rows) ? data.rows : [];
+       renderTable(rowsCache);
+-      setStatus("النشر للعامة بلا اسم. المساعدة عبر صندوق العائلة — لا تنشر حساباً باسم المستفيدة.");
++      setStatus(
++        "النشر بلا اسم: اختر قناة المساهمة (عثيم / كهرباء / إيجار / ماء) مع الرقم — لا تنشر حساباً باسم المستفيدة.",
++      );
+     } catch (error) {
+       console.error(error);
+       const msg = error && error.message ? String(error.message) : "خطأ";
+       if (/could not find the function|schema cache|PGRST202/i.test(msg)) {
+         setStatus(
+-          "نفّذ SQL: supabase/sql/COPY-ME-family-aid-requests-v1.sql ثم حدّث الصفحة.",
++          "نفّذ SQL: supabase/sql/COPY-ME-family-aid-need-kinds-v1.sql ثم حدّث الصفحة.",
+           true,
+         );
+       } else {
+@@ -186,6 +203,50 @@
+     }
+   }
+ 
++  function pickPayChannel(row) {
++    const current = String(row.pay_channel || "").toLowerCase();
++    const def =
++      current === "sawaa_electric"
++        ? "2"
++        : current === "sawaa_rent"
++          ? "3"
++          : current === "sawaa_water"
++            ? "4"
++            : current === "family_fund"
++              ? "5"
++              : current === "othaim_card"
++                ? "1"
++                : "2";
++    const channelRaw = window.prompt(
++      "قناة المساهمة: 1=عثيم  2=كهرباء  3=إيجار  4=ماء  5=صندوق العائلة",
++      def,
++    );
++    if (channelRaw === null) return null;
++    const ch = String(channelRaw || "").trim();
++    if (ch === "1" || /othaim|عثيم/i.test(ch)) return "othaim_card";
++    if (ch === "2" || /كهرب/i.test(ch)) return "sawaa_electric";
++    if (ch === "3" || /ايجار|إيجار|rent/i.test(ch)) return "sawaa_rent";
++    if (ch === "4" || /ماء|مياه|water/i.test(ch)) return "sawaa_water";
++    if (ch === "5" || /صندوق|fund/i.test(ch)) return "family_fund";
++    return current || "sawaa_electric";
++  }
++
++  function pickPayRef(payChannel, row) {
++    const refPrompt =
++      payChannel === "othaim_card"
++        ? "رقم بطاقة العثيم للمساهمة:"
++        : payChannel === "sawaa_electric"
++          ? "رقم فاتورة الكهرباء:"
++          : payChannel === "sawaa_rent"
++            ? "رقم عقد الإيجار:"
++            : payChannel === "sawaa_water"
++              ? "رقم فاتورة الماء:"
++              : "مرجع صندوق العائلة (اختياري):";
++    const refRaw = window.prompt(refPrompt, String(row.pay_ref || ""));
++    if (refRaw === null) return null;
++    return String(refRaw || "").trim();
++  }
++
+   async function setStatusAction(id, status) {
+     if (!getAdminToken()) {
+       setStatus("سجّل دخول الإدارة أولاً.", true);
+@@ -201,18 +262,31 @@
+     const note =
+       status === "published"
+         ? window.prompt(
+-            "ملاحظة التواصل للعامة (صندوق العائلة / واتساب الإدارة):",
++            "ملاحظة للعامة (اختياري):",
+             String(
+               row.publish_contact_note ||
+-                "للتقديم: تواصل مع إدارة العائلة. التحويل عبر صندوق العائلة — وليس باسم المستفيدة.",
++                "ساهم عبر خانة الرقم أدناه — بلا تحويل باسم المستفيدة.",
+             ),
+           )
+         : null;
+     if (status === "published" && note === null) return;
+ 
++    let payChannel = null;
++    let payRef = null;
++    if (status === "published") {
++      payChannel = pickPayChannel(row);
++      if (payChannel === null) return;
++      payRef = pickPayRef(payChannel, row);
++      if (payRef === null) return;
++      if (payChannel !== "family_fund" && (!payRef || payRef.length < 4)) {
++        setStatus("يلزم رقم مساهمة (فاتورة / عقد / بطاقة) قبل النشر.", true);
++        return;
++      }
++    }
++
+     setStatus("جاري الحفظ…");
+     try {
+-      const res = await sb.rpc("admin_aid_request_set_status_v1", {
++      const payload = {
+         p_token: getAdminToken(),
+         p_id: Number(id),
+         p_status: status,
+@@ -220,7 +294,12 @@
+         p_public_title: defaultTitle,
+         p_public_body: status === "published" ? String(row.need_text || "") : null,
+         p_publish_contact_note: status === "published" ? String(note || "").trim() : null,
+-      });
++      };
++      if (status === "published") {
++        payload.p_pay_channel = payChannel;
++        payload.p_pay_ref = payRef;
++      }
++      const res = await sb.rpc("admin_aid_request_set_status_v1", payload);
+       if (res.error) throw res.error;
+       if (res.data && res.data.ok === false) {
+         throw new Error(res.data.error || "فشل الحفظ");
+@@ -233,7 +312,6 @@
+             body: {
+               mode: "aid_opportunity",
+               request_id: Number(id),
+-              // لا يُرسل إشعار «فرصة» لجوال مقدمة الطلب
+               exclude_phone: String(row.member_phone || row.contact_phone || ""),
+             },
+           });
+@@ -257,12 +335,24 @@
+       await loadRows();
+       setStatus(
+         status === "published"
+-          ? "نُشر للعامة بلا اسم. المساعدة عبر الملاحظة المعروضة." + pushNote
++          ? "نُشر بلا اسم. المساهمة عبر " +
++              payChannelLabel(payChannel) +
++              (payRef ? " · " + payRef : "") +
++              "." +
++              pushNote
+           : "تم تحديث الحالة.",
+       );
+     } catch (error) {
+       console.error(error);
+-      setStatus("تعذر التحديث: " + (error && error.message ? error.message : "خطأ"), true);
++      const msg = error && error.message ? String(error.message) : "خطأ";
++      if (/could not find the function|PGRST202|pay_channel/i.test(msg)) {
++        setStatus(
++          "حدّث SQL: supabase/sql/COPY-ME-family-aid-pay-channels-v1.sql ثم need-kinds ثم أعد النشر.",
++          true,
++        );
++      } else {
++        setStatus("تعذر التحديث: " + msg, true);
++      }
+     }
+   }
+ 
+diff --git a/pages/admin.html b/pages/admin.html
+index 2b5c78d..7803115 100644
+--- a/pages/admin.html
++++ b/pages/admin.html
+@@ -318,7 +318,7 @@
+   <div class="section-header">
+     <div>
+       <div class="section-title">طلبات المساعدة — نشر سري</div>
+-      <div class="hint">من التطبيق: طلب خاص (أرملة/مطلقة/أخرى). اعتمد وانشر بلا اسم. المساعدة عبر صندوق العائلة — لا تنشر حساب المستفيدة.</div>
++      <div class="hint">من التطبيق: نوع الطلب + الرقم (كهرباء / إيجار / ماء / عثيم). اعتمد وانشر بلا اسم مع خانة المساهمة — لا تنشر حساب المستفيدة.</div>
+     </div>
+   </div>
+   <div class="card">
+@@ -345,7 +345,7 @@
+             <th>التواصل</th>
+             <th>الاحتياج</th>
+             <th>عنوان النشر</th>
+-            <th>ملاحظة العامة</th>
++            <th>خانة المساهمة</th>
+             <th>إجراء</th>
+           </tr>
+         </thead>
+@@ -757,5 +757,5 @@
+   </div>
+ </section>
+ <footer>شجرة عائلة الزيدان — صفحة إدارة</footer></div><dialog id="tree-card-edit-dialog"><form id="tree-card-edit-form" class="edit-dialog-body" method="post" action="#"><div class="section-title" style="font-size: 19px; margin-bottom: 6px;">تصحيح بطاقة الشجرة</div><div class="hint" style="margin-bottom: 14px;">القسم الأول للمراجعة فقط. القسم الثاني لتصحيح الإدارة — الأب المختار من الشجرة هو المرجع عند الحفظ.</div><section class="tce-section tce-original-section"><div class="tce-section-title">1) الطلب الأصلي (للمراجعة فقط)</div><div id="edit-card-original-review" class="tce-original-review"></div></section><section class="tce-section tce-correction-section"><div class="tce-section-title">2) تصحيح الإدارة</div><div class="grid"><div class="field"><label for="edit-card-branch">الفرع</label><select id="edit-card-branch" name="branch" required><option value="زيدان">زيدان</option><option value="مزيد">مزيد</option><option value="زايد">زايد</option><option value="لاحم">لاحم</option><option value="ملحم">ملحم</option></select></div><div class="field"><label for="edit-card-person-name">اسم الشخص المضاف</label><input id="edit-card-person-name" name="personName" type="text" required autocomplete="off" /></div><div class="field" style="grid-column: 1 / -1;"><label>الأب</label><div id="edit-card-father-current" class="tce-father-current hint">الأب الحالي: —</div><div class="tce-father-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;"><button type="button" class="btn btn-outline btn-sm" id="edit-card-father-change">تغيير الأب</button><button type="button" class="btn btn-outline btn-sm" id="edit-card-father-clear" style="display:none;">مسح الاختيار</button></div><div class="fm-search-wrap" id="edit-card-father-search-wrap" style="display:none;"><input id="edit-card-father-search" name="fatherSearch" type="search" placeholder="ابحث عن الأب بالاسم…" autocomplete="off" /><div id="edit-card-father-results" class="fm-search-results" role="listbox"></div></div><input type="hidden" id="edit-card-father-path" name="fatherPath" value="" /><input type="hidden" id="edit-card-father-person-id" name="fatherPersonId" value="" /><input type="hidden" id="edit-card-father-label" name="fatherLabel" value="" /></div><div class="field"><label for="edit-card-gf1">الجد 1</label><input id="edit-card-gf1" name="grandfather1" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf2">الجد 2</label><input id="edit-card-gf2" name="grandfather2" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf3">الجد 3</label><input id="edit-card-gf3" name="grandfather3" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-gf4">الجد 4</label><input id="edit-card-gf4" name="grandfather4" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-dob">تاريخ الميلاد</label><input id="edit-card-dob" name="birthDate" type="date" /></div><div class="field"><label for="edit-card-city">المدينة</label><input id="edit-card-city" name="city" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-area">الحي/القرية</label><input id="edit-card-area" name="area" type="text" autocomplete="off" /></div><div class="field"><label for="edit-card-submitter-name">اسم المرسل</label><input id="edit-card-submitter-name" name="submitterName" required /></div><div class="field"><label for="edit-card-submitter-phone">رقم الجوال</label><input id="edit-card-submitter-phone" name="submitterPhone" type="tel" required /></div><div class="field"><label for="edit-card-submitter-email">البريد الإلكتروني</label><input id="edit-card-submitter-email" name="submitterEmail" type="email" /></div></div></section><div id="tree-card-edit-error" class="alert alert-error" style="margin-top: 14px;"></div><div class="edit-dialog-actions"><button class="btn btn-primary" type="submit">حفظ التصحيح</button><button id="tree-card-edit-cancel" class="btn btn-outline" type="button">إلغاء</button></div></form></dialog><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4"></script><script src="../assets/js/config.js?v=20260829td1"></script><script src="../assets/js/modules/core.js?v=20260827mpr3"></script><script src="../assets/js/admin-auth.js?v=20260810p3"></script><script src="../assets/js/modules/canonical-person.js?v=20260807p3"></script><script src="../assets/js/modules/family-management/family-person-core.js?v=20261003srch1"></script><script src="../assets/js/modules/family-management/family-spouses-section.js?v=20261024dec1"></script><script src="../assets/js/modules/phone-intl.js?v=20260814phone3"></script><script src="../assets/js/modules/family-management/family-children-section.js?v=20261019work1"></script><script src="../assets/js/modules/family-management/family-add-sheet.js?v=20261024dec1"></script><script src="../assets/js/modules/family-management/family-management-panel.js?v=20261019work1"></script><script src="../assets/js/modules/family-management/index.js?v=202608100033"></script><script src="../assets/js/admin-family-mgmt.js?v=20261024dec1"></script><script src="../assets/js/modules/events/event-types.js?v=20260828news1"></script><script src="../assets/js/modules/events/event-media.js?v=20260810novid2"></script><script src="../assets/js/modules/events/event-parser.js?v=20260828news1"></script><script src="../assets/js/modules/events/event-visibility.js?v=20260828birth1"></script><script src="../assets/js/modules/events/event-builder.js?v=20260828phone1"></script><script src="../assets/js/modules/events/index.js?v=2026071117"></script><script src="../assets/js/modules/date-engine.js?v=20260808de"></script>
+-<script src="../assets/js/modules/admin-polls.js?v=20260808de"></script><script src="../assets/js/admin-polls.js?v=20260808de"></script><script src="../assets/js/modules/integrity-tree003-v2.js?v=20261003batch3"></script><script src="../assets/js/modules/tree-engine.js?v=20260809uuid1"></script><script src="../assets/js/modules/integrity-request-journey.js?v=20260809hc9"></script><script src="../assets/js/modules/integrity-tree-structure-audit.js?v=20261003batch5"></script><script src="../assets/js/modules/integrity-repair-pipeline.js?v=20261003batch2"></script><script src="../assets/js/admin.js?v=20261003batch3"></script><script src="../assets/js/tree-lineage.js?v=2026071319"></script><script src="../assets/js/admin-batch-tree.js?v=20261003batch1"></script><script src="../assets/js/modules/import-export.js"></script><script src="../assets/js/admin-import.js"></script><script src="../assets/js/delegate-audit.js"></script><script src="../assets/js/admin-requests-stats.js?v=20260810p3"></script><script src="../assets/js/modules/tree-card-contract.js?v=20260815tc1"></script><script src="../assets/js/modules/tree-correction-legacy-recovery.js?v=20260815rc4"></script><script src="../assets/js/modules/tree-correction-contract.js?v=20260827mpr3"></script><script src="../assets/js/modules/tree-correction-reorder.js?v=20260819ord4"></script><script src="../assets/js/modules/tree-correction-person.js?v=20260820ident1"></script><script src="../assets/js/modules/member-phone-register.js?v=20260827mpr3"></script><script src="../assets/js/modules/request-actions.js?v=20260828phone1"></script><script src="../assets/js/admin-request-actions.js?v=20260810novid2"></script><script src="../assets/js/modules/safe-request-notify.js?v=20260829wm1"></script><script src="../assets/js/modules/user-facing-request-messages.js?v=20260827mpr3"></script><script src="../assets/js/modules/requests.js?v=20260828news1"></script><script src="../assets/js/admin-requests.js?v=20260816bp1"></script><script src="../assets/js/admin-bulk-name-audit.js?v=20260809hc5"></script><script src="../assets/js/modules/views.js?v=20260826pulse1"></script><script src="../assets/js/admin-views.js"></script><script src="../assets/js/modules/marriage-stats.js?v=20260810p3"></script><script src="../assets/js/admin-marriage-stats.js"></script><script src="../assets/js/memory/source-label.js?v=2026071216"></script><script src="../assets/js/modules/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/modules/spouses-core.js?v=20260818kin9"></script><script src="../assets/js/admin-ui.js?v=1782729862"></script><script src="../assets/js/modules/admin-delegates-v2.js?v=20260820audit1"></script><script src="../assets/js/modules/admin-sql-presets.js?v=20261019work1"></script><script src="../assets/js/admin-device-trust.js?v=20260829td4"></script><script src="../assets/js/admin-family-admin-grant.js?v=20260830del1"></script><script src="../assets/js/modules/admin-sql-workspace.js?v=20260829wm5"></script><script src="../assets/js/modules/admin-workflow-panel.js?v=20260814notify1"></script><script src="../assets/js/admin-shell.js?v=20261024aid1"></script><script src="../assets/js/admin-widows.js?v=20261024dec1"></script><script src="../assets/js/admin-aid-requests.js?v=20261024aid1"></script><script src="../assets/js/admin-quality.js"></script>
++<script src="../assets/js/modules/admin-polls.js?v=20260808de"></script><script src="../assets/js/admin-polls.js?v=20260808de"></script><script src="../assets/js/modules/integrity-tree003-v2.js?v=20261003batch3"></script><script src="../assets/js/modules/tree-engine.js?v=20260809uuid1"></script><script src="../assets/js/modules/integrity-request-journey.js?v=20260809hc9"></script><script src="../assets/js/modules/integrity-tree-structure-audit.js?v=20261003batch5"></script><script src="../assets/js/modules/integrity-repair-pipeline.js?v=20261003batch2"></script><script src="../assets/js/admin.js?v=20261003batch3"></script><script src="../assets/js/tree-lineage.js?v=2026071319"></script><script src="../assets/js/admin-batch-tree.js?v=20261003batch1"></script><script src="../assets/js/modules/import-export.js"></script><script src="../assets/js/admin-import.js"></script><script src="../assets/js/delegate-audit.js"></script><script src="../assets/js/admin-requests-stats.js?v=20260810p3"></script><script src="../assets/js/modules/tree-card-contract.js?v=20260815tc1"></script><script src="../assets/js/modules/tree-correction-legacy-recovery.js?v=20260815rc4"></script><script src="../assets/js/modules/tree-correction-contract.js?v=20260827mpr3"></script><script src="../assets/js/modules/tree-correction-reorder.js?v=20260819ord4"></script><script src="../assets/js/modules/tree-correction-person.js?v=20260820ident1"></script><script src="../assets/js/modules/member-phone-register.js?v=20260827mpr3"></script><script src="../assets/js/modules/request-actions.js?v=20260828phone1"></script><script src="../assets/js/admin-request-actions.js?v=20260810novid2"></script><script src="../assets/js/modules/safe-request-notify.js?v=20260829wm1"></script><script src="../assets/js/modules/user-facing-request-messages.js?v=20260827mpr3"></script><script src="../assets/js/modules/requests.js?v=20260828news1"></script><script src="../assets/js/admin-requests.js?v=20260816bp1"></script><script src="../assets/js/admin-bulk-name-audit.js?v=20260809hc5"></script><script src="../assets/js/modules/views.js?v=20260826pulse1"></script><script src="../assets/js/admin-views.js"></script><script src="../assets/js/modules/marriage-stats.js?v=20260810p3"></script><script src="../assets/js/admin-marriage-stats.js"></script><script src="../assets/js/memory/source-label.js?v=2026071216"></script><script src="../assets/js/modules/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/admin-memory-queue.js?v=2026071216"></script><script src="../assets/js/modules/spouses-core.js?v=20260818kin9"></script><script src="../assets/js/admin-ui.js?v=1782729862"></script><script src="../assets/js/modules/admin-delegates-v2.js?v=20260820audit1"></script><script src="../assets/js/modules/admin-sql-presets.js?v=20261019work1"></script><script src="../assets/js/admin-device-trust.js?v=20260829td4"></script><script src="../assets/js/admin-family-admin-grant.js?v=20260830del1"></script><script src="../assets/js/modules/admin-sql-workspace.js?v=20260829wm5"></script><script src="../assets/js/modules/admin-workflow-panel.js?v=20260814notify1"></script><script src="../assets/js/admin-shell.js?v=20261024aid1"></script><script src="../assets/js/admin-widows.js?v=20261024dec1"></script><script src="../assets/js/admin-aid-requests.js?v=20261024pay2"></script><script src="../assets/js/admin-quality.js"></script>
+ </body></html>
+diff --git a/supabase/sql/COPY-ME-family-aid-need-kinds-v1.sql b/supabase/sql/COPY-ME-family-aid-need-kinds-v1.sql
+new file mode 100644
+index 0000000..88d422a
+--- /dev/null
++++ b/supabase/sql/COPY-ME-family-aid-need-kinds-v1.sql
+@@ -0,0 +1,232 @@
++-- COPY-ME: Preset id: maint.family_aid_need_kinds_v1
++-- أنواع طلب المساعدة عند الإرسال:
++-- بطاقة العثيم · فاتورة كهرباء · عقد إيجار · فاتورة ماء
++-- مع خانة الرقم (pay_ref) من العضو مباشرة.
++-- Safe to re-run. يتطلب family_aid_requests + قنوات الدفع (pay_channel/pay_ref).
++
++alter table public.family_aid_requests
++  add column if not exists pay_channel text;
++
++alter table public.family_aid_requests
++  add column if not exists pay_ref text;
++
++alter table public.family_aid_requests
++  drop constraint if exists family_aid_requests_pay_channel_chk;
++
++alter table public.family_aid_requests
++  add constraint family_aid_requests_pay_channel_chk
++  check (
++    pay_channel is null
++    or pay_channel in (
++      'othaim_card',
++      'sawaa_electric',
++      'sawaa_rent',
++      'sawaa_water',
++      'family_fund'
++    )
++  );
++
++create or replace function public.family_aid_normalize_pay_channel_v1(p text)
++returns text
++language sql
++immutable
++as $fn$
++  select case
++    when g in ('othaim_card', 'othaim', 'العثيم', 'عثيم', 'بطاقة العثيم', 'بطاقه العثيم') then 'othaim_card'
++    when g in ('sawaa_electric', 'electric', 'كهربا', 'كهرباء', 'سوا كهربا', 'سوا كهرباء', 'فاتورة كهرباء') then 'sawaa_electric'
++    when g in ('sawaa_rent', 'rent', 'ايجار', 'إيجار', 'سوا ايجار', 'سوا إيجار', 'عقد إيجار', 'عقد ايجار') then 'sawaa_rent'
++    when g in ('sawaa_water', 'water', 'ماء', 'مياه', 'سوا ماء', 'فاتورة ماء') then 'sawaa_water'
++    when g in ('family_fund', 'fund', 'صندوق', 'صندوق العائلة') then 'family_fund'
++    else null
++  end
++  from (select lower(btrim(coalesce(p, ''))) as g) s;
++$fn$;
++
++grant execute on function public.family_aid_normalize_pay_channel_v1(text) to anon, authenticated;
++
++create or replace function public.family_aid_pay_channel_label_v1(p text)
++returns text
++language sql
++immutable
++as $fn$
++  select case public.family_aid_normalize_pay_channel_v1(p)
++    when 'othaim_card' then 'بطاقة العثيم'
++    when 'sawaa_electric' then 'فاتورة كهرباء (سوا)'
++    when 'sawaa_rent' then 'عقد إيجار (سوا)'
++    when 'sawaa_water' then 'فاتورة ماء (سوا)'
++    when 'family_fund' then 'صندوق العائلة'
++    else 'مساهمة عبر الإدارة'
++  end;
++$fn$;
++
++grant execute on function public.family_aid_pay_channel_label_v1(text) to anon, authenticated;
++
++drop function if exists public.member_aid_request_submit_v1(text, text, text, boolean, text);
++drop function if exists public.member_aid_request_submit_v1(text, text, text, boolean, text, text, text);
++
++create or replace function public.member_aid_request_submit_v1(
++  p_phone text,
++  p_situation text,
++  p_need_text text,
++  p_hide_name boolean default true,
++  p_contact_phone text default null,
++  p_pay_channel text default null,
++  p_pay_ref text default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $fn$
++declare
++  v_phone text;
++  v_situation text;
++  v_need text;
++  v_contact text;
++  v_digits text;
++  v_pay text;
++  v_ref text;
++  v_id bigint;
++  v_mp record;
++begin
++  if to_regprocedure('public.member_phone_registered_v1(text)') is null then
++    return jsonb_build_object('ok', false, 'error', 'sql_missing');
++  end if;
++
++  v_phone := public.member_phone_registered_v1(p_phone);
++  if v_phone is null then
++    return jsonb_build_object('ok', false, 'error', 'not_registered');
++  end if;
++
++  v_situation := public.family_aid_normalize_situation_v1(p_situation);
++  if v_situation is null then
++    return jsonb_build_object('ok', false, 'error', 'bad_situation');
++  end if;
++
++  v_pay := public.family_aid_normalize_pay_channel_v1(p_pay_channel);
++  if v_pay is null or v_pay not in ('othaim_card', 'sawaa_electric', 'sawaa_rent', 'sawaa_water') then
++    return jsonb_build_object('ok', false, 'error', 'bad_pay_channel');
++  end if;
++
++  v_ref := nullif(btrim(coalesce(p_pay_ref, '')), '');
++  if v_ref is null or char_length(v_ref) < 4 then
++    return jsonb_build_object('ok', false, 'error', 'pay_ref_required');
++  end if;
++  if char_length(v_ref) > 80 then
++    v_ref := left(v_ref, 80);
++  end if;
++
++  v_need := nullif(btrim(coalesce(p_need_text, '')), '');
++  if v_need is null then
++    v_need := public.family_aid_pay_channel_label_v1(v_pay) || ' — ' || v_ref;
++  end if;
++  if char_length(v_need) < 8 then
++    return jsonb_build_object('ok', false, 'error', 'need_too_short');
++  end if;
++  if char_length(v_need) > 800 then
++    v_need := left(v_need, 800);
++  end if;
++
++  v_contact := nullif(btrim(coalesce(p_contact_phone, '')), '');
++  if v_contact is null then
++    v_contact := v_phone;
++  end if;
++
++  v_digits := nullif(right(regexp_replace(coalesce(v_phone, ''), '[^0-9]', '', 'g'), 9), '');
++  if to_regclass('public.member_profiles') is not null and v_digits is not null then
++    select mp.* into v_mp
++    from public.member_profiles mp
++    where right(regexp_replace(coalesce(mp.phone, ''), '[^0-9]', '', 'g'), 9) = v_digits
++      and coalesce(nullif(btrim(coalesce(mp.status, '')), ''), 'active') is distinct from 'pending_family'
++    order by mp.updated_at desc nulls last, mp.id desc
++    limit 1;
++  end if;
++
++  insert into public.family_aid_requests (
++    member_phone,
++    tree_child_id,
++    branch_key,
++    situation,
++    need_text,
++    hide_name,
++    contact_phone,
++    pay_channel,
++    pay_ref,
++    status
++  ) values (
++    v_phone,
++    nullif(v_mp.tree_child_id, 0),
++    nullif(btrim(coalesce(v_mp.branch_key, '')), ''),
++    v_situation,
++    v_need,
++    coalesce(p_hide_name, true),
++    v_contact,
++    v_pay,
++    v_ref,
++    'pending'
++  )
++  returning id into v_id;
++
++  return jsonb_build_object('ok', true, 'id', v_id, 'status', 'pending', 'pay_channel', v_pay);
++exception when others then
++  return jsonb_build_object('ok', false, 'error', 'insert_failed', 'detail', left(sqlerrm, 160));
++end;
++$fn$;
++
++revoke all on function public.member_aid_request_submit_v1(text, text, text, boolean, text, text, text) from public;
++grant execute on function public.member_aid_request_submit_v1(text, text, text, boolean, text, text, text) to anon, authenticated;
++
++create or replace function public.member_aid_requests_mine_v1(p_phone text)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $fn$
++declare
++  v_phone text;
++  v_digits text;
++begin
++  if to_regprocedure('public.member_phone_registered_v1(text)') is null then
++    return jsonb_build_object('ok', false, 'error', 'sql_missing', 'rows', '[]'::jsonb);
++  end if;
++  v_phone := public.member_phone_registered_v1(p_phone);
++  if v_phone is null then
++    return jsonb_build_object('ok', false, 'error', 'not_registered', 'rows', '[]'::jsonb);
++  end if;
++  v_digits := nullif(right(regexp_replace(coalesce(v_phone, ''), '[^0-9]', '', 'g'), 9), '');
++
++  return jsonb_build_object(
++    'ok', true,
++    'rows', coalesce((
++      select jsonb_agg(to_jsonb(x) order by x.created_at desc)
++      from (
++        select
++          r.id,
++          r.situation,
++          public.family_aid_situation_label_v1(r.situation) as situation_label,
++          r.need_text,
++          r.hide_name,
++          r.status,
++          r.public_title,
++          r.public_body,
++          r.publish_contact_note,
++          public.family_aid_normalize_pay_channel_v1(to_jsonb(r)->>'pay_channel') as pay_channel,
++          public.family_aid_pay_channel_label_v1(to_jsonb(r)->>'pay_channel') as pay_channel_label,
++          nullif(btrim(coalesce(to_jsonb(r)->>'pay_ref', '')), '') as pay_ref,
++          r.created_at,
++          r.updated_at,
++          r.published_at,
++          r.closed_at
++        from public.family_aid_requests r
++        where right(regexp_replace(coalesce(r.member_phone, ''), '[^0-9]', '', 'g'), 9) = v_digits
++        order by r.created_at desc
++        limit 50
++      ) x
++    ), '[]'::jsonb)
++  );
++end;
++$fn$;
++
++revoke all on function public.member_aid_requests_mine_v1(text) from public;
++grant execute on function public.member_aid_requests_mine_v1(text) to anon, authenticated;
+diff --git a/supabase/sql/COPY-ME-family-aid-pay-channels-v1.sql b/supabase/sql/COPY-ME-family-aid-pay-channels-v1.sql
+new file mode 100644
+index 0000000..6140bf2
+--- /dev/null
++++ b/supabase/sql/COPY-ME-family-aid-pay-channels-v1.sql
+@@ -0,0 +1,271 @@
++-- COPY-ME: Preset id: maint.family_aid_pay_channels_v1
++-- قنوات المساهمة عند نشر فرصة مساعدة (بلا اسم المستفيدة):
++-- عثيم (رقم بطاقة) · سوا كهرباء · سوا إيجار · صندوق العائلة.
++-- Safe to re-run. يتطلب family_aid_requests موجوداً مسبقاً.
++
++alter table public.family_aid_requests
++  add column if not exists pay_channel text;
++
++alter table public.family_aid_requests
++  add column if not exists pay_ref text;
++
++do $chk$
++begin
++  if not exists (
++    select 1 from pg_constraint
++    where conname = 'family_aid_requests_pay_channel_chk'
++  ) then
++    alter table public.family_aid_requests
++      add constraint family_aid_requests_pay_channel_chk
++      check (
++        pay_channel is null
++        or pay_channel in ('othaim_card', 'sawaa_electric', 'sawaa_rent', 'family_fund')
++      );
++  end if;
++end;
++$chk$;
++
++create or replace function public.family_aid_normalize_pay_channel_v1(p text)
++returns text
++language sql
++immutable
++as $fn$
++  select case
++    when g in ('othaim_card', 'othaim', 'العثيم', 'عثيم', 'بطاقة العثيم', 'بطاقه العثيم') then 'othaim_card'
++    when g in ('sawaa_electric', 'electric', 'كهربا', 'كهرباء', 'سوا كهربا', 'سوا كهرباء') then 'sawaa_electric'
++    when g in ('sawaa_rent', 'rent', 'ايجار', 'إيجار', 'سوا ايجار', 'سوا إيجار') then 'sawaa_rent'
++    when g in ('family_fund', 'fund', 'صندوق', 'صندوق العائلة') then 'family_fund'
++    else null
++  end
++  from (select lower(btrim(coalesce(p, ''))) as g) s;
++$fn$;
++
++grant execute on function public.family_aid_normalize_pay_channel_v1(text) to anon, authenticated;
++
++create or replace function public.family_aid_pay_channel_label_v1(p text)
++returns text
++language sql
++immutable
++as $fn$
++  select case public.family_aid_normalize_pay_channel_v1(p)
++    when 'othaim_card' then 'بطاقة العثيم'
++    when 'sawaa_electric' then 'سداد فاتورة سوا — كهرباء'
++    when 'sawaa_rent' then 'سداد فاتورة سوا — إيجار'
++    when 'family_fund' then 'صندوق العائلة'
++    else 'مساهمة عبر الإدارة'
++  end;
++$fn$;
++
++grant execute on function public.family_aid_pay_channel_label_v1(text) to anon, authenticated;
++
++create or replace function public.public_aid_requests_published_v1()
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $fn$
++begin
++  return jsonb_build_object(
++    'ok', true,
++    'rows', coalesce((
++      select jsonb_agg(to_jsonb(x) order by x.published_at desc nulls last, x.id desc)
++      from (
++        select
++          r.id,
++          r.situation,
++          public.family_aid_situation_label_v1(r.situation) as situation_label,
++          -- للعامة: نوع الطلب + الاحتياج فقط (بلا اسم/جوال).
++          coalesce(nullif(btrim(r.public_title), ''), public.family_aid_situation_label_v1(r.situation)) as title,
++          coalesce(nullif(btrim(r.public_body), ''), r.need_text) as body,
++          coalesce(
++            nullif(btrim(r.publish_contact_note), ''),
++            'ساهم عبر القناة أدناه — بلا تحويل باسم المستفيدة.'
++          ) as contact_note,
++          -- to_jsonb حتى لو تأخرت أعمدة pay_* لا تسقط الدالة.
++          public.family_aid_normalize_pay_channel_v1(to_jsonb(r)->>'pay_channel') as pay_channel,
++          public.family_aid_pay_channel_label_v1(to_jsonb(r)->>'pay_channel') as pay_channel_label,
++          nullif(btrim(coalesce(to_jsonb(r)->>'pay_ref', '')), '') as pay_ref,
++          null::text as display_name,
++          nullif(btrim(coalesce(r.branch_key, '')), '') as branch_key,
++          r.published_at,
++          r.created_at
++        from public.family_aid_requests r
++        where r.status = 'published'
++        order by r.published_at desc nulls last, r.id desc
++        limit 100
++      ) x
++    ), '[]'::jsonb)
++  );
++end;
++$fn$;
++
++revoke all on function public.public_aid_requests_published_v1() from public;
++grant execute on function public.public_aid_requests_published_v1() to anon, authenticated;
++
++drop function if exists public.admin_aid_request_set_status_v1(text, bigint, text, text, text, text, text);
++
++create or replace function public.admin_aid_request_set_status_v1(
++  p_token text,
++  p_id bigint,
++  p_status text,
++  p_admin_note text default null,
++  p_public_title text default null,
++  p_public_body text default null,
++  p_publish_contact_note text default null,
++  p_pay_channel text default null,
++  p_pay_ref text default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $fn$
++declare
++  v_status text;
++  v_row public.family_aid_requests%rowtype;
++  v_pay text;
++begin
++  if to_regprocedure('public.admin_token_ok_v1(text)') is null
++     or not public.admin_token_ok_v1(p_token) then
++    return jsonb_build_object('ok', false, 'error', 'not_allowed');
++  end if;
++
++  if p_id is null or p_id < 1 then
++    return jsonb_build_object('ok', false, 'error', 'bad_id');
++  end if;
++
++  v_status := lower(btrim(coalesce(p_status, '')));
++  if v_status not in ('pending', 'published', 'closed', 'declined') then
++    return jsonb_build_object('ok', false, 'error', 'bad_status');
++  end if;
++
++  select * into v_row from public.family_aid_requests where id = p_id limit 1;
++  if not found then
++    return jsonb_build_object('ok', false, 'error', 'not_found');
++  end if;
++
++  v_pay := public.family_aid_normalize_pay_channel_v1(p_pay_channel);
++
++  update public.family_aid_requests r
++  set
++    status = v_status,
++    admin_note = coalesce(nullif(btrim(coalesce(p_admin_note, '')), ''), r.admin_note),
++    public_title = case
++      when v_status = 'published' then coalesce(
++        nullif(btrim(coalesce(p_public_title, '')), ''),
++        nullif(btrim(r.public_title), ''),
++        public.family_aid_situation_label_v1(r.situation)
++      )
++      else r.public_title
++    end,
++    public_body = case
++      when v_status = 'published' then coalesce(
++        nullif(btrim(coalesce(p_public_body, '')), ''),
++        nullif(btrim(r.public_body), ''),
++        r.need_text
++      )
++      else r.public_body
++    end,
++    publish_contact_note = case
++      when v_status = 'published' then coalesce(
++        nullif(btrim(coalesce(p_publish_contact_note, '')), ''),
++        nullif(btrim(r.publish_contact_note), ''),
++        'ساهم عبر القناة أدناه — بلا تحويل باسم المستفيدة.'
++      )
++      else r.publish_contact_note
++    end,
++    pay_channel = case
++      when v_status = 'published' then coalesce(v_pay, r.pay_channel, 'family_fund')
++      else coalesce(v_pay, r.pay_channel)
++    end,
++    pay_ref = case
++      when p_pay_ref is not null then nullif(btrim(p_pay_ref), '')
++      else r.pay_ref
++    end,
++    published_at = case
++      when v_status = 'published' then coalesce(r.published_at, now())
++      else r.published_at
++    end,
++    closed_at = case
++      when v_status in ('closed', 'declined') then coalesce(r.closed_at, now())
++      else r.closed_at
++    end,
++    updated_at = now()
++  where r.id = p_id;
++
++  return jsonb_build_object('ok', true, 'id', p_id, 'status', v_status);
++end;
++$fn$;
++
++revoke all on function public.admin_aid_request_set_status_v1(text, bigint, text, text, text, text, text, text, text) from public;
++grant execute on function public.admin_aid_request_set_status_v1(text, bigint, text, text, text, text, text, text, text) to anon, authenticated;
++
++create or replace function public.admin_aid_requests_list_v1(p_token text)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $fn$
++begin
++  if to_regprocedure('public.admin_token_ok_v1(text)') is null
++     or not public.admin_token_ok_v1(p_token) then
++    return jsonb_build_object('ok', false, 'error', 'not_allowed', 'rows', '[]'::jsonb);
++  end if;
++
++  return jsonb_build_object(
++    'ok', true,
++    'rows', coalesce((
++      select jsonb_agg(to_jsonb(x) order by
++        case x.status when 'pending' then 0 when 'published' then 1 else 2 end,
++        x.created_at desc)
++      from (
++        select
++          r.id,
++          r.member_phone,
++          r.contact_phone,
++          r.tree_child_id,
++          r.branch_key,
++          r.situation,
++          public.family_aid_situation_label_v1(r.situation) as situation_label,
++          r.need_text,
++          r.hide_name,
++          r.status,
++          r.public_title,
++          r.public_body,
++          r.publish_contact_note,
++          public.family_aid_normalize_pay_channel_v1(to_jsonb(r)->>'pay_channel') as pay_channel,
++          public.family_aid_pay_channel_label_v1(to_jsonb(r)->>'pay_channel') as pay_channel_label,
++          nullif(btrim(coalesce(to_jsonb(r)->>'pay_ref', '')), '') as pay_ref,
++          r.admin_note,
++          r.created_at,
++          r.updated_at,
++          r.published_at,
++          r.closed_at,
++          coalesce(
++            nullif(btrim(c.child_name), ''),
++            nullif(btrim(to_jsonb(c)->>'name'), ''),
++            nullif(btrim(mp.display_name), ''),
++            '—'
++          ) as member_name
++        from public.family_aid_requests r
++        left join public.tree_children c on c.id = r.tree_child_id
++        left join lateral (
++          select m.display_name
++          from public.member_profiles m
++          where right(regexp_replace(coalesce(m.phone, ''), '[^0-9]', '', 'g'), 9)
++              = right(regexp_replace(coalesce(r.member_phone, ''), '[^0-9]', '', 'g'), 9)
++          order by m.updated_at desc nulls last
++          limit 1
++        ) mp on true
++        order by r.created_at desc
++        limit 300
++      ) x
++    ), '[]'::jsonb)
++  );
++end;
++$fn$;
++
++revoke all on function public.admin_aid_requests_list_v1(text) from public;
++grant execute on function public.admin_aid_requests_list_v1(text) to anon, authenticated;
+-- 
+2.43.0
+

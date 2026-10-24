@@ -24,14 +24,18 @@ import { PersonEncounterScreen } from './src/screens/PersonEncounterScreen';
 import { SpecialCardModal } from './src/components/SpecialCardModal';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { GivingScreen } from './src/screens/GivingScreen';
+import { AidRequestScreen } from './src/screens/AidRequestScreen';
 import { FamilyBoardScreen } from './src/screens/FamilyBoardScreen';
 import { WomenAdminScreen } from './src/screens/WomenAdminScreen';
 import { FamilyAdminScreen } from './src/screens/FamilyAdminScreen';
 import { DelegateInboxScreen } from './src/screens/DelegateInboxScreen';
 import { TreeScreen } from './src/screens/TreeScreen';
 import { usePublicData } from './src/hooks/usePublicData';
-import { isPublicLineageHiddenPerson } from './src/utils/personVisibility';
-import { fetchOccasionInbox, type OccasionInboxItem } from './src/services/occasionInteractions';
+import {
+  fetchOccasionInbox,
+  filterCurrentOccasionInbox,
+  type OccasionInboxItem,
+} from './src/services/occasionInteractions';
 import { loadLastSeen, markSurfaceSeen, type LastSeenMap } from './src/services/lastSeen';
 import { buildSinceLastVisit, countNewEvents, countNewInbox } from './src/utils/sinceLastVisit';
 import {
@@ -92,6 +96,15 @@ function screenFromPushData(data: Record<string, unknown> | null): PublicScreen 
   if (screen === 'familyadmin' || screen === 'admin' || mode === 'admin_new_request') return 'familyAdmin';
   if (screen === 'familyboard' || mode === 'faza' || mode === 'board_offer' || mode === 'board_request') {
     return 'familyBoard';
+  }
+  if (
+    screen === 'aidrequest' ||
+    screen === 'aid' ||
+    mode === 'aid_opportunity' ||
+    mode === 'family_aid' ||
+    mode === 'aid'
+  ) {
+    return 'aidRequest';
   }
   if (mode === 'status_changed' || mode === 'inbox_share') return 'profile';
   return 'events';
@@ -264,6 +277,23 @@ function AppChrome() {
   const [specialCardTickerItems, setSpecialCardTickerItems] = useState<string[]>([]);
   const [pulseOnline, setPulseOnline] = useState<number | null>(null);
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
+  const [aidRequestPane, setAidRequestPane] = useState<'help' | 'request' | 'mine'>('help');
+  const [aidRequestBack, setAidRequestBack] = useState<PublicScreen>('profile');
+  const [givingPane, setGivingPane] = useState<'choose' | 'support' | 'aid'>('choose');
+
+  const openAidRequest = (
+    pane: 'help' | 'request' | 'mine' = 'help',
+    back: PublicScreen = 'profile',
+  ) => {
+    setAidRequestPane(pane);
+    setAidRequestBack(back);
+    setScreen('aidRequest');
+  };
+
+  const openGiving = (pane: 'choose' | 'support' | 'aid' = 'choose') => {
+    setGivingPane(pane);
+    setScreen('giving');
+  };
 
   useEffect(() => {
     if (!__DEV__) return;
@@ -301,7 +331,7 @@ function AppChrome() {
       let lastOnline: number | null = null;
       const tick = async () => {
         if (AppState.currentState === 'background') return;
-        const online = await pulseHeartbeat(sessionId);
+        const online = await pulseHeartbeat(sessionId, memberPhoneForRequests);
         if (!cancelled) setPulseOnline(online);
         if (online != null && online !== lastOnline) {
           lastOnline = online;
@@ -323,7 +353,7 @@ function AppChrome() {
       if (interval) clearInterval(interval);
       sub?.remove();
     };
-  }, []);
+  }, [memberPhoneForRequests]);
 
   useEffect(() => {
     const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
@@ -474,7 +504,9 @@ function AppChrome() {
       const id = Number(row.id);
       if (!id) return;
       const prev = byId.get(id);
-      if (!prev && !isPublicLineageHiddenPerson(row)) return;
+      // Female lineage RPC returns the full branch (sons + daughters). Always
+      // merge — skipping non-hidden rows dropped widow sons when public cache
+      // lagged or parent_name differed.
       byId.set(id, {
         ...(prev || row),
         ...row,
@@ -814,18 +846,30 @@ function AppChrome() {
     });
   }, [encounterPerson, memberPhoneForRequests, memberTreeChildId]);
 
+  // null أثناء التحميل حتى لا نخفي دعوة حية قبل وصول المجلس؛ بعدها مصفوفة (حتى فارغة).
+  const activeOccasionIds = useMemo(
+    () =>
+      publicData.loading
+        ? null
+        : activeEvents.map((event) => event.id).filter((id) => id != null && String(id).trim()),
+    [publicData.loading, activeEvents],
+  );
+  const currentOccasionInbox = useMemo(
+    () => filterCurrentOccasionInbox(occasionInbox, { activeOccasionIds }),
+    [occasionInbox, activeOccasionIds],
+  );
   const sinceLastVisit = useMemo(
     () =>
       buildSinceLastVisit({
         events: activeEvents,
-        inbox: occasionInbox,
+        inbox: currentOccasionInbox,
         homeSeenAt: lastSeen.home,
         profileSeenAt: lastSeen.profile,
       }),
-    [activeEvents, occasionInbox, lastSeen.home, lastSeen.profile],
+    [activeEvents, currentOccasionInbox, lastSeen.home, lastSeen.profile],
   );
   const eventsBadge = countNewEvents(activeEvents, lastSeen.events);
-  const profileBadge = countNewInbox(occasionInbox, lastSeen.profile);
+  const profileBadge = countNewInbox(currentOccasionInbox, lastSeen.profile);
 
   const goToScreen = useCallback((next: PublicScreen, opts?: { eventId?: string | null }) => {
     if (next === 'events') {
@@ -900,6 +944,9 @@ function AppChrome() {
             onAdded={() => {
               void reloadPublished();
             }}
+            onOpenAidRequest={
+              encounterMode === 'self' ? () => openAidRequest('request', 'person') : undefined
+            }
             onClose={closePersonEncounter}
           />
         );
@@ -929,10 +976,12 @@ function AppChrome() {
             branches={branches}
             childrenRows={treeChildren}
             viewerPerson={memberViewerPerson}
+            activeOccasionIds={activeOccasionIds}
             onOpenMemberCard={(branchKey, treeChildId) =>
               openPersonEncounter(branchKey, treeChildId, 'profile')
             }
-            onOpenGiving={() => setScreen('giving')}
+            onOpenGiving={() => openGiving('choose')}
+            onOpenAidRequest={() => openAidRequest('request', 'profile')}
             onOpenWomenAdmin={() => setScreen('womenAdmin')}
             onOpenFamilyAdmin={() => setScreen('familyAdmin')}
             onOpenDelegateInbox={() => setScreen('delegateInbox')}
@@ -955,7 +1004,28 @@ function AppChrome() {
           />
         );
       case 'giving':
-        return <GivingScreen onBack={() => setScreen('profile')} />;
+        return (
+          <GivingScreen
+            initialPane={givingPane}
+            onBack={() => {
+              setGivingPane('choose');
+              setScreen('profile');
+            }}
+            onOpenAidRequest={() => openAidRequest('mine', 'giving')}
+            onOpenAidSubmit={() => openAidRequest('request', 'giving')}
+          />
+        );
+      case 'aidRequest':
+        return (
+          <AidRequestScreen
+            memberPhone={memberPhoneForRequests}
+            viewerPerson={memberViewerPerson}
+            childrenRows={treeChildren}
+            initialPane={aidRequestPane}
+            onBack={() => setScreen(aidRequestBack)}
+            onOpenGiving={() => openGiving('aid')}
+          />
+        );
       case 'familyBoard':
         return (
           <FamilyBoardScreen
@@ -1029,6 +1099,7 @@ function AppChrome() {
             onOpenPerson={(branchKey, treeChildId) => openPersonEncounter(branchKey, treeChildId, 'home')}
             onOpenEvent={(eventId) => goToScreen('events', { eventId })}
             onOpenFamilyBoard={() => goToScreen('familyBoard')}
+            onOpenGiving={() => openGiving('aid')}
             onOpenMyCard={
               memberTreeChildId != null && (memberBranchKey || encounterViewer?.branchKey)
                 ? () =>

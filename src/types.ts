@@ -10,6 +10,7 @@ export type PublicScreen =
   | 'familyLab'
   | 'person'
   | 'giving'
+  | 'aidRequest'
   | 'familyBoard'
   | 'womenAdmin'
   | 'familyAdmin'
@@ -73,6 +74,11 @@ export type TreeChild = {
   workplace?: string | null;
   /** intermediate | secondary | diploma | bachelor | master | doctorate */
   educationDegree?: string | null;
+  /**
+   * Family woman married to a husband outside the Zidan tree.
+   * Self path: no widow/divorced label and no husband name.
+   */
+  marriedOutside?: boolean | null;
 };
 
 export type TreePerson = {
