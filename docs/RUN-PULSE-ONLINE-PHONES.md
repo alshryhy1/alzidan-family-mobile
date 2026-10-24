@@ -25,12 +25,12 @@ git checkout main && git pull origin main
 # SQL داخل مستودع الويب
 mkdir -p supabase/sql
 curl -fsSL -o supabase/sql/COPY-ME-pulse-online-phones-v1.sql \
-  "https://raw.githubusercontent.com/alshryhy1/alzidan-family-mobile/cursor/admin-online-phones-e8cc/docs/COPY-ME-pulse-online-phones-v1.sql"
+  "https://raw.githubusercontent.com/alshryhy1/alzidan-family-mobile/cursor/appstore-ship-e8cc/docs/COPY-ME-pulse-online-phones-v1.sql"
 
 # سكربت لوحة الإدارة
 mkdir -p assets/js
 curl -fsSL -o assets/js/admin-pulse-online.js \
-  "https://raw.githubusercontent.com/alshryhy1/alzidan-family-mobile/cursor/admin-online-phones-e8cc/docs/web-assets/admin-pulse-online.js"
+  "https://raw.githubusercontent.com/alshryhy1/alzidan-family-mobile/cursor/appstore-ship-e8cc/docs/web-assets/admin-pulse-online.js"
 ```
 
 ثم في `pages/admin.html`:
