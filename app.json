@@ -9,7 +9,8 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.alzidan.family2",
-      "buildNumber": "64",
+      "buildNumber": "65",
+      "deploymentTarget": "16.4",
       "infoPlist": {
         "NSFaceIDUsageDescription": "يُستخدم قفل الجهاز لفتح حسابك على هذا الآيفون. لا تُرسل صورة الوجه خارج جهازك.",
         "NSPhotoLibraryUsageDescription": "لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.",
