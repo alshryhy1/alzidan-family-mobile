@@ -31,7 +31,6 @@ import {
   loadFamilyBoardPosts,
   type FamilyBoardPost,
 } from '../services/familyBoard';
-import { pulseAidNotices } from '../utils/pulseNotices';
 import { resolvePulseSeason } from '../utils/pulseSeason';
 import { sinceVisitSummary, type SinceVisitItem } from '../utils/sinceLastVisit';
 
@@ -103,8 +102,6 @@ export function HomeScreen({
   const [delegates, setDelegates] = useState<PulseBoardNotice[]>([]);
   const [boardPosts, setBoardPosts] = useState<FamilyBoardPost[]>([]);
   const [publishedAid, setPublishedAid] = useState<PublishedAidRequest[]>([]);
-  const [aidStatus, setAidStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
-  const [aidError, setAidError] = useState('');
   const [greetings, setGreetings] = useState<RemembranceGreeting[]>([]);
   const [greetNote, setGreetNote] = useState('');
   const [sendingKey, setSendingKey] = useState<string | null>(null);
@@ -239,23 +236,15 @@ export function HomeScreen({
   useEffect(() => {
     let cancelled = false;
     function loadAid() {
-      setAidStatus((prev) => (prev === 'ready' || prev === 'empty' ? prev : 'loading'));
       loadPublishedAidRequests()
         .then((rows) => {
-          if (cancelled) return;
-          const next = rows.slice(0, 3);
-          setPublishedAid(next);
-          setAidError('');
-          setAidStatus(next.length ? 'ready' : 'empty');
+          if (!cancelled) setPublishedAid(rows.slice(0, 3));
         })
         .catch((err) => {
           if (__DEV__) {
             console.warn('[pulse] published aid', err instanceof Error ? err.message : err);
           }
-          if (cancelled) return;
-          setPublishedAid([]);
-          setAidError(err instanceof Error ? err.message : 'تعذر تحميل فرص المساعدة.');
-          setAidStatus('error');
+          if (!cancelled) setPublishedAid([]);
         });
     }
     loadAid();
@@ -268,33 +257,10 @@ export function HomeScreen({
 
   const refreshHome = () => {
     onRetry();
-    setAidStatus('loading');
-    setAidError('');
     void loadPublishedAidRequests()
-      .then((rows) => {
-        const next = rows.slice(0, 3);
-        setPublishedAid(next);
-        setAidError('');
-        setAidStatus(next.length ? 'ready' : 'empty');
-      })
-      .catch((err) => {
-        setPublishedAid([]);
-        setAidError(err instanceof Error ? err.message : 'تعذر تحميل فرص المساعدة.');
-        setAidStatus('error');
-      });
+      .then((rows) => setPublishedAid(rows.slice(0, 3)))
+      .catch(() => setPublishedAid([]));
   };
-
-  const aidNotices = useMemo(() => pulseAidNotices(publishedAid), [publishedAid]);
-  const pulseNoticesWithAid = useMemo(() => [...aidNotices, ...notices], [aidNotices, notices]);
-
-  const aidHeroLine =
-    publishedAid.length > 0
-      ? `فرص مساعدة: ${publishedAid.length} · بلا اسم · من تبرع`
-      : aidStatus === 'loading'
-        ? 'جاري تحميل فرص المساعدة…'
-        : aidStatus === 'error'
-          ? 'تعذر تحميل فرص المساعدة — اسحب للتحديث'
-          : 'فرص مساعدة — افتح تبرع عند النشر';
 
   return (
     <SceneShell
@@ -315,25 +281,8 @@ export function HomeScreen({
           </Text>
         </View>
       }
-      heroExtra={
-        <Pressable
-          accessibilityRole="button"
-          onPress={onOpenGiving}
-          style={({ pressed }) => [styles.aidHeroBand, pressed && styles.pressed]}
-        >
-          <Text style={styles.aidHeroTitle}>فرص مساعدة</Text>
-          <Text style={styles.aidHeroLine}>{aidHeroLine}</Text>
-          {publishedAid.slice(0, 2).map((row) => (
-            <Text key={row.id} numberOfLines={2} style={styles.aidHeroNeed}>
-              {(row.situationLabel || 'مساعدة') + ' · ' + (row.body || row.title || '')}
-            </Text>
-          ))}
-          <Text style={styles.aidHeroCta}>للتفاصيل والمساهمة من تبرع</Text>
-        </Pressable>
-      }
       onRefresh={refreshHome}
       refreshing={loading}
-      subtitle={aidHeroLine}
       title="أهلاً بك بين أهلك"
       variant="pulse"
     >
@@ -352,36 +301,28 @@ export function HomeScreen({
           />
         ) : null}
 
-        <View style={styles.aidBox}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={onOpenGiving}
-            style={({ pressed }) => [styles.aidHead, pressed && styles.pressed]}
-          >
-            <Text style={styles.aidTitle}>فرص مساعدة</Text>
-            <Text style={styles.aidGo}>تبرع</Text>
-          </Pressable>
-          <Text style={styles.aidSub}>بلا اسم — نوع الطلب والاحتياج فقط · عثيم أو سوا</Text>
-          {aidStatus === 'loading' && !publishedAid.length ? (
-            <Text style={styles.sinceEmpty}>جاري تحميل الفرص…</Text>
-          ) : null}
-          {aidStatus === 'error' && !publishedAid.length ? (
-            <Text style={styles.sinceEmpty}>
-              {aidError || 'تعذر تحميل فرص المساعدة. اسحب للتحديث.'}
-            </Text>
-          ) : null}
-          {aidStatus === 'empty' ? (
-            <Text style={styles.sinceEmpty}>لا توجد فرص منشورة حالياً.</Text>
-          ) : null}
-          {publishedAid.map((row) => (
-            <PublishedAidOpportunityCard
-              key={row.id}
-              compact
-              onOpenGiving={onOpenGiving}
-              row={row}
-            />
-          ))}
-        </View>
+        {/* إضافة فقط: فرص منشورة بلا لمس ترويسة النبض أو الشريط */}
+        {!loading && !error && publishedAid.length ? (
+          <View style={styles.aidBox}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onOpenGiving}
+              style={({ pressed }) => [styles.aidHead, pressed && styles.pressed]}
+            >
+              <Text style={styles.aidTitle}>فرص مساعدة</Text>
+              <Text style={styles.aidGo}>تبرع</Text>
+            </Pressable>
+            <Text style={styles.aidSub}>بلا اسم — نوع الطلب والاحتياج فقط · عثيم أو سوا</Text>
+            {publishedAid.map((row) => (
+              <PublishedAidOpportunityCard
+                key={row.id}
+                compact
+                onOpenGiving={onOpenGiving}
+                row={row}
+              />
+            ))}
+          </View>
+        ) : null}
 
         {remembrances.length ? (
           <View style={styles.sinceBox}>
@@ -546,7 +487,7 @@ export function HomeScreen({
               weather,
               season,
             }}
-            notices={pulseNoticesWithAid}
+            notices={notices}
             parts={['affinity', 'tiles', 'notices']}
             tone="stage"
           />
@@ -684,47 +625,6 @@ function homeStyles(p: ThemePalette) {
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
-  },
-  aidHeroBand: {
-    alignSelf: 'stretch',
-    backgroundColor: 'rgba(255,253,248,0.14)',
-    borderColor: 'rgba(232,213,168,0.45)',
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 6,
-    marginTop: spacing.sm,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  aidHeroTitle: {
-    color: 'rgba(232,213,168,0.98)',
-    fontSize: 16,
-    fontWeight: '900',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  aidHeroLine: {
-    color: 'rgba(255,253,248,0.88)',
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  aidHeroNeed: {
-    color: 'rgba(255,253,248,0.92)',
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 22,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  aidHeroCta: {
-    color: 'rgba(232,213,168,0.95)',
-    fontSize: 12,
-    fontWeight: '800',
-    marginTop: 2,
-    textAlign: 'right',
-    writingDirection: 'rtl',
   },
   aidHead: {
     alignItems: 'center',

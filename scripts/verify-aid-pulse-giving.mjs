@@ -1,5 +1,5 @@
 /**
- * فرص المساعدة داخل تبرع + نبض بلا هوية + قنوات عثيم/سوا.
+ * فرص المساعدة داخل تبرع + إضافة في النبض بلا تغيير شكل النبض.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -15,6 +15,7 @@ const card = read('src/components/PublishedAidOpportunityCard.tsx');
 const svc = read('src/services/aidRequest.ts');
 const app = read('App.tsx');
 const sql = read('docs/COPY-ME-family-aid-pay-channels-v1.sql');
+const notices = read('src/utils/pulseNotices.ts');
 
 const checks = [
   ['giving has aid pane', giving.includes("pane === 'aid'")],
@@ -23,12 +24,12 @@ const checks = [
   ['giving opens aid submit', giving.includes('onOpenAidSubmit')],
   ['app wires onOpenAidSubmit', app.includes('onOpenAidSubmit={() => openAidRequest')],
   ['home loads published aid', home.includes('loadPublishedAidRequests')],
-  ['home shows aid box', home.includes('فرص مساعدة')],
-  ['home always renders aid box', home.includes("aidStatus === 'empty'")],
-  ['home merges aid into pulse ticker', home.includes('pulseNoticesWithAid')],
+  ['home shows aid only when rows', home.includes('publishedAid.length ?')],
+  ['home does not override subtitle', !home.includes('subtitle={aidHeroLine}')],
+  ['home does not inject heroExtra aid', !home.includes('aidHeroBand')],
+  ['home keeps original notices', home.includes('notices={notices}')],
   ['home opens giving', home.includes('onOpenGiving')],
-  ['pulse aid notice helper', read('src/utils/pulseNotices.ts').includes('pulseAidNotices')],
-  ['pulse aid kind', read('src/utils/pulseNotices.ts').includes("'aid'")],
+  ['ticker unchanged no aid kind', !notices.includes("'aid'")],
   ['app home opens giving', app.includes('onOpenGiving={() => openGiving') || app.includes('onOpenGiving={() => setScreen')],
   ['aid screen uses opportunity card', aid.includes('PublishedAidOpportunityCard')],
   ['card supports compact pulse', card.includes('compact')],

@@ -1,4 +1,4 @@
-export type PulseNoticeKind = 'phone' | 'son' | 'rename' | 'delegate' | 'dua' | 'aid';
+export type PulseNoticeKind = 'phone' | 'son' | 'rename' | 'delegate' | 'dua';
 
 export type PulseBoardNotice = {
   kind: PulseNoticeKind;
@@ -8,12 +8,11 @@ export type PulseBoardNotice = {
 };
 
 const KIND_ORDER: Record<PulseNoticeKind, number> = {
-  aid: 0,
-  phone: 1,
-  son: 2,
-  rename: 3,
-  delegate: 4,
-  dua: 5,
+  phone: 0,
+  son: 1,
+  rename: 2,
+  delegate: 3,
+  dua: 4,
 };
 
 const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
@@ -100,7 +99,6 @@ export function pulseNameBlockedFromTicker(value?: string | null) {
 }
 
 export function pulseTickerKindLabel(kind: PulseNoticeKind) {
-  if (kind === 'aid') return 'مساعدة';
   if (kind === 'phone' || kind === 'son') return 'إضافة';
   if (kind === 'rename') return 'تعديل';
   if (kind === 'delegate') return 'مندوب';
@@ -109,7 +107,7 @@ export function pulseTickerKindLabel(kind: PulseNoticeKind) {
 }
 
 export function formatPulseNotice(row: PulseBoardNotice) {
-  if (row.kind === 'dua' || row.kind === 'aid') return String(row.name || '').trim();
+  if (row.kind === 'dua') return String(row.name || '').trim();
   const name = String(row.name || '').trim();
   if (!name || pulseNameBlockedFromTicker(name)) return '';
   if (row.kind === 'phone') {
@@ -127,7 +125,7 @@ export function formatPulseNotice(row: PulseBoardNotice) {
 }
 
 export function noticeStillLive(row: PulseBoardNotice, now = Date.now()) {
-  if (row.kind === 'dua' || row.kind === 'aid') return true;
+  if (row.kind === 'dua') return true;
   if (!row.at) return false;
   const at = Date.parse(row.at);
   if (!Number.isFinite(at) || now - at < 0) return false;
@@ -150,42 +148,21 @@ export function pulseDuaItems(now = Date.now()): PulseBoardNotice[] {
   return [{ kind: 'dua', name }];
 }
 
-/** Aid opportunities first, then phone/son/rename (3h) / delegate (1 day). Else one ma'thura dua per hour. */
+/** Phone / son / rename (3h) and a newly added delegate (1 day). Else one ma'thura dua per hour. */
 export function pickPulseTickerItems(input: {
   notices?: PulseBoardNotice[];
   delegates?: PulseBoardNotice[];
   now?: number;
 }) {
   const now = input.now ?? Date.now();
-  const aid = (input.notices || []).filter(
-    (row) => row.kind === 'aid' && String(row.name || '').trim(),
-  );
   const live = sortPulseNotices(
     [...(input.notices || []), ...(input.delegates || [])].filter(
       (row) =>
         row.kind !== 'dua' &&
-        row.kind !== 'aid' &&
         noticeStillLive(row, now) &&
         (row.kind === 'delegate' || !pulseNameBlockedFromTicker(row.name)),
     ),
   );
-  if (aid.length || live.length) return [...aid, ...live];
+  if (live.length) return live;
   return pulseDuaItems(now);
-}
-
-/** Build anonymous pulse ticker lines from published aid rows (type + need only). */
-export function pulseAidNotices(
-  rows: { situationLabel?: string | null; body?: string | null; title?: string | null }[],
-): PulseBoardNotice[] {
-  return (rows || [])
-    .map((row) => {
-      const kindLabel = String(row.situationLabel || '').trim() || 'مساعدة';
-      const need = String(row.body || row.title || '')
-        .trim()
-        .replace(/\s+/g, ' ');
-      if (!need) return null;
-      const short = need.length > 72 ? `${need.slice(0, 70)}…` : need;
-      return { kind: 'aid' as const, name: `${kindLabel}: ${short}` };
-    })
-    .filter((row): row is PulseBoardNotice => Boolean(row));
 }
