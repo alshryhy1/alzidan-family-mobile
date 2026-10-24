@@ -287,8 +287,10 @@ export function PersonEncounterScreen({
         setOwnSons(factSons);
         setIsWidow(Boolean(facts.isWidow));
         setIsDivorced(Boolean(facts.isDivorced));
+        // لا زر مساعدة خاص إلا لأنثى حالتها أرملة/مطلقة من الشجرة.
         setAidSituation(
-          facts.aidSituation === 'widow' || facts.aidSituation === 'divorced'
+          isPublicLineageHiddenPerson(person) &&
+            (facts.aidSituation === 'widow' || facts.aidSituation === 'divorced')
             ? facts.aidSituation
             : null,
         );
