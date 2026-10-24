@@ -2,7 +2,7 @@
 
 **فرع الرفع الوحيد:** `cursor/appstore-ship-e8cc`  
 **الإصدار:** `2.0.5`  
-**buildNumber في الفرع:** `76`  
+**buildNumber في الفرع:** `77`  
 (عند `eas build --profile production` مع `autoIncrement` يصير التالي **77**)
 
 لا تستخدم فروع أخرى للستور.
@@ -43,7 +43,7 @@ npx eas-cli submit --platform ios --profile production --latest --non-interactiv
 ```
 
 المتوقع في اللوج: `Bumping expo.ios.buildNumber from 76 to 77`  
-ثم في App Store Connect: **2.0.5 (77)**
+ثم في App Store Connect: **2.0.5 (77)** — مرفوع
 
 ## ملاحظات ما الجديد
 
