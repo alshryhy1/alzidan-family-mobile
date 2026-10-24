@@ -4,12 +4,128 @@
 -- - family_admin_pulse_online_v1: قائمة جوالات المتصلين لإدارة العائلة في التطبيق.
 -- - admin_pulse_online_v1: نفس القائمة لرمز إدارة الويب.
 -- Safe to re-run.
+-- يرحّل جدول pulse_presence القديم إن كان بأعمدة مختلفة (مثل updated_at بلا last_seen_at).
 
 create table if not exists public.pulse_presence (
   session_id text primary key,
   phone text null,
   last_seen_at timestamptz not null default now()
 );
+
+do $migrate$
+declare
+  has_col boolean;
+begin
+  -- session_id من أسماء شائعة قديمة
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'pulse_presence' and column_name = 'session_id'
+  ) into has_col;
+  if not has_col then
+    select exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'pulse_presence' and column_name = 'session'
+    ) into has_col;
+    if has_col then
+      execute 'alter table public.pulse_presence rename column session to session_id';
+    else
+      select exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'pulse_presence' and column_name = 'id'
+          and data_type in ('text', 'character varying', 'uuid')
+      ) into has_col;
+      if has_col then
+        execute 'alter table public.pulse_presence rename column id to session_id';
+      else
+        execute 'alter table public.pulse_presence add column session_id text';
+      end if;
+    end if;
+  end if;
+
+  execute 'alter table public.pulse_presence add column if not exists phone text';
+  execute 'alter table public.pulse_presence add column if not exists last_seen_at timestamptz';
+
+  -- انسخ من أعمدة وقت شائعة إن وُجدت
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'pulse_presence' and column_name = 'updated_at'
+  ) into has_col;
+  if has_col then
+    execute $q$
+      update public.pulse_presence
+      set last_seen_at = coalesce(last_seen_at, updated_at)
+      where last_seen_at is null
+    $q$;
+  end if;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'pulse_presence' and column_name = 'seen_at'
+  ) into has_col;
+  if has_col then
+    execute $q$
+      update public.pulse_presence
+      set last_seen_at = coalesce(last_seen_at, seen_at)
+      where last_seen_at is null
+    $q$;
+  end if;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'pulse_presence' and column_name = 'last_seen'
+  ) into has_col;
+  if has_col then
+    execute $q$
+      update public.pulse_presence
+      set last_seen_at = coalesce(last_seen_at, last_seen)
+      where last_seen_at is null
+    $q$;
+  end if;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'pulse_presence' and column_name = 'heartbeat_at'
+  ) into has_col;
+  if has_col then
+    execute $q$
+      update public.pulse_presence
+      set last_seen_at = coalesce(last_seen_at, heartbeat_at)
+      where last_seen_at is null
+    $q$;
+  end if;
+
+  execute $q$
+    update public.pulse_presence
+    set last_seen_at = now()
+    where last_seen_at is null
+  $q$;
+
+  execute 'alter table public.pulse_presence alter column last_seen_at set default now()';
+  begin
+    execute 'alter table public.pulse_presence alter column last_seen_at set not null';
+  exception when others then
+    null;
+  end;
+
+  -- مفتاح/تفرد session_id لـ on conflict
+  begin
+    if not exists (
+      select 1
+      from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      join pg_namespace n on n.oid = t.relnamespace
+      where n.nspname = 'public'
+        and t.relname = 'pulse_presence'
+        and c.contype in ('p', 'u')
+        and pg_get_constraintdef(c.oid) ilike '%session_id%'
+    ) then
+      execute 'alter table public.pulse_presence add constraint pulse_presence_session_id_key unique (session_id)';
+    end if;
+  exception when others then
+    null;
+  end;
+end;
+$migrate$;
 
 create index if not exists pulse_presence_last_seen_idx
   on public.pulse_presence (last_seen_at desc);

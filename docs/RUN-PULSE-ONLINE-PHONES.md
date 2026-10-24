@@ -13,6 +13,8 @@ Supabase → SQL Editor → الصق ثم Run:
 
 `docs/COPY-ME-pulse-online-phones-v1.sql`
 
+إن ظهر خطأ `column "last_seen_at" does not exist`: أعد تشغيل **نفس الملف المحدَّث** — يضيف العمود للجدول القديم تلقائياً.
+
 ## 2) نشر قسم الويب على alzidan.org
 
 ```bash
