@@ -21,15 +21,15 @@ git reset --hard origin/cursor/aid-pulse-giving-e8cc
 echo "== إثبات الكود =="
 git rev-parse --short HEAD
 git branch --show-current
-if ! grep -q "aidHeroBand" src/screens/HomeScreen.tsx; then
-  echo "فشل: HomeScreen بلا aidHeroBand — لست على الفرع الصحيح"
+if ! grep -q "publishedAid.length" src/screens/HomeScreen.tsx; then
+  echo "فشل: HomeScreen بلا فرص مساعدة — لست على الفرع الصحيح"
   exit 1
 fi
 if ! grep -q "فرص مساعدة" src/screens/HomeScreen.tsx; then
   echo "فشل: لا يوجد نص فرص مساعدة"
   exit 1
 fi
-echo "OK: HomeScreen فيه فرص مساعدة في ترويسة النبض"
+echo "OK: HomeScreen يضيف فرص مساعدة فقط عند وجود منشور"
 
 ENV_FILE=""
 if [[ -f .env ]]; then ENV_FILE=".env"; fi
