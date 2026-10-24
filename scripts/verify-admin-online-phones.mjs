@@ -19,6 +19,8 @@ const run = read('docs/RUN-PULSE-ONLINE-PHONES.md');
 const checks = [
   ['sql has presence table', sql.includes('create table if not exists public.pulse_presence')],
   ['sql migrates last_seen_at', sql.includes('add column if not exists last_seen_at')],
+  ['sql converts uuid session_id to text', sql.includes("session_type = 'uuid'")],
+  ['sql delete casts session_id to text', sql.includes('session_id::text')],
   ['sql does not backfill now()', !sql.includes("set last_seen_at = now()\n    where last_seen_at is null")],
   ['sql deletes unknown timestamps', sql.includes('where last_seen_at is null')],
   ['sql heartbeat accepts phone', sql.includes('p_phone text default null')],
