@@ -62,19 +62,18 @@ function occasionInboxTimestampMs(item) {
 function isCurrentOccasionInboxItem(item, opts = {}) {
   const nowMs = (opts.now ?? new Date()).getTime();
   const id = String(item.occasion_id ?? '').trim();
-  const active =
-    opts.activeOccasionIds == null
-      ? null
-      : new Set([...opts.activeOccasionIds].map((value) => String(value).trim()).filter(Boolean));
-  const boardReady = Boolean(active && active.size > 0);
+  const boardKnown = opts.activeOccasionIds != null;
+  const active = boardKnown
+    ? new Set([...opts.activeOccasionIds].map((value) => String(value).trim()).filter(Boolean))
+    : null;
 
-  if (boardReady && id && active.has(id)) return true;
+  if (boardKnown && id && active.has(id)) return true;
 
   const at = occasionInboxTimestampMs(item);
   const age = at > 0 ? nowMs - at : Number.POSITIVE_INFINITY;
 
   if (isInviteInboxType(item.occasion_type)) {
-    if (boardReady && id && !active.has(id)) return false;
+    if (boardKnown) return false;
     return age <= FINJAL_INBOX_KEEP_MS;
   }
 
@@ -187,8 +186,16 @@ const checks = [
     ),
   ],
   [
-    'empty board falls back to age',
-    isCurrentOccasionInboxItem(liveDinner, { activeOccasionIds: [], now }),
+    'empty loaded board hides recent invite',
+    !isCurrentOccasionInboxItem(liveDinner, { activeOccasionIds: [], now }),
+  ],
+  [
+    'loading board (null) keeps recent invite by age',
+    isCurrentOccasionInboxItem(liveDinner, { activeOccasionIds: null, now }),
+  ],
+  [
+    'stale apology replies hidden when board empty',
+    filterCurrentOccasionInbox([oldFinjal], { activeOccasionIds: [], now }).length === 0,
   ],
   ['headline names the invitation', occasionInboxHeadline(liveDinner) === 'دعوة فهد'],
   ['old reply shows weeks ago', formatOccasionInboxWhen(twoWeeksAgo, now) === 'قبل 2 أسابيع'],
@@ -203,6 +210,8 @@ const checks = [
   ['profile accepts active ids', profile.includes('activeOccasionIds')],
   ['app passes active occasion ids', app.includes('activeOccasionIds={activeOccasionIds}')],
   ['app filters badge inbox', app.includes('filterCurrentOccasionInbox(occasionInbox')],
+  ['app waits for board load before filtering invites', app.includes('publicData.loading')],
+  ['source hides invites when board known', src.includes('if (boardKnown) return false')],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

@@ -219,7 +219,11 @@ export function occasionInboxTimestampMs(item: OccasionInboxItem): number {
 }
 
 export type FilterOccasionInboxOptions = {
-  /** معرفات المناسبات الظاهرة الآن على المجلس. الدعوات خارجها تُخفى فورًا. */
+  /**
+   * معرفات المناسبات الظاهرة الآن على المجلس.
+   * - `null` / `undefined`: المجلس لم يُحمَّل بعد — نرجع لعمر الرد فقط.
+   * - مصفوفة (حتى فارغة): المجلس معروف — الدعوات خارجها تُخفى فورًا.
+   */
   activeOccasionIds?: Iterable<string | number> | null;
   now?: Date;
 };
@@ -234,20 +238,22 @@ export function isCurrentOccasionInboxItem(
 ) {
   const nowMs = (opts.now ?? new Date()).getTime();
   const id = String(item.occasion_id ?? '').trim();
-  const active =
-    opts.activeOccasionIds == null
-      ? null
-      : new Set([...opts.activeOccasionIds].map((value) => String(value).trim()).filter(Boolean));
-  // قائمة فارغة أثناء التحميل ≠ «لا مناسبة»؛ نرجع لعمر الرد فقط.
-  const boardReady = Boolean(active && active.size > 0);
+  const boardKnown = opts.activeOccasionIds != null;
+  const active = boardKnown
+    ? new Set(
+        [...opts.activeOccasionIds!].map((value) => String(value).trim()).filter(Boolean),
+      )
+    : null;
 
-  if (boardReady && id && active!.has(id)) return true;
+  if (boardKnown && id && active!.has(id)) return true;
 
   const at = occasionInboxTimestampMs(item);
   const age = at > 0 ? nowMs - at : Number.POSITIVE_INFINITY;
 
   if (isInviteInboxType(item.occasion_type)) {
-    if (boardReady && id && !active!.has(id)) return false;
+    // بعد تحميل المجلس: أي دعوة/فنجال ليست ظاهرة الآن تُخفى فورًا
+    // (حتى لو الرد خلال ساعات) حتى لا تبقى مشاركات منتهية مثل «أعتذر عن الحضور».
+    if (boardKnown) return false;
     return age <= FINJAL_INBOX_KEEP_MS;
   }
 

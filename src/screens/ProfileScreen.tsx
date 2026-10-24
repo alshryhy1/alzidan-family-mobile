@@ -54,8 +54,8 @@ type ProfileScreenProps = {
   branches: Branch[];
   childrenRows: TreeChild[];
   viewerPerson?: TreeChild | null;
-  /** مناسبات المجلس الظاهرة الآن — لإخفاء مشاركات الدعوة المنتهية. */
-  activeOccasionIds?: Array<string | number>;
+  /** مناسبات المجلس الظاهرة الآن — null أثناء التحميل؛ مصفوفة بعده لإخفاء المنتهي. */
+  activeOccasionIds?: Array<string | number> | null;
   onOpenMemberCard: (branchKey: string, treeChildId: number) => void;
   onMemberSessionChange?: (phone: string | null) => void;
   onPhotoSaved?: () => void;

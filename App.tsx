@@ -846,9 +846,13 @@ function AppChrome() {
     });
   }, [encounterPerson, memberPhoneForRequests, memberTreeChildId]);
 
+  // null أثناء التحميل حتى لا نخفي دعوة حية قبل وصول المجلس؛ بعدها مصفوفة (حتى فارغة).
   const activeOccasionIds = useMemo(
-    () => activeEvents.map((event) => event.id).filter((id) => id != null && String(id).trim()),
-    [activeEvents],
+    () =>
+      publicData.loading
+        ? null
+        : activeEvents.map((event) => event.id).filter((id) => id != null && String(id).trim()),
+    [publicData.loading, activeEvents],
   );
   const currentOccasionInbox = useMemo(
     () => filterCurrentOccasionInbox(occasionInbox, { activeOccasionIds }),
