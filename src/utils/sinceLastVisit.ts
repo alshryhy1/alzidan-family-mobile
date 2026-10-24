@@ -1,4 +1,7 @@
-import type { OccasionInboxItem } from '../services/occasionInteractions';
+import {
+  occasionInboxTimestampMs,
+  type OccasionInboxItem,
+} from '../services/occasionInteractions';
 import type { FamilyEvent } from '../types';
 import { isDeathEventType, isHealthEventType } from './eventVisibility';
 
@@ -32,15 +35,7 @@ export function eventTimestampMs(event: FamilyEvent): number {
 }
 
 export function inboxTimestampMs(item: OccasionInboxItem): number {
-  const latest = Date.parse(String(item.latest_at || ''));
-  if (Number.isFinite(latest) && latest > 0) return latest;
-  const messages = Array.isArray(item.messages) ? item.messages : [];
-  let max = 0;
-  for (const message of messages) {
-    const at = Date.parse(String(message.created_at || ''));
-    if (Number.isFinite(at) && at > max) max = at;
-  }
-  return max;
+  return occasionInboxTimestampMs(item);
 }
 
 function eventKind(event: FamilyEvent): 'death' | 'health' | 'happy' {
