@@ -52,6 +52,8 @@
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>لاختيار رقم الجوال من أسماء جهات الاتصال عند التسجيل أو التعديل. لا تُرفع قائمة الأسماء إلى السيرفر.</string>
     <key>NSFaceIDUsageDescription</key>
     <string>يُستخدم قفل الجهاز لفتح حسابك على هذا الآيفون. لا تُرسل صورة الوجه خارج جهازك.</string>
     <key>NSLocationWhenInUseUsageDescription</key>

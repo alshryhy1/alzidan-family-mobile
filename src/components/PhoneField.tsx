@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
 
+import { pickPhoneFromContacts } from '../services/pickContactPhone';
 import { spacing, typography, type ThemePalette } from '../theme';
 import { useThemePalette } from '../theme/ThemeContext';
 import { useThemedStyles } from '../theme/useThemedStyles';
@@ -20,6 +21,8 @@ type Props = {
   label?: string;
   /** Optional; shown under the field */
   hint?: string;
+  /** Show “من الأسماء” (default true on iOS/Android) */
+  allowContacts?: boolean;
 };
 
 export function PhoneField({
@@ -29,11 +32,26 @@ export function PhoneField({
   onNationalChange,
   label = 'رقم الجوال',
   hint,
+  allowContacts = Platform.OS === 'ios' || Platform.OS === 'android',
 }: Props) {
   const p = useThemePalette();
   const styles = useThemedStyles(phoneStyles);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickingContact, setPickingContact] = useState(false);
   const country = useMemo(() => getPhoneCountry(countryId), [countryId]);
+
+  const onPickContact = async () => {
+    if (pickingContact) return;
+    setPickingContact(true);
+    try {
+      const picked = await pickPhoneFromContacts();
+      if (!picked) return;
+      onCountryChange(picked.countryId);
+      onNationalChange(normalizeNationalInput(picked.national, picked.countryId));
+    } finally {
+      setPickingContact(false);
+    }
+  };
 
   return (
     <View style={styles.wrap}>
@@ -58,6 +76,22 @@ export function PhoneField({
           value={national}
         />
       </View>
+      {allowContacts ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={pickingContact}
+          onPress={() => {
+            void onPickContact();
+          }}
+          style={({ pressed }) => [styles.contactsBtn, pressed && styles.pressed]}
+        >
+          {pickingContact ? (
+            <ActivityIndicator color={p.primary} size="small" />
+          ) : (
+            <Text style={styles.contactsBtnText}>من الأسماء في الجهاز</Text>
+          )}
+        </Pressable>
+      ) : null}
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
 
       <Modal animationType="fade" transparent visible={pickerOpen} onRequestClose={() => setPickerOpen(false)}>
@@ -164,6 +198,25 @@ function phoneStyles(p: ThemePalette) {
   hint: {
     color: p.textMuted,
     fontSize: 11,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  contactsBtn: {
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    backgroundColor: p.primarySoft,
+    borderColor: p.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+  },
+  contactsBtnText: {
+    color: p.primary,
+    fontSize: typography.caption,
+    fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
