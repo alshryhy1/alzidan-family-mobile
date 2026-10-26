@@ -18,6 +18,7 @@
         "NSCameraUsageDescription": "لإرفاق صورة أو فيديو مع مناسبة عائلية أو ذكرى.",
         "NSLocationWhenInUseUsageDescription": "لتوقيت الصلاة في الودجت حسب موقعك. لا يُرسل الموقع خارج الجهاز.",
         "NSMicrophoneUsageDescription": "لإرفاق فيديو مع مناسبة عائلية أو ذكرى.",
+        "NSContactsUsageDescription": "لاختيار رقم الجوال من أسماء جهات الاتصال عند التسجيل أو التعديل. لا تُرفع قائمة الأسماء إلى السيرفر.",
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationQueriesSchemes": [
           "whatsapp"
@@ -52,6 +53,12 @@
       "expo-sharing",
       "expo-image-picker",
       "expo-document-picker",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "لاختيار رقم الجوال من أسماء جهات الاتصال عند التسجيل أو التعديل. لا تُرفع قائمة الأسماء إلى السيرفر."
+        }
+      ],
       "expo-secure-store",
       [
         "expo-local-authentication",
