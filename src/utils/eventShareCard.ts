@@ -5,6 +5,8 @@ import { eventFamilyOf, formatVenueLine, mapsUrlFromCoords } from './eventReques
 import { formatVisitTimeRangeAr } from './formatVisitTimeAr';
 
 export const EVENT_SHARE_SCHEME = 'com.alzidan.family2';
+/** رابط https يعمل في واتساب؛ الصفحة تفتح مخطط التطبيق */
+export const EVENT_SHARE_HTTPS_BASE = 'https://alzidan.org/pages/open-event.html';
 
 function cleanLine(value?: string | null) {
   return String(value || '')
@@ -18,9 +20,19 @@ function looksLikePayload(value: string) {
   return t.startsWith('{') || t.startsWith('[') || t.includes('__JSON__');
 }
 
-export function eventDeepLink(eventId: string) {
+/** رابط داخلي للتطبيق (مخطط مخصص) */
+export function eventAppSchemeLink(eventId: string) {
   const id = encodeURIComponent(String(eventId || '').trim());
   return `${EVENT_SHARE_SCHEME}://events/${id}`;
+}
+
+/**
+ * رابط المشاركة الخارجية — https حتى يفتح من واتساب/المتصفح،
+ * ثم صفحة open-event تحوّل إلى مخطط التطبيق.
+ */
+export function eventDeepLink(eventId: string) {
+  const id = encodeURIComponent(String(eventId || '').trim());
+  return `${EVENT_SHARE_HTTPS_BASE}?id=${id}`;
 }
 
 export function eventIdFromOpenUrl(url: string | null) {
@@ -35,6 +47,7 @@ export function eventIdFromOpenUrl(url: string | null) {
       .toLowerCase()
       .replace(/\/$/, '');
     if (host === 'events' && parts[0]) return decodeURIComponent(parts[0]);
+    // open-event.html بدون query لا يكفي؛ نعتمد query أعلاه
     const eventsIdx = parts.findIndex((part) => part.toLowerCase() === 'events');
     if (eventsIdx >= 0 && parts[eventsIdx + 1]) {
       return decodeURIComponent(parts[eventsIdx + 1]);
