@@ -50,7 +50,7 @@ const checks = [
   ['home url ignored', eventIdFromOpenUrl('com.alzidan.family2://home') === null],
   ['card builder has no contactPhone', !/contactPhone/.test(src)],
   ['card uses https share link', src.includes('https://alzidan.org/pages/open-event.html')],
-  ['card keeps app scheme helper', src.includes('com.alzidan.family2://events/')],
+  ['card keeps app scheme helper', src.includes('EVENT_SHARE_SCHEME') && src.includes('://events/')],
   ['card opens whatsapp chat picker', src.includes('whatsapp://send?text=')],
   ['card falls back to share sheet', src.includes('Share.share')],
   ['card does not use wa.me without number', !src.includes('https://wa.me/?text=')],
