@@ -278,30 +278,23 @@
     onPick(list[idx]);
   }
 
-  async function pickFromDeviceContacts(wrap) {
-    if (!contactsApiSupported()) {
-      window.alert(
-        "متصفحك لا يدعم اختيار الأسماء مباشرة (الماك/آيفون غالبًا).\nاستخدم زر «ملف جهات اتصال» بعد تصدير الأسماء من Contacts كـ vCard.",
-      );
-      return;
-    }
+  function isAppleTouchDevice() {
     try {
-      var selected = await navigator.contacts.select(["name", "tel"], { multiple: false });
-      var contact = selected && selected[0] ? selected[0] : null;
-      var tels = contact && Array.isArray(contact.tel) ? contact.tel : [];
-      pickFromList(tels, function (raw) {
-        applyPhoneToWrap(wrap, raw);
-      });
-    } catch (err) {
-      if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) return;
-      window.alert("تعذر فتح الأسماء: " + String((err && err.message) || err || "خطأ"));
+      var ua = String(navigator.userAgent || "");
+      return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    } catch (e) {
+      return false;
     }
   }
 
-  function pickFromContactFile(wrap) {
+  function pickFromContactFile(wrap, opts) {
+    opts = opts || {};
     var input = document.createElement("input");
     input.type = "file";
-    input.accept = ".vcf,.vcard,text/vcard,text/x-vcard,.csv,text/csv";
+    // على الآيفون نفضّل vCard فقط؛ الماك يقبل أيضًا CSV
+    input.accept = opts.vcfOnly
+      ? ".vcf,.vcard,text/vcard,text/x-vcard"
+      : ".vcf,.vcard,text/vcard,text/x-vcard,.csv,text/csv";
     input.style.display = "none";
     document.body.appendChild(input);
     input.addEventListener("change", function () {
@@ -313,7 +306,7 @@
         var text = String(reader.result || "");
         var name = String(file.name || "").toLowerCase();
         var phones =
-          /\.csv$/i.test(name) || /text\/csv/i.test(file.type)
+          !opts.vcfOnly && (/\.csv$/i.test(name) || /text\/csv/i.test(file.type))
             ? extractTelsFromCsv(text)
             : extractTelsFromVcf(text);
         if (!phones.length && /BEGIN:VCARD/i.test(text)) phones = extractTelsFromVcf(text);
@@ -329,6 +322,46 @@
     input.click();
   }
 
+  /** مسار آيفون/ماك: مشاركة جهة الاتصال كبطاقة ثم اختيار الملف */
+  function pickFromNamesViaVcard(wrap) {
+    var ios = isAppleTouchDevice();
+    var ok = window.confirm(
+      ios
+        ? "إضافة من الأسماء على الآيفون:\n\n" +
+            "1) افتح تطبيق الأسماء\n" +
+            "2) اختر الشخص → مشاركة جهة الاتصال\n" +
+            "3) احفظ في «الملفات»\n" +
+            "4) اضغط موافق هنا واختر ملف البطاقة (.vcf)\n\n" +
+            "متابعة لاختيار الملف؟"
+        : "إضافة من الأسماء عبر بطاقة جهة اتصال:\n\n" +
+            "1) من Contacts صدّر/شارك الشخص كـ vCard\n" +
+            "2) اضغط موافق واختر ملف .vcf\n\n" +
+            "متابعة؟",
+    );
+    if (!ok) return;
+    pickFromContactFile(wrap, { vcfOnly: true });
+  }
+
+  async function pickFromDeviceContacts(wrap) {
+    // أندرويد كروم (وأحيانًا سفاري بميزة تجريبية): اختيار مباشر
+    if (contactsApiSupported()) {
+      try {
+        var selected = await navigator.contacts.select(["name", "tel"], { multiple: false });
+        var contact = selected && selected[0] ? selected[0] : null;
+        var tels = contact && Array.isArray(contact.tel) ? contact.tel : [];
+        pickFromList(tels, function (raw) {
+          applyPhoneToWrap(wrap, raw);
+        });
+        return;
+      } catch (err) {
+        if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) return;
+        // نكمل لمسار البطاقة بدل التوقف
+      }
+    }
+    // آيفون سفاري / ماك: لا يوجد Contact Picker — مسار vCard
+    pickFromNamesViaVcard(wrap);
+  }
+
   function ensureContactTools(wrap) {
     if (!wrap || wrap.querySelector("[data-phone-contact-tools]")) return;
     var tools = document.createElement("div");
@@ -337,10 +370,10 @@
     var btnNames = document.createElement("button");
     btnNames.type = "button";
     btnNames.className = "btn btn-outline btn-sm phone-intl-tool-btn";
-    btnNames.textContent = contactsApiSupported() ? "من الأسماء" : "من الأسماء (أندرويد)";
+    btnNames.textContent = "من الأسماء";
     btnNames.title = contactsApiSupported()
       ? "اختيار جهة اتصال من الجهاز"
-      : "متاح على أندرويد كروم — على الماك استخدم ملف جهات اتصال";
+      : "على الآيفون: مشاركة جهة الاتصال كبطاقة ثم اختيار الملف";
     btnNames.addEventListener("click", function (ev) {
       ev.preventDefault();
       pickFromDeviceContacts(wrap);
@@ -349,10 +382,10 @@
     btnFile.type = "button";
     btnFile.className = "btn btn-outline btn-sm phone-intl-tool-btn";
     btnFile.textContent = "ملف جهات اتصال";
-    btnFile.title = "استيراد رقم من ملف vCard أو CSV (تصدير من Contacts على الماك)";
+    btnFile.title = "استيراد رقم من ملف vCard أو CSV";
     btnFile.addEventListener("click", function (ev) {
       ev.preventDefault();
-      pickFromContactFile(wrap);
+      pickFromContactFile(wrap, { vcfOnly: false });
     });
     tools.appendChild(btnNames);
     tools.appendChild(btnFile);
@@ -462,7 +495,7 @@
         ? ""
         : '<div class="phone-intl-hint hint">' +
           (opts.hint ||
-            "اختر الدولة ثم الرقم، أو «من الأسماء» / «ملف جهات اتصال» (vCard من الماك).") +
+            "اختر الدولة ثم الرقم، أو «من الأسماء» (آيفون: مشاركة جهة اتصال كبطاقة).") +
           "</div>";
     return (
       '<div class="phone-intl" data-phone-intl="' +
