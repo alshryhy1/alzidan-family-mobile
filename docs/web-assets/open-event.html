@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>فتح المناسبة — عائلة الزيدان</title>
+  <meta name="robots" content="noindex" />
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "SF Arabic", "Segoe UI", Tahoma, sans-serif;
+      background: linear-gradient(160deg, #f5edd6 0%, #e8f0ec 55%, #f8fafc 100%);
+      color: #1f2937;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(420px, 100%);
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 18px;
+      padding: 28px 22px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 8px; color: #1f4f44; }
+    p { margin: 0 0 18px; line-height: 1.7; color: #4b5563; font-size: 0.95rem; }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      box-sizing: border-box;
+      margin: 0 0 10px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      border: 0;
+      font-weight: 800;
+      font-size: 1rem;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .btn-primary { background: #1f4f44; color: #fff; }
+    .btn-outline { background: #fff; color: #1f4f44; border: 1px solid #1f4f44; }
+    .hint { font-size: 0.8rem; color: #6b7280; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>عائلة مطلق الزيدان</h1>
+    <p id="msg">جاري فتح المناسبة في التطبيق…</p>
+    <a id="openApp" class="btn btn-primary" href="#">فتح في التطبيق</a>
+    <a class="btn btn-outline" href="https://apps.apple.com/app/id6797335229">تحميل التطبيق من App Store</a>
+    <a class="btn btn-outline" href="https://alzidan.org/">الموقع</a>
+    <p class="hint">إذا لم يفتح التطبيق تلقائيًا اضغط «فتح في التطبيق».</p>
+  </main>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search || "");
+      var id = String(params.get("id") || params.get("event") || "").trim();
+      var pathMatch = String(location.pathname || "").match(/\/events\/([^/?#]+)/i);
+      if (!id && pathMatch) id = decodeURIComponent(pathMatch[1]);
+      var msg = document.getElementById("msg");
+      var openApp = document.getElementById("openApp");
+      if (!id) {
+        msg.textContent = "لا يوجد رقم مناسبة في الرابط.";
+        openApp.style.display = "none";
+        return;
+      }
+      var appUrl = "com.alzidan.family2://events/" + encodeURIComponent(id);
+      openApp.setAttribute("href", appUrl);
+      msg.textContent = "المناسبة #" + id + " — افتحها في تطبيق عائلة الزيدان.";
+      // محاولة فتح التطبيق فورًا (يعمل بعد نقرة واتساب على https)
+      try {
+        var iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = appUrl;
+        document.body.appendChild(iframe);
+        setTimeout(function () {
+          try { iframe.remove(); } catch (e) {}
+        }, 1500);
+      } catch (e) {}
+      setTimeout(function () {
+        try { location.href = appUrl; } catch (e2) {}
+      }, 250);
+    })();
+  </script>
+</body>
+</html>
